@@ -149,6 +149,55 @@ pub const Instruction = struct {
     }
 };
 
+const ParsedOpc = struct {
+    tag: Instruction.Tag,
+    enc: Instruction.Enc,
+    is_byte_sized: bool,
+    reg: u3,
+
+    fn new(tag: Instruction.Tag, enc: Instruction.Enc, is_byte_sized: bool, reg: u3) ParsedOpc {
+        return .{
+            .tag = tag,
+            .enc = enc,
+            .is_byte_sized = is_byte_sized,
+            .reg = reg,
+        };
+    }
+};
+
+fn parseOpcode(code: []const u8) Error!ParsedOpc {
+    if (code.len == 0) return error.InputTooShort;
+    if (code.len > 1) return error.Todo;
+
+    switch (code[0]) {
+        // mov
+        0x88 => return ParsedOpc.new(.mov, .mr, true, 0),
+        0x89 => return ParsedOpc.new(.mov, .mr, false, 0),
+        0x8a => return ParsedOpc.new(.mov, .rm, true, 0),
+        0x8b => return ParsedOpc.new(.mov, .rm, false, 0),
+        0x8c => return ParsedOpc.new(.mov, .mr, false, 0),
+        0x8e => return ParsedOpc.new(.mov, .rm, false, 0),
+        0xa0 => return error.Todo,
+        0xa1 => return error.Todo,
+        0xa2 => return error.Todo,
+        0xa3 => return error.Todo,
+        0xc6 => return error.Todo,
+        0xc7 => return error.Todo,
+        // remaining
+        else => {},
+    }
+
+    // check for OI encoding
+    const mask: u8 = 0b1111_1000;
+    switch (code[0] & mask) {
+        // mov
+        0xb0 => return ParsedOpc.new(.mov, .oi, true, @truncate(u3, code[0])),
+        0xb8 => return ParsedOpc.new(.mov, .oi, false, @truncate(u3, code[0])),
+        // remaining
+        else => return error.Todo,
+    }
+}
+
 const Rex = struct {
     w: bool = false,
     r: bool = false,
@@ -182,6 +231,7 @@ const Rex = struct {
 
 pub const Error = error{
     InputTooShort,
+    InvalidRexForEncoding,
     Todo,
 };
 
@@ -190,28 +240,33 @@ pub fn disassembleSingle(code: []const u8) Error!Instruction {
 
     // TODO parse legacy prefixes such as 0x66, etc.
 
-    if (Rex.parse(code[0])) |rex| {
-        if (!rex.r and !rex.x) {
-            // OI encoding
-            const opcode = code[1] & 0b1111_1000;
-            const tag = Instruction.encTagOneByte(opcode, .oi);
-            const is_byte_sized = Instruction.isByteSized(opcode, tag, .oi);
-            const reg_id: u4 = @intCast(u4, @boolToInt(rex.b)) << 3 | @truncate(u3, code[1]);
+    const rex = Rex.parse(code[0]);
+    const opc = try parseOpcode(code[1..2]);
+
+    switch (opc.enc) {
+        .oi => {
+            var is_extended: bool = false;
+            var is_wide: bool = false;
+            if (rex) |r| {
+                if (r.r or r.x) return error.InvalidRexForEncoding;
+                is_extended = r.b;
+                is_wide = r.w;
+            }
+            const reg_id: u4 = @intCast(u4, @boolToInt(is_extended)) << 3 | opc.reg;
             const reg_unsized = @intToEnum(Register, reg_id);
             const reg: Register = reg: {
-                if (is_byte_sized) break :reg reg_unsized.to8();
-                if (rex.w) break :reg reg_unsized.to64();
+                if (opc.is_byte_sized) break :reg reg_unsized.to8();
+                if (is_wide) break :reg reg_unsized.to64();
                 break :reg reg_unsized.to32();
             };
             return Instruction{
-                .tag = tag,
-                .enc = .oi,
+                .tag = opc.tag,
+                .enc = opc.enc,
                 .data = .{ .oi = reg },
             };
-        }
+        },
+        else => return error.Todo,
     }
-
-    return error.Todo;
 }
 
 test "disassemble" {
@@ -231,6 +286,8 @@ test "disassemble" {
         try testing.expect(inst.data.oi == .r12);
     }
 
-    // const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x1d, 0x0, 0x0, 0x0, 0x0 });
-    // std.log.warn("inst = {}", .{inst});
+    {
+        const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x1d, 0x0, 0x0, 0x0, 0x0 });
+        std.log.warn("inst = {}", .{inst});
+    }
 }
