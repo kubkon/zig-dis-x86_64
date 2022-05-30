@@ -61,6 +61,11 @@ pub const Register = enum(u7) {
     pub fn to8(self: Register) Register {
         return @intToEnum(Register, @as(u8, self.enc()) + 48);
     }
+
+    pub fn fromLowEnc(low_enc: u3, is_extended: bool) Register {
+        const reg_id: u4 = @intCast(u4, @boolToInt(is_extended)) << 3 | low_enc;
+        return @intToEnum(Register, reg_id);
+    }
 };
 
 pub const Memory = struct {
@@ -103,7 +108,7 @@ pub const Instruction = struct {
     tag: Tag,
     enc: Enc,
     data: union {
-        oi: Register,
+        oi: Oi,
         mr: Mr,
         rm: Rm,
     },
@@ -116,6 +121,11 @@ pub const Instruction = struct {
         oi,
         mr,
         rm,
+    };
+
+    pub const Oi = struct {
+        reg: Register,
+        imm: u64,
     };
 
     pub const Mr = struct {
@@ -165,11 +175,9 @@ const ParsedOpc = struct {
     }
 };
 
-fn parseOpcode(code: []const u8) Error!ParsedOpc {
-    if (code.len == 0) return error.InputTooShort;
-    if (code.len > 1) return error.Todo;
-
-    switch (code[0]) {
+fn parseOpcode(reader: anytype) Error!ParsedOpc {
+    const next_byte = try reader.readByte();
+    switch (next_byte) {
         // mov
         0x88 => return ParsedOpc.new(.mov, .mr, true, 0),
         0x89 => return ParsedOpc.new(.mov, .mr, false, 0),
@@ -189,10 +197,10 @@ fn parseOpcode(code: []const u8) Error!ParsedOpc {
 
     // check for OI encoding
     const mask: u8 = 0b1111_1000;
-    switch (code[0] & mask) {
+    switch (next_byte & mask) {
         // mov
-        0xb0 => return ParsedOpc.new(.mov, .oi, true, @truncate(u3, code[0])),
-        0xb8 => return ParsedOpc.new(.mov, .oi, false, @truncate(u3, code[0])),
+        0xb0 => return ParsedOpc.new(.mov, .oi, true, @truncate(u3, next_byte)),
+        0xb8 => return ParsedOpc.new(.mov, .oi, false, @truncate(u3, next_byte)),
         // remaining
         else => return error.Todo,
     }
@@ -210,7 +218,7 @@ const Rex = struct {
     }
 
     fn parse(byte: u8) ?Rex {
-        const mask: u8 = 0b0100_1111;
+        const mask: u8 = 0b0100_0000;
         const masked = byte & mask;
 
         if (masked == 0) return null;
@@ -230,6 +238,7 @@ const Rex = struct {
 };
 
 pub const Error = error{
+    EndOfStream,
     InputTooShort,
     InvalidRexForEncoding,
     Todo,
@@ -238,10 +247,15 @@ pub const Error = error{
 pub fn disassembleSingle(code: []const u8) Error!Instruction {
     if (code.len == 0) return error.InputTooShort;
 
-    // TODO parse legacy prefixes such as 0x66, etc.
+    var stream = std.io.fixedBufferStream(code);
+    const reader = stream.reader();
 
-    const rex = Rex.parse(code[0]);
-    const opc = try parseOpcode(code[1..2]);
+    // TODO parse legacy prefixes such as 0x66, etc.
+    const rex = Rex.parse(try reader.readByte());
+    if (rex == null) {
+        try stream.seekBy(-1);
+    }
+    const opc = try parseOpcode(reader);
 
     switch (opc.enc) {
         .oi => {
@@ -252,17 +266,27 @@ pub fn disassembleSingle(code: []const u8) Error!Instruction {
                 is_extended = r.b;
                 is_wide = r.w;
             }
-            const reg_id: u4 = @intCast(u4, @boolToInt(is_extended)) << 3 | opc.reg;
-            const reg_unsized = @intToEnum(Register, reg_id);
+            const reg_unsized = Register.fromLowEnc(opc.reg, is_extended);
             const reg: Register = reg: {
                 if (opc.is_byte_sized) break :reg reg_unsized.to8();
                 if (is_wide) break :reg reg_unsized.to64();
                 break :reg reg_unsized.to32();
             };
+            const imm: u64 = imm: {
+                if (opc.is_byte_sized) break :imm try reader.readInt(u8, .Little);
+                if (is_wide) break :imm try reader.readInt(u64, .Little);
+                break :imm try reader.readInt(u32, .Little);
+            };
+
             return Instruction{
                 .tag = opc.tag,
                 .enc = opc.enc,
-                .data = .{ .oi = reg },
+                .data = .{
+                    .oi = .{
+                        .reg = reg,
+                        .imm = imm,
+                    },
+                },
             };
         },
         else => return error.Todo,
@@ -275,19 +299,30 @@ test "disassemble" {
         const inst = try disassembleSingle(&.{ 0x40, 0xb7, 0x10 });
         try testing.expect(inst.tag == .mov);
         try testing.expect(inst.enc == .oi);
-        try testing.expect(inst.data.oi == .bh);
+        try testing.expect(inst.data.oi.reg == .bh);
+        try testing.expect(inst.data.oi.imm == 0x10);
     }
 
     {
-        // mov rax, 0x10
+        // mov r12, 0x100000000000000
         const inst = try disassembleSingle(&.{ 0x49, 0xbc, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x10 });
         try testing.expect(inst.tag == .mov);
         try testing.expect(inst.enc == .oi);
-        try testing.expect(inst.data.oi == .r12);
+        try testing.expect(inst.data.oi.reg == .r12);
+        try testing.expect(inst.data.oi.imm == 0x1000000000000000);
     }
 
     {
-        const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x1d, 0x0, 0x0, 0x0, 0x0 });
-        std.log.warn("inst = {}", .{inst});
+        // mov eax, 0x10000000
+        const inst = try disassembleSingle(&.{ 0xb8, 0x0, 0x0, 0x0, 0x10 });
+        try testing.expect(inst.tag == .mov);
+        try testing.expect(inst.enc == .oi);
+        try testing.expect(inst.data.oi.reg == .eax);
+        try testing.expect(inst.data.oi.imm == 0x10000000);
     }
+
+    // {
+    //     const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x1d, 0x0, 0x0, 0x0, 0x0 });
+    //     std.log.warn("inst = {}", .{inst});
+    // }
 }
