@@ -305,7 +305,42 @@ pub fn disassembleSingle(code: []const u8) Error!Instruction {
                 else => return error.Todo,
             }
         },
-        else => return error.Todo,
+        .mr => {
+            const is_wide: bool = if (rex) |r| r.w else false;
+            const modrm_byte = try reader.readByte();
+            const mod: u2 = @truncate(u2, modrm_byte >> 6);
+            const op2: u3 = @truncate(u3, modrm_byte >> 3);
+            const op1: u3 = @truncate(u3, modrm_byte);
+
+            switch (mod) {
+                0b11 => {
+                    // direct addressing
+                    const reg1_unsized = Register.fromLowEnc(op1, if (rex) |r| r.b else false);
+                    const reg1: Register = reg: {
+                        if (opc.is_byte_sized) break :reg reg1_unsized.to8();
+                        if (is_wide) break :reg reg1_unsized.to64();
+                        break :reg reg1_unsized.to32();
+                    };
+                    const reg2_unsized = Register.fromLowEnc(op2, if (rex) |r| r.r else false);
+                    const reg2: Register = reg: {
+                        if (opc.is_byte_sized) break :reg reg2_unsized.to8();
+                        if (is_wide) break :reg reg2_unsized.to64();
+                        break :reg reg2_unsized.to32();
+                    };
+                    return Instruction{
+                        .tag = opc.tag,
+                        .enc = opc.enc,
+                        .data = .{
+                            .mr = .{
+                                .reg_or_mem = .{ .reg = reg1 },
+                                .reg = reg2,
+                            },
+                        },
+                    };
+                },
+                else => return error.Todo,
+            }
+        },
     }
 }
 
@@ -353,6 +388,33 @@ test "disassemble" {
         try testing.expect(inst.enc == .rm);
         try testing.expect(inst.data.rm.reg == .r11);
         try testing.expect(inst.data.rm.reg_or_mem.reg == .r12);
+    }
+
+    {
+        // mov rdx, r12
+        const inst = try disassembleSingle(&.{ 0x49, 0x8b, 0xd4 });
+        try testing.expect(inst.tag == .mov);
+        try testing.expect(inst.enc == .rm);
+        try testing.expect(inst.data.rm.reg == .rdx);
+        try testing.expect(inst.data.rm.reg_or_mem.reg == .r12);
+    }
+
+    {
+        // mov r12, r11
+        const inst = try disassembleSingle(&.{ 0x4d, 0x89, 0xdc });
+        try testing.expect(inst.tag == .mov);
+        try testing.expect(inst.enc == .mr);
+        try testing.expect(inst.data.mr.reg_or_mem.reg == .r12);
+        try testing.expect(inst.data.mr.reg == .r11);
+    }
+
+    {
+        // mov r12, rdx
+        const inst = try disassembleSingle(&.{ 0x49, 0x89, 0xd4 });
+        try testing.expect(inst.tag == .mov);
+        try testing.expect(inst.enc == .mr);
+        try testing.expect(inst.data.mr.reg_or_mem.reg == .r12);
+        try testing.expect(inst.data.mr.reg == .rdx);
     }
 
     // {
