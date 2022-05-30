@@ -100,8 +100,8 @@ pub const Memory = struct {
 };
 
 pub const RegisterOrMemory = union(enum) {
-    register: Register,
-    memory: Memory,
+    reg: Register,
+    mem: Memory,
 };
 
 pub const Instruction = struct {
@@ -137,26 +137,6 @@ pub const Instruction = struct {
         reg: Register,
         reg_or_mem: RegisterOrMemory,
     };
-
-    pub fn encTagOneByte(code: u8, enc: Enc) Tag {
-        switch (enc) {
-            .oi => return switch (code) {
-                0xb0 => .mov,
-                0xb8 => .mov,
-                else => unreachable,
-            },
-            else => unreachable,
-        }
-    }
-
-    pub fn isByteSized(code: u8, tag: Tag, enc: Enc) bool {
-        switch (tag) {
-            .mov => switch (enc) {
-                .oi => return code == 0xb0,
-                else => unreachable,
-            },
-        }
-    }
 };
 
 const ParsedOpc = struct {
@@ -289,6 +269,42 @@ pub fn disassembleSingle(code: []const u8) Error!Instruction {
                 },
             };
         },
+        .rm => {
+            const is_wide: bool = if (rex) |r| r.w else false;
+            const modrm_byte = try reader.readByte();
+            const mod: u2 = @truncate(u2, modrm_byte >> 6);
+            const op1: u3 = @truncate(u3, modrm_byte >> 3);
+            const op2: u3 = @truncate(u3, modrm_byte);
+
+            switch (mod) {
+                0b11 => {
+                    // direct addressing
+                    const reg1_unsized = Register.fromLowEnc(op1, if (rex) |r| r.r else false);
+                    const reg1: Register = reg: {
+                        if (opc.is_byte_sized) break :reg reg1_unsized.to8();
+                        if (is_wide) break :reg reg1_unsized.to64();
+                        break :reg reg1_unsized.to32();
+                    };
+                    const reg2_unsized = Register.fromLowEnc(op2, if (rex) |r| r.b else false);
+                    const reg2: Register = reg: {
+                        if (opc.is_byte_sized) break :reg reg2_unsized.to8();
+                        if (is_wide) break :reg reg2_unsized.to64();
+                        break :reg reg2_unsized.to32();
+                    };
+                    return Instruction{
+                        .tag = opc.tag,
+                        .enc = opc.enc,
+                        .data = .{
+                            .rm = .{
+                                .reg = reg1,
+                                .reg_or_mem = .{ .reg = reg2 },
+                            },
+                        },
+                    };
+                },
+                else => return error.Todo,
+            }
+        },
         else => return error.Todo,
     }
 }
@@ -319,6 +335,24 @@ test "disassemble" {
         try testing.expect(inst.enc == .oi);
         try testing.expect(inst.data.oi.reg == .eax);
         try testing.expect(inst.data.oi.imm == 0x10000000);
+    }
+
+    {
+        // mov rbx, rax
+        const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0xd8 });
+        try testing.expect(inst.tag == .mov);
+        try testing.expect(inst.enc == .rm);
+        try testing.expect(inst.data.rm.reg == .rbx);
+        try testing.expect(inst.data.rm.reg_or_mem.reg == .rax);
+    }
+
+    {
+        // mov r11, r12
+        const inst = try disassembleSingle(&.{ 0x4d, 0x8b, 0xdc });
+        try testing.expect(inst.tag == .mov);
+        try testing.expect(inst.enc == .rm);
+        try testing.expect(inst.data.rm.reg == .r11);
+        try testing.expect(inst.data.rm.reg_or_mem.reg == .r12);
     }
 
     // {
