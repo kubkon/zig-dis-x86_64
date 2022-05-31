@@ -250,14 +250,34 @@ pub const Instruction = struct {
 
     pub const Enc = enum {
         oi,
+        mi,
         mr,
         rm,
     };
 
     pub const Data = union {
         oi: Oi,
+        mi: Mi,
         mr: Mr,
         rm: Rm,
+
+        fn oi(reg: Register, imm: u64) Data {
+            return .{
+                .oi = .{
+                    .reg = reg,
+                    .imm = imm,
+                },
+            };
+        }
+
+        fn mi(reg_or_mem: RegisterOrMemory, imm: u32) Data {
+            return .{
+                .mi = .{
+                    .reg_or_mem = reg_or_mem,
+                    .imm = imm,
+                },
+            };
+        }
 
         fn rm(reg: Register, reg_or_mem: RegisterOrMemory) Data {
             return .{
@@ -281,6 +301,11 @@ pub const Instruction = struct {
     pub const Oi = struct {
         reg: Register,
         imm: u64,
+    };
+
+    pub const Mi = struct {
+        reg_or_mem: RegisterOrMemory,
+        imm: u32,
     };
 
     pub const Mr = struct {
@@ -325,6 +350,17 @@ pub const Instruction = struct {
                     try writer.print("0x{x}", .{imm_abs});
                 }
             },
+            .mi => {
+                const mi = self.data.mi;
+                try mi.reg_or_mem.fmtPrint(writer);
+                try writer.writeAll(", ");
+                const imm_signed: i32 = @bitCast(i32, mi.imm);
+                const imm_abs: u32 = @intCast(u32, try std.math.absInt(imm_signed));
+                if (sign(imm_signed) < 0) {
+                    try writer.writeByte('-');
+                }
+                try writer.print("0x{x}", .{imm_abs});
+            },
             .rm => {
                 const rm = self.data.rm;
                 try rm.reg.fmtPrint(writer);
@@ -361,8 +397,8 @@ const ParsedOpc = struct {
             0xa1 => return error.Todo,
             0xa2 => return error.Todo,
             0xa3 => return error.Todo,
-            0xc6 => return error.Todo,
-            0xc7 => return error.Todo,
+            0xc6 => return ParsedOpc.new(.mov, .mi, true, 0),
+            0xc7 => return ParsedOpc.new(.mov, .mi, false, 0),
             // remaining
             else => {},
         }
@@ -395,6 +431,16 @@ const ParsedOpc = struct {
     }
 };
 
+fn parseImm(reader: anytype, size: u7) !u32 {
+    const imm: u32 = switch (size) {
+        8 => @bitCast(u32, @intCast(i32, try reader.readInt(i8, .Little))),
+        16 => @bitCast(u32, @intCast(i32, try reader.readInt(i16, .Little))),
+        32, 64 => @bitCast(u32, try reader.readInt(i32, .Little)),
+        else => unreachable,
+    };
+    return imm;
+}
+
 const Rex = struct {
     w: bool = false,
     r: bool = false,
@@ -407,10 +453,8 @@ const Rex = struct {
     }
 
     fn parse(byte: u8) ?Rex {
-        const mask: u8 = 0b0100_0000;
-        const masked = byte & mask;
-
-        if (masked == 0) return null;
+        const is_rex = @truncate(u4, byte >> 4) & 0b1111 == 0b0100;
+        if (!is_rex) return null;
 
         const w: bool = byte & 0b1000 != 0;
         const r: bool = byte & 0b100 != 0;
@@ -428,6 +472,7 @@ const Rex = struct {
 
 pub const Error = error{
     EndOfStream,
+    InvalidModRmByte,
     InvalidRexForEncoding,
     Todo,
 };
@@ -470,12 +515,81 @@ pub const Disassembler = struct {
                         64 => try reader.readInt(u64, .Little),
                         else => unreachable,
                     };
-                    break :data .{
-                        .oi = .{
-                            .reg = reg,
-                            .imm = imm,
+                    break :data Instruction.Data.oi(reg, imm);
+                },
+                .mi => {
+                    const modrm_byte = try reader.readByte();
+                    const mod: u2 = @truncate(u2, modrm_byte >> 6);
+                    const op1: u3 = @truncate(u3, modrm_byte >> 3);
+                    const op2: u3 = @truncate(u3, modrm_byte);
+
+                    if (op1 != opc.reg) return error.InvalidModRmByte;
+
+                    switch (mod) {
+                        0b11 => {
+                            const reg = Register.fromLowEnc(op2, rex.r, size);
+                            const imm = try parseImm(reader, size);
+                            break :data Instruction.Data.mi(RegisterOrMemory.reg(reg), imm);
                         },
-                    };
+                        0b01 => {
+                            // indirect addressing with an 8bit displacement
+                            if (op2 == 0b100) {
+                                // TODO handle SIB byte addressing
+                                return error.Todo;
+                            }
+
+                            const reg = Register.fromLowEnc(op2, rex.b, 64);
+                            const disp: u32 = @bitCast(u32, @intCast(i32, try reader.readInt(i8, .Little)));
+                            const imm = try parseImm(reader, size);
+                            break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
+                                .size = Memory.Size.fromBitSize(size),
+                                .base = .{ .reg = reg },
+                                .disp = disp,
+                            }), imm);
+                        },
+                        0b10 => {
+                            // indirect addressing with a 32bit displacement
+                            if (op2 == 0b100) {
+                                // TODO handle SIB byte addressing
+                                return error.Todo;
+                            }
+
+                            const reg = Register.fromLowEnc(op2, rex.b, 64);
+                            const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                            const imm = try parseImm(reader, size);
+                            break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
+                                .size = Memory.Size.fromBitSize(size),
+                                .base = .{ .reg = reg },
+                                .disp = disp,
+                            }), imm);
+                        },
+                        0b00 => {
+                            // indirect addressing
+                            if (op2 == 0b101) {
+                                // RIP with 32bit displacement
+                                const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                                const imm = try parseImm(reader, size);
+                                break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
+                                    .size = Memory.Size.fromBitSize(size),
+                                    .base = .rip,
+                                    .disp = disp,
+                                }), imm);
+                            }
+
+                            if (op2 == 0b100) {
+                                // TODO SIB with disp 0bit
+                                return error.Todo;
+                            }
+
+                            const reg = Register.fromLowEnc(op2, rex.b, 64);
+                            const imm = try parseImm(reader, size);
+                            break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
+                                .size = Memory.Size.fromBitSize(size),
+                                .base = .{ .reg = reg },
+                                .disp = 0,
+                            }), imm);
+                        },
+                    }
                 },
                 .rm => {
                     const modrm_byte = try reader.readByte();
@@ -641,18 +755,18 @@ inline fn sign(i: anytype) @TypeOf(i) {
 test "disassemble" {
     var disassembler = Disassembler.init(&.{
         // zig fmt: off
-        0x40, 0xb7, 0x10,                                          // mov dil, 0x10
-        0x49, 0xbc, 0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0, 0x10, // mov r12, 0x1000000000000000
-        0xb8, 0x0,  0x0,  0x0,  0x10,                              // mov eax, 0x10000000 
-        0x48, 0x8b, 0xd8,                                          // mov rbx, rax
-        0x4d, 0x8b, 0xdc,                                          // mov r11, r12
-        0x49, 0x8b, 0xd4,                                          // mov rdx, r12
-        0x4d, 0x89, 0xdc,                                          // mov r12, r11
-        0x49, 0x89, 0xd4,                                          // mov r12, rdx
-        0x4c, 0x8b, 0x65, 0xf0,                                    // mov r12, qword ptr [rbp - 0x10] 
-        0x48, 0x8b, 0x85, 0x0,  0xf0, 0xff, 0xff,                  // mov rax, qword ptr [rbp - 0x1000]
-        0x48, 0x8b, 0x1d, 0x0,  0x0,  0x0,  0x0,                   // mov rbx, qword ptr [rip + 0x0]
-        0x48, 0x8b, 0x18,                                          // mov rbx, qword ptr [rax]
+        0x40, 0xb7, 0x10,                                           // mov dil, 0x10
+        0x49, 0xbc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, // mov r12, 0x1000000000000000
+        0xb8, 0x00, 0x00, 0x00, 0x10,                               // mov eax, 0x10000000 
+        0x48, 0x8b, 0xd8,                                           // mov rbx, rax
+        0x4d, 0x8b, 0xdc,                                           // mov r11, r12
+        0x49, 0x8b, 0xd4,                                           // mov rdx, r12
+        0x4d, 0x89, 0xdc,                                           // mov r12, r11
+        0x49, 0x89, 0xd4,                                           // mov r12, rdx
+        0x4c, 0x8b, 0x65, 0xf0,                                     // mov r12, qword ptr [rbp - 0x10] 
+        0x48, 0x8b, 0x85, 0x00, 0xf0, 0xff, 0xff,                   // mov rax, qword ptr [rbp - 0x1000]
+        0x48, 0x8b, 0x1d, 0x00, 0x00, 0x00, 0x00,                   // mov rbx, qword ptr [rip + 0x0]
+        0x48, 0x8b, 0x18,                                           // mov rbx, qword ptr [rax]
         // zig fmt: on
     });
 
@@ -769,11 +883,14 @@ test "disassemble - mnemonic" {
     const gpa = testing.allocator;
     var disassembler = Disassembler.init(&.{
         // zig fmt: off
-        0x48, 0xb8, 0x10, 0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,
+        0x48, 0xb8, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x41, 0xbc, 0xf0, 0xff, 0xff, 0xff,
         0x4c, 0x8b, 0x65, 0xf0,
-        0x48, 0x8b, 0x85, 0x0,  0xf0, 0xff, 0xff,
+        0x48, 0x8b, 0x85, 0x00, 0xf0, 0xff, 0xff,
         0x48, 0x8b, 0x18,
+        0xc6, 0x45, 0xf0, 0x10,
+        0x49, 0xc7, 0x43, 0xf0, 0x10, 0x00, 0x00, 0x00,
+        0x49, 0x89, 0x43, 0xf0,
         // zig fmt: on
     });
 
@@ -791,6 +908,9 @@ test "disassemble - mnemonic" {
         \\mov r12, qword ptr [rbp - 0x10]
         \\mov rax, qword ptr [rbp - 0x1000]
         \\mov rbx, qword ptr [rax]
+        \\mov byte ptr [rbp - 0x10], 0x10
+        \\mov qword ptr [r11 - 0x10], 0x10
+        \\mov qword ptr [r11 - 0x10], rax
         \\
     , buf.items);
 }
