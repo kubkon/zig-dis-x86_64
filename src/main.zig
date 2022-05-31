@@ -1,5 +1,5 @@
 const std = @import("std");
-const zig_dis_x86_64 = @import("zig-dis-x86_64");
+const Disassembler = @import("zig-dis-x86_64").Disassembler;
 
 var gpa_alloc = std.heap.GeneralPurposeAllocator(.{}){};
 const gpa = gpa_alloc.allocator();
@@ -21,11 +21,14 @@ pub fn main() !void {
         bytes.appendAssumeCapacity(try std.fmt.parseInt(u8, next_hex, 16));
     }
 
-    const inst = try zig_dis_x86_64.disassembleSingle(bytes.items);
-
     var buf = std.ArrayList(u8).init(gpa);
     defer buf.deinit();
-    try inst.fmtPrint(buf.writer());
+
+    var disassembler = Disassembler.init(bytes.items);
+    while (try disassembler.next()) |inst| {
+        try inst.fmtPrint(buf.writer());
+        try buf.append('\n');
+    }
 
     std.log.warn("disassembled: {s}  {s}", .{ input_hex, buf.items });
 }

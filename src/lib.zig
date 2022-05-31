@@ -428,207 +428,236 @@ const Rex = struct {
 
 pub const Error = error{
     EndOfStream,
-    InputTooShort,
     InvalidRexForEncoding,
     Todo,
 };
 
-pub fn disassembleSingle(code: []const u8) Error!Instruction {
-    if (code.len == 0) return error.InputTooShort;
+pub const Disassembler = struct {
+    code: []const u8,
+    stream: std.io.FixedBufferStream([]const u8),
 
-    var stream = std.io.fixedBufferStream(code);
-    const reader = stream.reader();
+    pub fn init(code: []const u8) Disassembler {
+        return .{
+            .code = code,
+            .stream = std.io.fixedBufferStream(code),
+        };
+    }
 
-    // TODO parse legacy prefixes such as 0x66, etc.
-    const rex: Rex = Rex.parse(try reader.readByte()) orelse blk: {
-        try stream.seekBy(-1);
-        break :blk .{};
-    };
-    const opc = try ParsedOpc.parse(reader);
-    const size = opc.size(rex);
+    pub fn next(self: *Disassembler) Error!?Instruction {
+        const reader = self.stream.reader();
 
-    const data: Instruction.Data = data: {
-        switch (opc.enc) {
-            .oi => {
-                if (rex.r or rex.x) return error.InvalidRexForEncoding;
-                const reg = Register.fromLowEnc(opc.reg, rex.b, size);
-                const imm: u64 = switch (size) {
-                    8 => @bitCast(u64, @intCast(i64, try reader.readInt(i8, .Little))),
-                    16, 32 => @bitCast(u64, @intCast(i64, try reader.readInt(i32, .Little))),
-                    64 => try reader.readInt(u64, .Little),
-                    else => unreachable,
-                };
-                break :data .{
-                    .oi = .{
-                        .reg = reg,
-                        .imm = imm,
-                    },
-                };
-            },
-            .rm => {
-                const modrm_byte = try reader.readByte();
-                const mod: u2 = @truncate(u2, modrm_byte >> 6);
-                const op1: u3 = @truncate(u3, modrm_byte >> 3);
-                const op2: u3 = @truncate(u3, modrm_byte);
+        const next_byte = reader.readByte() catch |err| switch (err) {
+            error.EndOfStream => return null,
+            else => |e| return e,
+        };
 
-                switch (mod) {
-                    0b11 => {
-                        // direct addressing
-                        const reg1 = Register.fromLowEnc(op1, rex.r, size);
-                        const reg2 = Register.fromLowEnc(op2, rex.b, size);
-                        break :data Instruction.Data.rm(reg1, RegisterOrMemory.reg(reg2));
-                    },
-                    0b01 => {
-                        // indirect addressing with an 8bit displacement
-                        if (op2 == 0b100) {
-                            // TODO handle SIB byte addressing
-                            return error.Todo;
-                        }
+        // TODO parse legacy prefixes such as 0x66, etc.
+        const rex: Rex = Rex.parse(next_byte) orelse blk: {
+            try self.stream.seekBy(-1);
+            break :blk .{};
+        };
+        const opc = try ParsedOpc.parse(reader);
+        const size = opc.size(rex);
 
-                        const reg1 = Register.fromLowEnc(op1, rex.r, size);
-                        const reg2 = Register.fromLowEnc(op2, rex.b, 64);
-                        const disp: u32 = @bitCast(u32, @intCast(i32, try reader.readInt(i8, .Little)));
-                        break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
-                            .size = Memory.Size.fromBitSize(size),
-                            .base = .{ .reg = reg2 },
-                            .disp = disp,
-                        }));
-                    },
-                    0b10 => {
-                        // indirect addressing with a 32bit displacement
-                        if (op2 == 0b100) {
-                            // TODO handle SIB byte addressing
-                            return error.Todo;
-                        }
+        const data: Instruction.Data = data: {
+            switch (opc.enc) {
+                .oi => {
+                    if (rex.r or rex.x) return error.InvalidRexForEncoding;
+                    const reg = Register.fromLowEnc(opc.reg, rex.b, size);
+                    const imm: u64 = switch (size) {
+                        8 => @bitCast(u64, @intCast(i64, try reader.readInt(i8, .Little))),
+                        16, 32 => @bitCast(u64, @intCast(i64, try reader.readInt(i32, .Little))),
+                        64 => try reader.readInt(u64, .Little),
+                        else => unreachable,
+                    };
+                    break :data .{
+                        .oi = .{
+                            .reg = reg,
+                            .imm = imm,
+                        },
+                    };
+                },
+                .rm => {
+                    const modrm_byte = try reader.readByte();
+                    const mod: u2 = @truncate(u2, modrm_byte >> 6);
+                    const op1: u3 = @truncate(u3, modrm_byte >> 3);
+                    const op2: u3 = @truncate(u3, modrm_byte);
 
-                        const reg1 = Register.fromLowEnc(op1, rex.r, size);
-                        const reg2 = Register.fromLowEnc(op2, rex.b, 64);
-                        const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
-                        break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
-                            .size = Memory.Size.fromBitSize(size),
-                            .base = .{ .reg = reg2 },
-                            .disp = disp,
-                        }));
-                    },
-                    0b00 => {
-                        // indirect addressing
-                        if (op2 == 0b101) {
-                            // RIP with 32bit displacement
+                    switch (mod) {
+                        0b11 => {
+                            // direct addressing
                             const reg1 = Register.fromLowEnc(op1, rex.r, size);
+                            const reg2 = Register.fromLowEnc(op2, rex.b, size);
+                            break :data Instruction.Data.rm(reg1, RegisterOrMemory.reg(reg2));
+                        },
+                        0b01 => {
+                            // indirect addressing with an 8bit displacement
+                            if (op2 == 0b100) {
+                                // TODO handle SIB byte addressing
+                                return error.Todo;
+                            }
+
+                            const reg1 = Register.fromLowEnc(op1, rex.r, size);
+                            const reg2 = Register.fromLowEnc(op2, rex.b, 64);
+                            const disp: u32 = @bitCast(u32, @intCast(i32, try reader.readInt(i8, .Little)));
+                            break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
+                                .size = Memory.Size.fromBitSize(size),
+                                .base = .{ .reg = reg2 },
+                                .disp = disp,
+                            }));
+                        },
+                        0b10 => {
+                            // indirect addressing with a 32bit displacement
+                            if (op2 == 0b100) {
+                                // TODO handle SIB byte addressing
+                                return error.Todo;
+                            }
+
+                            const reg1 = Register.fromLowEnc(op1, rex.r, size);
+                            const reg2 = Register.fromLowEnc(op2, rex.b, 64);
                             const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
                             break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
                                 .size = Memory.Size.fromBitSize(size),
-                                .base = .rip,
+                                .base = .{ .reg = reg2 },
                                 .disp = disp,
                             }));
-                        }
+                        },
+                        0b00 => {
+                            // indirect addressing
+                            if (op2 == 0b101) {
+                                // RIP with 32bit displacement
+                                const reg1 = Register.fromLowEnc(op1, rex.r, size);
+                                const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                                break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
+                                    .size = Memory.Size.fromBitSize(size),
+                                    .base = .rip,
+                                    .disp = disp,
+                                }));
+                            }
 
-                        if (op2 == 0b100) {
-                            // TODO SIB with disp 0bit
-                            return error.Todo;
-                        }
+                            if (op2 == 0b100) {
+                                // TODO SIB with disp 0bit
+                                return error.Todo;
+                            }
 
-                        const reg1 = Register.fromLowEnc(op1, rex.r, size);
-                        const reg2 = Register.fromLowEnc(op2, rex.b, 64);
-                        break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
-                            .size = Memory.Size.fromBitSize(size),
-                            .base = .{ .reg = reg2 },
-                            .disp = 0,
-                        }));
-                    },
-                }
-            },
-            .mr => {
-                const modrm_byte = try reader.readByte();
-                const mod: u2 = @truncate(u2, modrm_byte >> 6);
-                const op2: u3 = @truncate(u3, modrm_byte >> 3);
-                const op1: u3 = @truncate(u3, modrm_byte);
+                            const reg1 = Register.fromLowEnc(op1, rex.r, size);
+                            const reg2 = Register.fromLowEnc(op2, rex.b, 64);
+                            break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
+                                .size = Memory.Size.fromBitSize(size),
+                                .base = .{ .reg = reg2 },
+                                .disp = 0,
+                            }));
+                        },
+                    }
+                },
+                .mr => {
+                    const modrm_byte = try reader.readByte();
+                    const mod: u2 = @truncate(u2, modrm_byte >> 6);
+                    const op2: u3 = @truncate(u3, modrm_byte >> 3);
+                    const op1: u3 = @truncate(u3, modrm_byte);
 
-                switch (mod) {
-                    0b11 => {
-                        // direct addressing
-                        const reg1 = Register.fromLowEnc(op1, rex.b, size);
-                        const reg2 = Register.fromLowEnc(op2, rex.r, size);
-                        break :data Instruction.Data.mr(RegisterOrMemory.reg(reg1), reg2);
-                    },
-                    0b01 => {
-                        // indirect addressing with an 8bit displacement
-                        if (op2 == 0b100) {
-                            // TODO handle SIB byte addressing
-                            return error.Todo;
-                        }
-
-                        const reg1 = Register.fromLowEnc(op1, rex.b, 64);
-                        const reg2 = Register.fromLowEnc(op2, rex.r, size);
-                        const disp: u32 = @bitCast(u32, @intCast(i32, try reader.readInt(i8, .Little)));
-                        break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
-                            .size = Memory.Size.fromBitSize(size),
-                            .base = .{ .reg = reg1 },
-                            .disp = disp,
-                        }), reg2);
-                    },
-                    0b10 => {
-                        // indirect addressing with a 32bit displacement
-                        if (op2 == 0b100) {
-                            // TODO handle SIB byte addressing
-                            return error.Todo;
-                        }
-
-                        const reg1 = Register.fromLowEnc(op1, rex.b, 64);
-                        const reg2 = Register.fromLowEnc(op2, rex.r, size);
-                        const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
-                        break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
-                            .size = Memory.Size.fromBitSize(size),
-                            .base = .{ .reg = reg1 },
-                            .disp = disp,
-                        }), reg2);
-                    },
-                    0b00 => {
-                        // indirect addressing
-                        if (op2 == 0b101) {
-                            // RIP with 32bit displacement
+                    switch (mod) {
+                        0b11 => {
+                            // direct addressing
                             const reg1 = Register.fromLowEnc(op1, rex.b, size);
+                            const reg2 = Register.fromLowEnc(op2, rex.r, size);
+                            break :data Instruction.Data.mr(RegisterOrMemory.reg(reg1), reg2);
+                        },
+                        0b01 => {
+                            // indirect addressing with an 8bit displacement
+                            if (op2 == 0b100) {
+                                // TODO handle SIB byte addressing
+                                return error.Todo;
+                            }
+
+                            const reg1 = Register.fromLowEnc(op1, rex.b, 64);
+                            const reg2 = Register.fromLowEnc(op2, rex.r, size);
+                            const disp: u32 = @bitCast(u32, @intCast(i32, try reader.readInt(i8, .Little)));
+                            break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
+                                .size = Memory.Size.fromBitSize(size),
+                                .base = .{ .reg = reg1 },
+                                .disp = disp,
+                            }), reg2);
+                        },
+                        0b10 => {
+                            // indirect addressing with a 32bit displacement
+                            if (op2 == 0b100) {
+                                // TODO handle SIB byte addressing
+                                return error.Todo;
+                            }
+
+                            const reg1 = Register.fromLowEnc(op1, rex.b, 64);
+                            const reg2 = Register.fromLowEnc(op2, rex.r, size);
                             const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
                             break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
                                 .size = Memory.Size.fromBitSize(size),
-                                .base = .rip,
+                                .base = .{ .reg = reg1 },
                                 .disp = disp,
-                            }), reg1);
-                        }
+                            }), reg2);
+                        },
+                        0b00 => {
+                            // indirect addressing
+                            if (op2 == 0b101) {
+                                // RIP with 32bit displacement
+                                const reg1 = Register.fromLowEnc(op1, rex.b, size);
+                                const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                                break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
+                                    .size = Memory.Size.fromBitSize(size),
+                                    .base = .rip,
+                                    .disp = disp,
+                                }), reg1);
+                            }
 
-                        if (op2 == 0b100) {
-                            // TODO SIB with disp 0bit
-                            return error.Todo;
-                        }
+                            if (op2 == 0b100) {
+                                // TODO SIB with disp 0bit
+                                return error.Todo;
+                            }
 
-                        const reg1 = Register.fromLowEnc(op1, rex.b, 64);
-                        const reg2 = Register.fromLowEnc(op2, rex.r, size);
-                        break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
-                            .size = Memory.Size.fromBitSize(size),
-                            .base = .{ .reg = reg1 },
-                            .disp = 0,
-                        }), reg2);
-                    },
-                }
-            },
-        }
-    };
+                            const reg1 = Register.fromLowEnc(op1, rex.b, 64);
+                            const reg2 = Register.fromLowEnc(op2, rex.r, size);
+                            break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
+                                .size = Memory.Size.fromBitSize(size),
+                                .base = .{ .reg = reg1 },
+                                .disp = 0,
+                            }), reg2);
+                        },
+                    }
+                },
+            }
+        };
 
-    return Instruction{
-        .tag = opc.tag,
-        .enc = opc.enc,
-        .data = data,
-    };
-}
+        return Instruction{
+            .tag = opc.tag,
+            .enc = opc.enc,
+            .data = data,
+        };
+    }
+};
 
 inline fn sign(i: anytype) @TypeOf(i) {
     return @as(@TypeOf(i), @boolToInt(i > 0)) - @boolToInt(i < 0);
 }
 
 test "disassemble" {
+    var disassembler = Disassembler.init(&.{
+        // zig fmt: off
+        0x40, 0xb7, 0x10,                                          // mov dil, 0x10
+        0x49, 0xbc, 0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0, 0x10, // mov r12, 0x1000000000000000
+        0xb8, 0x0,  0x0,  0x0,  0x10,                              // mov eax, 0x10000000 
+        0x48, 0x8b, 0xd8,                                          // mov rbx, rax
+        0x4d, 0x8b, 0xdc,                                          // mov r11, r12
+        0x49, 0x8b, 0xd4,                                          // mov rdx, r12
+        0x4d, 0x89, 0xdc,                                          // mov r12, r11
+        0x49, 0x89, 0xd4,                                          // mov r12, rdx
+        0x4c, 0x8b, 0x65, 0xf0,                                    // mov r12, qword ptr [rbp - 0x10] 
+        0x48, 0x8b, 0x85, 0x0,  0xf0, 0xff, 0xff,                  // mov rax, qword ptr [rbp - 0x1000]
+        0x48, 0x8b, 0x1d, 0x0,  0x0,  0x0,  0x0,                   // mov rbx, qword ptr [rip + 0x0]
+        0x48, 0x8b, 0x18,                                          // mov rbx, qword ptr [rax]
+        // zig fmt: on
+    });
+
     {
-        // mov dil, 0x10
-        const inst = try disassembleSingle(&.{ 0x40, 0xb7, 0x10 });
+        const inst = (try disassembler.next()).?;
         try testing.expect(inst.tag == .mov);
         try testing.expect(inst.enc == .oi);
         try testing.expect(inst.data.oi.reg == .bh);
@@ -636,8 +665,7 @@ test "disassemble" {
     }
 
     {
-        // mov r12, 0x100000000000000
-        const inst = try disassembleSingle(&.{ 0x49, 0xbc, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x10 });
+        const inst = (try disassembler.next()).?;
         try testing.expect(inst.tag == .mov);
         try testing.expect(inst.enc == .oi);
         try testing.expect(inst.data.oi.reg == .r12);
@@ -645,8 +673,7 @@ test "disassemble" {
     }
 
     {
-        // mov eax, 0x10000000
-        const inst = try disassembleSingle(&.{ 0xb8, 0x0, 0x0, 0x0, 0x10 });
+        const inst = (try disassembler.next()).?;
         try testing.expect(inst.tag == .mov);
         try testing.expect(inst.enc == .oi);
         try testing.expect(inst.data.oi.reg == .eax);
@@ -654,8 +681,7 @@ test "disassemble" {
     }
 
     {
-        // mov rbx, rax
-        const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0xd8 });
+        const inst = (try disassembler.next()).?;
         try testing.expect(inst.tag == .mov);
         try testing.expect(inst.enc == .rm);
         try testing.expect(inst.data.rm.reg == .rbx);
@@ -663,8 +689,7 @@ test "disassemble" {
     }
 
     {
-        // mov r11, r12
-        const inst = try disassembleSingle(&.{ 0x4d, 0x8b, 0xdc });
+        const inst = (try disassembler.next()).?;
         try testing.expect(inst.tag == .mov);
         try testing.expect(inst.enc == .rm);
         try testing.expect(inst.data.rm.reg == .r11);
@@ -672,8 +697,7 @@ test "disassemble" {
     }
 
     {
-        // mov rdx, r12
-        const inst = try disassembleSingle(&.{ 0x49, 0x8b, 0xd4 });
+        const inst = (try disassembler.next()).?;
         try testing.expect(inst.tag == .mov);
         try testing.expect(inst.enc == .rm);
         try testing.expect(inst.data.rm.reg == .rdx);
@@ -681,8 +705,7 @@ test "disassemble" {
     }
 
     {
-        // mov r12, r11
-        const inst = try disassembleSingle(&.{ 0x4d, 0x89, 0xdc });
+        const inst = (try disassembler.next()).?;
         try testing.expect(inst.tag == .mov);
         try testing.expect(inst.enc == .mr);
         try testing.expect(inst.data.mr.reg_or_mem.reg == .r12);
@@ -690,8 +713,7 @@ test "disassemble" {
     }
 
     {
-        // mov r12, rdx
-        const inst = try disassembleSingle(&.{ 0x49, 0x89, 0xd4 });
+        const inst = (try disassembler.next()).?;
         try testing.expect(inst.tag == .mov);
         try testing.expect(inst.enc == .mr);
         try testing.expect(inst.data.mr.reg_or_mem.reg == .r12);
@@ -699,8 +721,7 @@ test "disassemble" {
     }
 
     {
-        // mov r12, qword ptr [rbp - 0x10]
-        const inst = try disassembleSingle(&.{ 0x4c, 0x8b, 0x65, 0xf0 });
+        const inst = (try disassembler.next()).?;
         try testing.expect(inst.tag == .mov);
         try testing.expect(inst.enc == .rm);
         try testing.expect(inst.data.rm.reg == .r12);
@@ -711,8 +732,7 @@ test "disassemble" {
     }
 
     {
-        // mov rax, qword ptr [rbp - 0x1000]
-        const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x85, 0x0, 0xf0, 0xff, 0xff });
+        const inst = (try disassembler.next()).?;
         try testing.expect(inst.tag == .mov);
         try testing.expect(inst.enc == .rm);
         try testing.expect(inst.data.rm.reg == .rax);
@@ -723,7 +743,7 @@ test "disassemble" {
     }
 
     {
-        const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x1d, 0x0, 0x0, 0x0, 0x0 });
+        const inst = (try disassembler.next()).?;
         try testing.expect(inst.tag == .mov);
         try testing.expect(inst.enc == .rm);
         try testing.expect(inst.data.rm.reg == .rbx);
@@ -734,7 +754,7 @@ test "disassemble" {
     }
 
     {
-        const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x18 });
+        const inst = (try disassembler.next()).?;
         try testing.expect(inst.tag == .mov);
         try testing.expect(inst.enc == .rm);
         try testing.expect(inst.data.rm.reg == .rbx);
@@ -747,49 +767,30 @@ test "disassemble" {
 
 test "disassemble - mnemonic" {
     const gpa = testing.allocator;
+    var disassembler = Disassembler.init(&.{
+        // zig fmt: off
+        0x48, 0xb8, 0x10, 0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,
+        0x41, 0xbc, 0xf0, 0xff, 0xff, 0xff,
+        0x4c, 0x8b, 0x65, 0xf0,
+        0x48, 0x8b, 0x85, 0x0,  0xf0, 0xff, 0xff,
+        0x48, 0x8b, 0x18,
+        // zig fmt: on
+    });
 
-    {
-        // movabs rax, 0x10
-        const inst = try disassembleSingle(&.{ 0x48, 0xb8, 0x10, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0 });
-        var buf = std.ArrayList(u8).init(gpa);
-        defer buf.deinit();
+    var buf = std.ArrayList(u8).init(gpa);
+    defer buf.deinit();
+
+    while (try disassembler.next()) |inst| {
         try inst.fmtPrint(buf.writer());
-        try testing.expectEqualStrings("movabs rax, 0x10", buf.items);
+        try buf.append('\n');
     }
 
-    {
-        // mov r12d, -0x10
-        const inst = try disassembleSingle(&.{ 0x41, 0xbc, 0xf0, 0xff, 0xff, 0xff });
-        var buf = std.ArrayList(u8).init(gpa);
-        defer buf.deinit();
-        try inst.fmtPrint(buf.writer());
-        try testing.expectEqualStrings("mov r12d, -0x10", buf.items);
-    }
-
-    {
-        // mov r12, qword ptr [rbp - 0x10]
-        const inst = try disassembleSingle(&.{ 0x4c, 0x8b, 0x65, 0xf0 });
-        var buf = std.ArrayList(u8).init(gpa);
-        defer buf.deinit();
-        try inst.fmtPrint(buf.writer());
-        try testing.expectEqualStrings("mov r12, qword ptr [rbp - 0x10]", buf.items);
-    }
-
-    {
-        // mov rax, qword ptr [rbp - 0x1000]
-        const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x85, 0x0, 0xf0, 0xff, 0xff });
-        var buf = std.ArrayList(u8).init(gpa);
-        defer buf.deinit();
-        try inst.fmtPrint(buf.writer());
-        try testing.expectEqualStrings("mov rax, qword ptr [rbp - 0x1000]", buf.items);
-    }
-
-    {
-        // mov rbx, qword ptr [rax]
-        const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x18 });
-        var buf = std.ArrayList(u8).init(gpa);
-        defer buf.deinit();
-        try inst.fmtPrint(buf.writer());
-        try testing.expectEqualStrings("mov rbx, qword ptr [rax]", buf.items);
-    }
+    try testing.expectEqualStrings(
+        \\movabs rax, 0x10
+        \\mov r12d, -0x10
+        \\mov r12, qword ptr [rbp - 0x10]
+        \\mov rax, qword ptr [rbp - 0x1000]
+        \\mov rbx, qword ptr [rax]
+        \\
+    , buf.items);
 }
