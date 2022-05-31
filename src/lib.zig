@@ -20,6 +20,18 @@ pub const Register = enum(u7) {
     r8b, r9b, r10b, r11b, r12b, r13b, r14b, r15b,
     // zig fmt: on
 
+    pub fn fromLowEnc(low_enc: u3, is_extended: bool, bitsize: u7) Register {
+        const reg_id: u4 = @intCast(u4, @boolToInt(is_extended)) << 3 | low_enc;
+        const unsized = @intToEnum(Register, reg_id);
+        return switch (bitsize) {
+            8 => unsized.to8(),
+            16 => unsized.to16(),
+            32 => unsized.to32(),
+            64 => unsized.to64(),
+            else => unreachable,
+        };
+    }
+
     pub fn id(self: Register) u4 {
         return switch (@enumToInt(self)) {
             0...63 => @truncate(u4, @enumToInt(self)),
@@ -63,11 +75,6 @@ pub const Register = enum(u7) {
 
     pub fn to8(self: Register) Register {
         return @intToEnum(Register, @as(u8, self.enc()) + 48);
-    }
-
-    pub fn fromLowEnc(low_enc: u3, is_extended: bool) Register {
-        const reg_id: u4 = @intCast(u4, @boolToInt(is_extended)) << 3 | low_enc;
-        return @intToEnum(Register, reg_id);
     }
 
     pub fn fmtPrint(self: Register, writer: anytype) !void {
@@ -167,11 +174,11 @@ pub const Memory = struct {
         dword = 0b10,
         qword = 0b11,
 
-        fn new(bit_size: u64) Size {
+        fn fromBitSize(bit_size: u64) Size {
             return @intToEnum(Size, math.log2_int(u4, @intCast(u4, @divExact(bit_size, 8))));
         }
 
-        fn sizeInBits(s: Size) u64 {
+        fn bitSize(s: Size) u64 {
             return 8 * (math.powi(u8, 2, @enumToInt(s)) catch unreachable);
         }
     };
@@ -227,11 +234,7 @@ pub const RegisterOrMemory = union(enum) {
 pub const Instruction = struct {
     tag: Tag,
     enc: Enc,
-    data: union {
-        oi: Oi,
-        mr: Mr,
-        rm: Rm,
-    },
+    data: Data,
 
     pub const Tag = enum {
         mov,
@@ -241,6 +244,12 @@ pub const Instruction = struct {
         oi,
         mr,
         rm,
+    };
+
+    pub const Data = union {
+        oi: Oi,
+        mr: Mr,
+        rm: Rm,
     };
 
     pub const Oi = struct {
@@ -312,6 +321,37 @@ const ParsedOpc = struct {
     is_byte_sized: bool,
     reg: u3,
 
+    fn parse(reader: anytype) Error!ParsedOpc {
+        const next_byte = try reader.readByte();
+        switch (next_byte) {
+            // mov
+            0x88 => return ParsedOpc.new(.mov, .mr, true, 0),
+            0x89 => return ParsedOpc.new(.mov, .mr, false, 0),
+            0x8a => return ParsedOpc.new(.mov, .rm, true, 0),
+            0x8b => return ParsedOpc.new(.mov, .rm, false, 0),
+            0x8c => return ParsedOpc.new(.mov, .mr, false, 0),
+            0x8e => return ParsedOpc.new(.mov, .rm, false, 0),
+            0xa0 => return error.Todo,
+            0xa1 => return error.Todo,
+            0xa2 => return error.Todo,
+            0xa3 => return error.Todo,
+            0xc6 => return error.Todo,
+            0xc7 => return error.Todo,
+            // remaining
+            else => {},
+        }
+
+        // check for OI encoding
+        const mask: u8 = 0b1111_1000;
+        switch (next_byte & mask) {
+            // mov
+            0xb0 => return ParsedOpc.new(.mov, .oi, true, @truncate(u3, next_byte)),
+            0xb8 => return ParsedOpc.new(.mov, .oi, false, @truncate(u3, next_byte)),
+            // remaining
+            else => return error.Todo,
+        }
+    }
+
     fn new(tag: Instruction.Tag, enc: Instruction.Enc, is_byte_sized: bool, reg: u3) ParsedOpc {
         return .{
             .tag = tag,
@@ -320,38 +360,14 @@ const ParsedOpc = struct {
             .reg = reg,
         };
     }
+
+    fn size(self: ParsedOpc, rex: Rex) u7 {
+        if (self.is_byte_sized) return 8;
+        if (rex.w) return 64;
+        // TODO handle legacy prefixes such as 0x66.
+        return 32;
+    }
 };
-
-fn parseOpcode(reader: anytype) Error!ParsedOpc {
-    const next_byte = try reader.readByte();
-    switch (next_byte) {
-        // mov
-        0x88 => return ParsedOpc.new(.mov, .mr, true, 0),
-        0x89 => return ParsedOpc.new(.mov, .mr, false, 0),
-        0x8a => return ParsedOpc.new(.mov, .rm, true, 0),
-        0x8b => return ParsedOpc.new(.mov, .rm, false, 0),
-        0x8c => return ParsedOpc.new(.mov, .mr, false, 0),
-        0x8e => return ParsedOpc.new(.mov, .rm, false, 0),
-        0xa0 => return error.Todo,
-        0xa1 => return error.Todo,
-        0xa2 => return error.Todo,
-        0xa3 => return error.Todo,
-        0xc6 => return error.Todo,
-        0xc7 => return error.Todo,
-        // remaining
-        else => {},
-    }
-
-    // check for OI encoding
-    const mask: u8 = 0b1111_1000;
-    switch (next_byte & mask) {
-        // mov
-        0xb0 => return ParsedOpc.new(.mov, .oi, true, @truncate(u3, next_byte)),
-        0xb8 => return ParsedOpc.new(.mov, .oi, false, @truncate(u3, next_byte)),
-        // remaining
-        else => return error.Todo,
-    }
-}
 
 const Rex = struct {
     w: bool = false,
@@ -398,260 +414,162 @@ pub fn disassembleSingle(code: []const u8) Error!Instruction {
     const reader = stream.reader();
 
     // TODO parse legacy prefixes such as 0x66, etc.
-    const rex = Rex.parse(try reader.readByte());
-    if (rex == null) {
+    const rex: Rex = Rex.parse(try reader.readByte()) orelse blk: {
         try stream.seekBy(-1);
-    }
-    const opc = try parseOpcode(reader);
+        break :blk .{};
+    };
+    const opc = try ParsedOpc.parse(reader);
+    const size = opc.size(rex);
 
-    switch (opc.enc) {
-        .oi => {
-            var is_extended: bool = false;
-            var is_wide: bool = false;
-            if (rex) |r| {
-                if (r.r or r.x) return error.InvalidRexForEncoding;
-                is_extended = r.b;
-                is_wide = r.w;
-            }
-            const reg_unsized = Register.fromLowEnc(opc.reg, is_extended);
-            const reg: Register = reg: {
-                if (opc.is_byte_sized) break :reg reg_unsized.to8();
-                if (is_wide) break :reg reg_unsized.to64();
-                break :reg reg_unsized.to32();
-            };
-            const imm: u64 = imm: {
-                if (opc.is_byte_sized) break :imm @bitCast(u64, @intCast(i64, try reader.readInt(i8, .Little)));
-                if (is_wide) break :imm try reader.readInt(u64, .Little);
-                break :imm @bitCast(u64, @intCast(i64, try reader.readInt(i32, .Little)));
-            };
-
-            return Instruction{
-                .tag = opc.tag,
-                .enc = opc.enc,
-                .data = .{
+    const data: Instruction.Data = data: {
+        switch (opc.enc) {
+            .oi => {
+                if (rex.r or rex.x) return error.InvalidRexForEncoding;
+                const reg = Register.fromLowEnc(opc.reg, rex.b, size);
+                const imm: u64 = switch (size) {
+                    8 => @bitCast(u64, @intCast(i64, try reader.readInt(i8, .Little))),
+                    16, 32 => @bitCast(u64, @intCast(i64, try reader.readInt(i32, .Little))),
+                    64 => try reader.readInt(u64, .Little),
+                    else => unreachable,
+                };
+                break :data .{
                     .oi = .{
                         .reg = reg,
                         .imm = imm,
                     },
-                },
-            };
-        },
-        .rm => {
-            const is_wide: bool = if (rex) |r| r.w else false;
-            const modrm_byte = try reader.readByte();
-            const mod: u2 = @truncate(u2, modrm_byte >> 6);
-            const op1: u3 = @truncate(u3, modrm_byte >> 3);
-            const op2: u3 = @truncate(u3, modrm_byte);
+                };
+            },
+            .rm => {
+                const modrm_byte = try reader.readByte();
+                const mod: u2 = @truncate(u2, modrm_byte >> 6);
+                const op1: u3 = @truncate(u3, modrm_byte >> 3);
+                const op2: u3 = @truncate(u3, modrm_byte);
 
-            switch (mod) {
-                0b11 => {
-                    // direct addressing
-                    const reg1_unsized = Register.fromLowEnc(op1, if (rex) |r| r.r else false);
-                    const reg1: Register = reg: {
-                        if (opc.is_byte_sized) break :reg reg1_unsized.to8();
-                        if (is_wide) break :reg reg1_unsized.to64();
-                        break :reg reg1_unsized.to32();
-                    };
-                    const reg2_unsized = Register.fromLowEnc(op2, if (rex) |r| r.b else false);
-                    const reg2: Register = reg: {
-                        if (opc.is_byte_sized) break :reg reg2_unsized.to8();
-                        if (is_wide) break :reg reg2_unsized.to64();
-                        break :reg reg2_unsized.to32();
-                    };
-                    return Instruction{
-                        .tag = opc.tag,
-                        .enc = opc.enc,
-                        .data = .{
+                switch (mod) {
+                    0b11 => {
+                        // direct addressing
+                        const reg1 = Register.fromLowEnc(op1, rex.r, size);
+                        const reg2 = Register.fromLowEnc(op2, rex.b, size);
+                        break :data .{
                             .rm = .{
                                 .reg = reg1,
                                 .reg_or_mem = .{ .reg = reg2 },
                             },
-                        },
-                    };
-                },
-                0b01 => {
-                    // indirect addressing with an 8bit displacement
-                    if (op2 == 0b100) {
-                        // TODO handle SIB byte addressing
-                        return error.Todo;
-                    }
-
-                    const reg1_unsized = Register.fromLowEnc(op1, if (rex) |r| r.r else false);
-                    const reg1: Register = reg: {
-                        if (opc.is_byte_sized) break :reg reg1_unsized.to8();
-                        if (is_wide) break :reg reg1_unsized.to64();
-                        break :reg reg1_unsized.to32();
-                    };
-                    const reg2_unsized = Register.fromLowEnc(op2, if (rex) |r| r.b else false);
-                    const reg2: Register = reg2_unsized.to64();
-                    const size: Memory.Size = size: {
-                        if (opc.is_byte_sized) break :size .byte;
-                        if (is_wide) break :size .qword;
-                        break :size .dword;
-                    };
-                    const disp: u32 = @bitCast(u32, @intCast(i32, try reader.readInt(i8, .Little)));
-                    const mem = Memory{
-                        .size = size,
-                        .base = .{ .reg = reg2 },
-                        .disp = disp,
-                    };
-
-                    return Instruction{
-                        .tag = opc.tag,
-                        .enc = opc.enc,
-                        .data = .{
-                            .rm = .{
-                                .reg = reg1,
-                                .reg_or_mem = .{ .mem = mem },
-                            },
-                        },
-                    };
-                },
-                0b10 => {
-                    // indirect addressing with a 32bit displacement
-                    if (op2 == 0b100) {
-                        // TODO handle SIB byte addressing
-                        return error.Todo;
-                    }
-
-                    const reg1_unsized = Register.fromLowEnc(op1, if (rex) |r| r.r else false);
-                    const reg1: Register = reg: {
-                        if (opc.is_byte_sized) break :reg reg1_unsized.to8();
-                        if (is_wide) break :reg reg1_unsized.to64();
-                        break :reg reg1_unsized.to32();
-                    };
-                    const reg2_unsized = Register.fromLowEnc(op2, if (rex) |r| r.b else false);
-                    const reg2: Register = reg2_unsized.to64();
-                    const size: Memory.Size = size: {
-                        if (opc.is_byte_sized) break :size .byte;
-                        if (is_wide) break :size .qword;
-                        break :size .dword;
-                    };
-                    const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
-                    const mem = Memory{
-                        .size = size,
-                        .base = .{ .reg = reg2 },
-                        .disp = disp,
-                    };
-
-                    return Instruction{
-                        .tag = opc.tag,
-                        .enc = opc.enc,
-                        .data = .{
-                            .rm = .{
-                                .reg = reg1,
-                                .reg_or_mem = .{ .mem = mem },
-                            },
-                        },
-                    };
-                },
-                0b00 => {
-                    // indirect addressing
-                    if (op2 == 0b101) {
-                        // RIP with 32bit displacement
-                        const reg1_unsized = Register.fromLowEnc(op1, if (rex) |r| r.r else false);
-                        const reg1: Register = reg: {
-                            if (opc.is_byte_sized) break :reg reg1_unsized.to8();
-                            if (is_wide) break :reg reg1_unsized.to64();
-                            break :reg reg1_unsized.to32();
                         };
-                        const size: Memory.Size = size: {
-                            if (opc.is_byte_sized) break :size .byte;
-                            if (is_wide) break :size .qword;
-                            break :size .dword;
-                        };
-                        const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                    },
+                    0b01 => {
+                        // indirect addressing with an 8bit displacement
+                        if (op2 == 0b100) {
+                            // TODO handle SIB byte addressing
+                            return error.Todo;
+                        }
+
+                        const reg1 = Register.fromLowEnc(op1, rex.r, size);
+                        const reg2 = Register.fromLowEnc(op2, rex.b, 64);
+                        const disp: u32 = @bitCast(u32, @intCast(i32, try reader.readInt(i8, .Little)));
                         const mem = Memory{
-                            .size = size,
-                            .base = .rip,
+                            .size = Memory.Size.fromBitSize(size),
+                            .base = .{ .reg = reg2 },
                             .disp = disp,
                         };
+                        break :data .{
+                            .rm = .{
+                                .reg = reg1,
+                                .reg_or_mem = .{ .mem = mem },
+                            },
+                        };
+                    },
+                    0b10 => {
+                        // indirect addressing with a 32bit displacement
+                        if (op2 == 0b100) {
+                            // TODO handle SIB byte addressing
+                            return error.Todo;
+                        }
 
-                        return Instruction{
-                            .tag = opc.tag,
-                            .enc = opc.enc,
-                            .data = .{
+                        const reg1 = Register.fromLowEnc(op1, rex.r, size);
+                        const reg2 = Register.fromLowEnc(op2, rex.b, 64);
+                        const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                        const mem = Memory{
+                            .size = Memory.Size.fromBitSize(size),
+                            .base = .{ .reg = reg2 },
+                            .disp = disp,
+                        };
+                        break :data .{
+                            .rm = .{
+                                .reg = reg1,
+                                .reg_or_mem = .{ .mem = mem },
+                            },
+                        };
+                    },
+                    0b00 => {
+                        // indirect addressing
+                        if (op2 == 0b101) {
+                            // RIP with 32bit displacement
+                            const reg1 = Register.fromLowEnc(op1, rex.r, size);
+                            const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                            const mem = Memory{
+                                .size = Memory.Size.fromBitSize(size),
+                                .base = .rip,
+                                .disp = disp,
+                            };
+                            break :data .{
                                 .rm = .{
                                     .reg = reg1,
                                     .reg_or_mem = .{ .mem = mem },
                                 },
-                            },
+                            };
+                        }
+
+                        if (op2 == 0b100) {
+                            // TODO SIB with disp 0bit
+                            return error.Todo;
+                        }
+
+                        const reg1 = Register.fromLowEnc(op1, rex.r, size);
+                        const reg2 = Register.fromLowEnc(op2, rex.b, 64);
+                        const mem = Memory{
+                            .size = Memory.Size.fromBitSize(size),
+                            .base = .{ .reg = reg2 },
+                            .disp = 0,
                         };
-                    }
-                    if (op2 == 0b100) {
-                        // TODO SIB with disp 0bit
-                        return error.Todo;
-                    }
-
-                    const reg1_unsized = Register.fromLowEnc(op1, if (rex) |r| r.r else false);
-                    const reg1: Register = reg: {
-                        if (opc.is_byte_sized) break :reg reg1_unsized.to8();
-                        if (is_wide) break :reg reg1_unsized.to64();
-                        break :reg reg1_unsized.to32();
-                    };
-                    const reg2_unsized = Register.fromLowEnc(op2, if (rex) |r| r.b else false);
-                    const reg2: Register = reg2_unsized.to64();
-                    const size: Memory.Size = size: {
-                        if (opc.is_byte_sized) break :size .byte;
-                        if (is_wide) break :size .qword;
-                        break :size .dword;
-                    };
-                    const mem = Memory{
-                        .size = size,
-                        .base = .{ .reg = reg2 },
-                        .disp = 0,
-                    };
-
-                    return Instruction{
-                        .tag = opc.tag,
-                        .enc = opc.enc,
-                        .data = .{
+                        break :data .{
                             .rm = .{
                                 .reg = reg1,
                                 .reg_or_mem = .{ .mem = mem },
                             },
-                        },
-                    };
-                },
-            }
-        },
-        .mr => {
-            const is_wide: bool = if (rex) |r| r.w else false;
-            const modrm_byte = try reader.readByte();
-            const mod: u2 = @truncate(u2, modrm_byte >> 6);
-            const op2: u3 = @truncate(u3, modrm_byte >> 3);
-            const op1: u3 = @truncate(u3, modrm_byte);
+                        };
+                    },
+                }
+            },
+            .mr => {
+                const modrm_byte = try reader.readByte();
+                const mod: u2 = @truncate(u2, modrm_byte >> 6);
+                const op2: u3 = @truncate(u3, modrm_byte >> 3);
+                const op1: u3 = @truncate(u3, modrm_byte);
 
-            switch (mod) {
-                0b11 => {
-                    // direct addressing
-                    const reg1_unsized = Register.fromLowEnc(op1, if (rex) |r| r.b else false);
-                    const reg1: Register = reg: {
-                        if (opc.is_byte_sized) break :reg reg1_unsized.to8();
-                        if (is_wide) break :reg reg1_unsized.to64();
-                        break :reg reg1_unsized.to32();
-                    };
-                    const reg2_unsized = Register.fromLowEnc(op2, if (rex) |r| r.r else false);
-                    const reg2: Register = reg: {
-                        if (opc.is_byte_sized) break :reg reg2_unsized.to8();
-                        if (is_wide) break :reg reg2_unsized.to64();
-                        break :reg reg2_unsized.to32();
-                    };
-                    return Instruction{
-                        .tag = opc.tag,
-                        .enc = opc.enc,
-                        .data = .{
+                switch (mod) {
+                    0b11 => {
+                        // direct addressing
+                        const reg1 = Register.fromLowEnc(op1, rex.b, size);
+                        const reg2 = Register.fromLowEnc(op2, rex.r, size);
+                        break :data .{
                             .mr = .{
                                 .reg_or_mem = .{ .reg = reg1 },
                                 .reg = reg2,
                             },
-                        },
-                    };
-                },
-                else => return error.Todo,
-            }
-        },
-    }
+                        };
+                    },
+                    else => return error.Todo,
+                }
+            },
+        }
+    };
+
+    return Instruction{
+        .tag = opc.tag,
+        .enc = opc.enc,
+        .data = data,
+    };
 }
 
 inline fn sign(i: anytype) @TypeOf(i) {
