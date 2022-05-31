@@ -511,6 +511,44 @@ pub fn disassembleSingle(code: []const u8) Error!Instruction {
                         },
                     };
                 },
+                0b10 => {
+                    // indirect addressing with a 32bit displacement
+                    if (op2 == 0b100) {
+                        // TODO handle SIB byte addressing
+                        return error.Todo;
+                    }
+
+                    const reg1_unsized = Register.fromLowEnc(op1, if (rex) |r| r.r else false);
+                    const reg1: Register = reg: {
+                        if (opc.is_byte_sized) break :reg reg1_unsized.to8();
+                        if (is_wide) break :reg reg1_unsized.to64();
+                        break :reg reg1_unsized.to32();
+                    };
+                    const reg2_unsized = Register.fromLowEnc(op2, if (rex) |r| r.b else false);
+                    const reg2: Register = reg2_unsized.to64();
+                    const size: Memory.Size = size: {
+                        if (opc.is_byte_sized) break :size .byte;
+                        if (is_wide) break :size .qword;
+                        break :size .dword;
+                    };
+                    const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                    const mem = Memory{
+                        .size = size,
+                        .base = .{ .reg = reg2 },
+                        .disp = disp,
+                    };
+
+                    return Instruction{
+                        .tag = opc.tag,
+                        .enc = opc.enc,
+                        .data = .{
+                            .rm = .{
+                                .reg = reg1,
+                                .reg_or_mem = .{ .mem = mem },
+                            },
+                        },
+                    };
+                },
                 else => return error.Todo,
             }
         },
@@ -642,6 +680,18 @@ test "disassemble" {
         try testing.expect(@intCast(i8, @bitCast(i32, inst.data.rm.reg_or_mem.mem.disp)) == -0x10);
     }
 
+    {
+        // mov rax, qword ptr [rbp - 0x1000]
+        const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x85, 0x0, 0xf0, 0xff, 0xff });
+        try testing.expect(inst.tag == .mov);
+        try testing.expect(inst.enc == .rm);
+        try testing.expect(inst.data.rm.reg == .rax);
+        try testing.expect(inst.data.rm.reg_or_mem.mem.size == .qword);
+        try testing.expect(inst.data.rm.reg_or_mem.mem.scale_index == null);
+        try testing.expect(inst.data.rm.reg_or_mem.mem.base.reg == .rbp);
+        try testing.expect(@bitCast(i32, inst.data.rm.reg_or_mem.mem.disp) == -0x1000);
+    }
+
     // {
     //     const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x1d, 0x0, 0x0, 0x0, 0x0 });
     //     std.log.warn("inst = {}", .{inst});
@@ -671,5 +721,13 @@ test "disassemble - mnemonic" {
         const as = try inst.toAsmAlloc(testing.allocator);
         defer testing.allocator.free(as);
         try testing.expectEqualStrings("mov r12, qword ptr [rbp - 0x10]", as);
+    }
+
+    {
+        // mov rax, qword ptr [rbp - 0x1000]
+        const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x85, 0x0, 0xf0, 0xff, 0xff });
+        const as = try inst.toAsmAlloc(testing.allocator);
+        defer testing.allocator.free(as);
+        try testing.expectEqualStrings("mov rax, qword ptr [rbp - 0x1000]", as);
     }
 }
