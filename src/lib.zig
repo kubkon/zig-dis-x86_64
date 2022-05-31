@@ -193,16 +193,18 @@ pub const Memory = struct {
             .ds => try writer.writeAll("ds:"),
         }
 
-        const disp_signed: i32 = @bitCast(i32, self.disp);
-        const disp_abs: u32 = @intCast(u32, try std.math.absInt(disp_signed));
-        if (sign(disp_signed) < 0) {
-            try writer.writeAll(" - ");
-        } else {
-            try writer.writeAll(" + ");
-        }
-        switch (self.size) {
-            .byte => try writer.print("0x{x}", .{@intCast(u8, disp_abs)}),
-            else => try writer.print("0x{x}", .{disp_abs}),
+        if (self.disp > 0) {
+            const disp_signed: i32 = @bitCast(i32, self.disp);
+            const disp_abs: u32 = @intCast(u32, try std.math.absInt(disp_signed));
+            if (sign(disp_signed) < 0) {
+                try writer.writeAll(" - ");
+            } else {
+                try writer.writeAll(" + ");
+            }
+            switch (self.size) {
+                .byte => try writer.print("0x{x}", .{@intCast(u8, disp_abs)}),
+                else => try writer.print("0x{x}", .{disp_abs}),
+            }
         }
 
         try writer.writeByte(']');
@@ -553,7 +555,7 @@ pub fn disassembleSingle(code: []const u8) Error!Instruction {
                     // indirect addressing
                     if (op2 == 0b101) {
                         // RIP with 32bit displacement
-                        const reg1_unsized = Register.fromLowEnc(op1, if (rex) |r| r.b else false);
+                        const reg1_unsized = Register.fromLowEnc(op1, if (rex) |r| r.r else false);
                         const reg1: Register = reg: {
                             if (opc.is_byte_sized) break :reg reg1_unsized.to8();
                             if (is_wide) break :reg reg1_unsized.to64();
@@ -582,8 +584,40 @@ pub fn disassembleSingle(code: []const u8) Error!Instruction {
                             },
                         };
                     }
+                    if (op2 == 0b100) {
+                        // TODO SIB with disp 0bit
+                        return error.Todo;
+                    }
 
-                    return error.Todo;
+                    const reg1_unsized = Register.fromLowEnc(op1, if (rex) |r| r.r else false);
+                    const reg1: Register = reg: {
+                        if (opc.is_byte_sized) break :reg reg1_unsized.to8();
+                        if (is_wide) break :reg reg1_unsized.to64();
+                        break :reg reg1_unsized.to32();
+                    };
+                    const reg2_unsized = Register.fromLowEnc(op2, if (rex) |r| r.b else false);
+                    const reg2: Register = reg2_unsized.to64();
+                    const size: Memory.Size = size: {
+                        if (opc.is_byte_sized) break :size .byte;
+                        if (is_wide) break :size .qword;
+                        break :size .dword;
+                    };
+                    const mem = Memory{
+                        .size = size,
+                        .base = .{ .reg = reg2 },
+                        .disp = 0,
+                    };
+
+                    return Instruction{
+                        .tag = opc.tag,
+                        .enc = opc.enc,
+                        .data = .{
+                            .rm = .{
+                                .reg = reg1,
+                                .reg_or_mem = .{ .mem = mem },
+                            },
+                        },
+                    };
                 },
             }
         },
@@ -737,6 +771,17 @@ test "disassemble" {
         try testing.expect(inst.data.rm.reg_or_mem.mem.base == .rip);
         try testing.expect(@bitCast(i32, inst.data.rm.reg_or_mem.mem.disp) == 0x0);
     }
+
+    {
+        const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x18 });
+        try testing.expect(inst.tag == .mov);
+        try testing.expect(inst.enc == .rm);
+        try testing.expect(inst.data.rm.reg == .rbx);
+        try testing.expect(inst.data.rm.reg_or_mem.mem.size == .qword);
+        try testing.expect(inst.data.rm.reg_or_mem.mem.scale_index == null);
+        try testing.expect(inst.data.rm.reg_or_mem.mem.base.reg == .rax);
+        try testing.expect(@bitCast(i32, inst.data.rm.reg_or_mem.mem.disp) == 0);
+    }
 }
 
 test "disassemble - mnemonic" {
@@ -770,5 +815,13 @@ test "disassemble - mnemonic" {
         const as = try inst.toAsmAlloc(testing.allocator);
         defer testing.allocator.free(as);
         try testing.expectEqualStrings("mov rax, qword ptr [rbp - 0x1000]", as);
+    }
+
+    {
+        // mov rbx, qword ptr [rax]
+        const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x18 });
+        const as = try inst.toAsmAlloc(testing.allocator);
+        defer testing.allocator.free(as);
+        try testing.expectEqualStrings("mov rbx, qword ptr [rax]", as);
     }
 }
