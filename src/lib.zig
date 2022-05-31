@@ -159,7 +159,7 @@ pub const Memory = struct {
     base: union(enum) {
         reg: Register,
         rip: void,
-        ds: void, // TODO
+        seg: void, // TODO
     },
     disp: u32,
 
@@ -198,7 +198,7 @@ pub const Memory = struct {
         switch (self.base) {
             .reg => |r| try r.fmtPrint(writer),
             .rip => try writer.writeAll("rip"),
-            .ds => unreachable, // TODO handle segment registers
+            .seg => unreachable, // TODO handle segment registers
         }
 
         if (self.disp > 0) {
@@ -222,6 +222,14 @@ pub const Memory = struct {
 pub const RegisterOrMemory = union(enum) {
     reg: Register,
     mem: Memory,
+
+    fn reg(register: Register) RegisterOrMemory {
+        return .{ .reg = register };
+    }
+
+    fn mem(memory: Memory) RegisterOrMemory {
+        return .{ .mem = memory };
+    }
 
     fn fmtPrint(self: RegisterOrMemory, writer: anytype) !void {
         switch (self) {
@@ -250,6 +258,24 @@ pub const Instruction = struct {
         oi: Oi,
         mr: Mr,
         rm: Rm,
+
+        fn rm(reg: Register, reg_or_mem: RegisterOrMemory) Data {
+            return .{
+                .rm = .{
+                    .reg = reg,
+                    .reg_or_mem = reg_or_mem,
+                },
+            };
+        }
+
+        fn mr(reg_or_mem: RegisterOrMemory, reg: Register) Data {
+            return .{
+                .mr = .{
+                    .reg_or_mem = reg_or_mem,
+                    .reg = reg,
+                },
+            };
+        }
     };
 
     pub const Oi = struct {
@@ -450,12 +476,7 @@ pub fn disassembleSingle(code: []const u8) Error!Instruction {
                         // direct addressing
                         const reg1 = Register.fromLowEnc(op1, rex.r, size);
                         const reg2 = Register.fromLowEnc(op2, rex.b, size);
-                        break :data .{
-                            .rm = .{
-                                .reg = reg1,
-                                .reg_or_mem = .{ .reg = reg2 },
-                            },
-                        };
+                        break :data Instruction.Data.rm(reg1, RegisterOrMemory.reg(reg2));
                     },
                     0b01 => {
                         // indirect addressing with an 8bit displacement
@@ -467,17 +488,11 @@ pub fn disassembleSingle(code: []const u8) Error!Instruction {
                         const reg1 = Register.fromLowEnc(op1, rex.r, size);
                         const reg2 = Register.fromLowEnc(op2, rex.b, 64);
                         const disp: u32 = @bitCast(u32, @intCast(i32, try reader.readInt(i8, .Little)));
-                        const mem = Memory{
+                        break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
                             .size = Memory.Size.fromBitSize(size),
                             .base = .{ .reg = reg2 },
                             .disp = disp,
-                        };
-                        break :data .{
-                            .rm = .{
-                                .reg = reg1,
-                                .reg_or_mem = .{ .mem = mem },
-                            },
-                        };
+                        }));
                     },
                     0b10 => {
                         // indirect addressing with a 32bit displacement
@@ -489,17 +504,11 @@ pub fn disassembleSingle(code: []const u8) Error!Instruction {
                         const reg1 = Register.fromLowEnc(op1, rex.r, size);
                         const reg2 = Register.fromLowEnc(op2, rex.b, 64);
                         const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
-                        const mem = Memory{
+                        break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
                             .size = Memory.Size.fromBitSize(size),
                             .base = .{ .reg = reg2 },
                             .disp = disp,
-                        };
-                        break :data .{
-                            .rm = .{
-                                .reg = reg1,
-                                .reg_or_mem = .{ .mem = mem },
-                            },
-                        };
+                        }));
                     },
                     0b00 => {
                         // indirect addressing
@@ -507,17 +516,11 @@ pub fn disassembleSingle(code: []const u8) Error!Instruction {
                             // RIP with 32bit displacement
                             const reg1 = Register.fromLowEnc(op1, rex.r, size);
                             const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
-                            const mem = Memory{
+                            break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
                                 .size = Memory.Size.fromBitSize(size),
                                 .base = .rip,
                                 .disp = disp,
-                            };
-                            break :data .{
-                                .rm = .{
-                                    .reg = reg1,
-                                    .reg_or_mem = .{ .mem = mem },
-                                },
-                            };
+                            }));
                         }
 
                         if (op2 == 0b100) {
@@ -527,17 +530,11 @@ pub fn disassembleSingle(code: []const u8) Error!Instruction {
 
                         const reg1 = Register.fromLowEnc(op1, rex.r, size);
                         const reg2 = Register.fromLowEnc(op2, rex.b, 64);
-                        const mem = Memory{
+                        break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
                             .size = Memory.Size.fromBitSize(size),
                             .base = .{ .reg = reg2 },
                             .disp = 0,
-                        };
-                        break :data .{
-                            .rm = .{
-                                .reg = reg1,
-                                .reg_or_mem = .{ .mem = mem },
-                            },
-                        };
+                        }));
                     },
                 }
             },
@@ -552,14 +549,66 @@ pub fn disassembleSingle(code: []const u8) Error!Instruction {
                         // direct addressing
                         const reg1 = Register.fromLowEnc(op1, rex.b, size);
                         const reg2 = Register.fromLowEnc(op2, rex.r, size);
-                        break :data .{
-                            .mr = .{
-                                .reg_or_mem = .{ .reg = reg1 },
-                                .reg = reg2,
-                            },
-                        };
+                        break :data Instruction.Data.mr(RegisterOrMemory.reg(reg1), reg2);
                     },
-                    else => return error.Todo,
+                    0b01 => {
+                        // indirect addressing with an 8bit displacement
+                        if (op2 == 0b100) {
+                            // TODO handle SIB byte addressing
+                            return error.Todo;
+                        }
+
+                        const reg1 = Register.fromLowEnc(op1, rex.b, 64);
+                        const reg2 = Register.fromLowEnc(op2, rex.r, size);
+                        const disp: u32 = @bitCast(u32, @intCast(i32, try reader.readInt(i8, .Little)));
+                        break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
+                            .size = Memory.Size.fromBitSize(size),
+                            .base = .{ .reg = reg1 },
+                            .disp = disp,
+                        }), reg2);
+                    },
+                    0b10 => {
+                        // indirect addressing with a 32bit displacement
+                        if (op2 == 0b100) {
+                            // TODO handle SIB byte addressing
+                            return error.Todo;
+                        }
+
+                        const reg1 = Register.fromLowEnc(op1, rex.b, 64);
+                        const reg2 = Register.fromLowEnc(op2, rex.r, size);
+                        const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                        break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
+                            .size = Memory.Size.fromBitSize(size),
+                            .base = .{ .reg = reg1 },
+                            .disp = disp,
+                        }), reg2);
+                    },
+                    0b00 => {
+                        // indirect addressing
+                        if (op2 == 0b101) {
+                            // RIP with 32bit displacement
+                            const reg1 = Register.fromLowEnc(op1, rex.b, size);
+                            const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                            break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
+                                .size = Memory.Size.fromBitSize(size),
+                                .base = .rip,
+                                .disp = disp,
+                            }), reg1);
+                        }
+
+                        if (op2 == 0b100) {
+                            // TODO SIB with disp 0bit
+                            return error.Todo;
+                        }
+
+                        const reg1 = Register.fromLowEnc(op1, rex.b, 64);
+                        const reg2 = Register.fromLowEnc(op2, rex.r, size);
+                        break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
+                            .size = Memory.Size.fromBitSize(size),
+                            .base = .{ .reg = reg1 },
+                            .disp = 0,
+                        }), reg2);
+                    },
                 }
             },
         }
