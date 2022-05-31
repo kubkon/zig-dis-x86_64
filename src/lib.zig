@@ -70,8 +70,8 @@ pub const Register = enum(u7) {
         return @intToEnum(Register, reg_id);
     }
 
-    pub fn toStr(self: Register) []const u8 {
-        return switch (self) {
+    pub fn fmtPrint(self: Register, writer: anytype) !void {
+        const as_str = switch (self) {
             // zig fmt: off
             .rax => "rax",
             .rbx => "rbx",
@@ -142,6 +142,7 @@ pub const Register = enum(u7) {
             .r15b => "r15b",
             // zig fmt: on
         };
+        try writer.writeAll(as_str);
     }
 };
 
@@ -188,9 +189,9 @@ pub const Memory = struct {
         try writer.writeByte('[');
 
         switch (self.base) {
-            .reg => |r| try writer.writeAll(r.toStr()),
+            .reg => |r| try r.fmtPrint(writer),
             .rip => try writer.writeAll("rip"),
-            .ds => try writer.writeAll("ds:"),
+            .ds => unreachable, // TODO handle segment registers
         }
 
         if (self.disp > 0) {
@@ -217,7 +218,7 @@ pub const RegisterOrMemory = union(enum) {
 
     fn fmtPrint(self: RegisterOrMemory, writer: anytype) !void {
         switch (self) {
-            .reg => |r| try writer.writeAll(r.toStr()),
+            .reg => |r| try r.fmtPrint(writer),
             .mem => |m| try m.fmtPrint(writer),
         }
     }
@@ -257,58 +258,51 @@ pub const Instruction = struct {
         reg_or_mem: RegisterOrMemory,
     };
 
-    pub fn toAsmAlloc(self: Instruction, allocator: Allocator) ![]const u8 {
-        var buf = std.ArrayList(u8).init(allocator);
-        defer buf.deinit();
-
-        tag: {
-            switch (self.tag) {
-                .mov => {
-                    switch (self.enc) {
-                        .oi => {
-                            if (self.data.oi.reg.size() == 64) {
-                                break :tag try buf.appendSlice("movabs ");
-                            }
-                        },
-                        else => {},
-                    }
-                    break :tag try buf.appendSlice("mov ");
-                },
-            }
+    pub fn fmtPrint(self: Instruction, writer: anytype) !void {
+        switch (self.tag) {
+            .mov => blk: {
+                switch (self.enc) {
+                    .oi => {
+                        if (self.data.oi.reg.size() == 64) {
+                            break :blk try writer.writeAll("movabs ");
+                        }
+                    },
+                    else => {},
+                }
+                try writer.writeAll("mov ");
+            },
         }
 
         switch (self.enc) {
             .oi => {
                 const oi = self.data.oi;
-                try buf.appendSlice(oi.reg.toStr());
-                try buf.appendSlice(", ");
+                try oi.reg.fmtPrint(writer);
+                try writer.writeAll(", ");
 
                 if (oi.reg.size() == 64) {
-                    try buf.writer().print("0x{x}", .{oi.imm});
+                    try writer.print("0x{x}", .{oi.imm});
                 } else {
                     const imm_signed: i64 = @bitCast(i64, oi.imm);
                     const imm_abs: u64 = @intCast(u64, try std.math.absInt(imm_signed));
                     if (sign(imm_signed) < 0) {
-                        try buf.writer().writeByte('-');
+                        try writer.writeByte('-');
                     }
-                    try buf.writer().print("0x{x}", .{imm_abs});
+                    try writer.print("0x{x}", .{imm_abs});
                 }
             },
             .rm => {
                 const rm = self.data.rm;
-                try buf.appendSlice(rm.reg.toStr());
-                try buf.appendSlice(", ");
-                try rm.reg_or_mem.fmtPrint(buf.writer());
+                try rm.reg.fmtPrint(writer);
+                try writer.writeAll(", ");
+                try rm.reg_or_mem.fmtPrint(writer);
             },
             .mr => {
                 const mr = self.data.mr;
-                try mr.reg_or_mem.fmtPrint(buf.writer());
-                try buf.appendSlice(", ");
-                try buf.appendSlice(mr.reg.toStr());
+                try mr.reg_or_mem.fmtPrint(writer);
+                try writer.writeAll(", ");
+                try mr.reg.fmtPrint(writer);
             },
         }
-
-        return buf.toOwnedSlice();
     }
 };
 
@@ -785,43 +779,50 @@ test "disassemble" {
 }
 
 test "disassemble - mnemonic" {
+    const gpa = testing.allocator;
+
     {
         // movabs rax, 0x10
         const inst = try disassembleSingle(&.{ 0x48, 0xb8, 0x10, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0 });
-        const as = try inst.toAsmAlloc(testing.allocator);
-        defer testing.allocator.free(as);
-        try testing.expectEqualStrings("movabs rax, 0x10", as);
+        var buf = std.ArrayList(u8).init(gpa);
+        defer buf.deinit();
+        try inst.fmtPrint(buf.writer());
+        try testing.expectEqualStrings("movabs rax, 0x10", buf.items);
     }
 
     {
         // mov r12d, -0x10
         const inst = try disassembleSingle(&.{ 0x41, 0xbc, 0xf0, 0xff, 0xff, 0xff });
-        const as = try inst.toAsmAlloc(testing.allocator);
-        defer testing.allocator.free(as);
-        try testing.expectEqualStrings("mov r12d, -0x10", as);
+        var buf = std.ArrayList(u8).init(gpa);
+        defer buf.deinit();
+        try inst.fmtPrint(buf.writer());
+        try testing.expectEqualStrings("mov r12d, -0x10", buf.items);
     }
 
     {
         // mov r12, qword ptr [rbp - 0x10]
         const inst = try disassembleSingle(&.{ 0x4c, 0x8b, 0x65, 0xf0 });
-        const as = try inst.toAsmAlloc(testing.allocator);
-        defer testing.allocator.free(as);
-        try testing.expectEqualStrings("mov r12, qword ptr [rbp - 0x10]", as);
+        var buf = std.ArrayList(u8).init(gpa);
+        defer buf.deinit();
+        try inst.fmtPrint(buf.writer());
+        try testing.expectEqualStrings("mov r12, qword ptr [rbp - 0x10]", buf.items);
     }
 
     {
         // mov rax, qword ptr [rbp - 0x1000]
         const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x85, 0x0, 0xf0, 0xff, 0xff });
-        const as = try inst.toAsmAlloc(testing.allocator);
-        defer testing.allocator.free(as);
-        try testing.expectEqualStrings("mov rax, qword ptr [rbp - 0x1000]", as);
+        var buf = std.ArrayList(u8).init(gpa);
+        defer buf.deinit();
+        try inst.fmtPrint(buf.writer());
+        try testing.expectEqualStrings("mov rax, qword ptr [rbp - 0x1000]", buf.items);
     }
 
     {
         // mov rbx, qword ptr [rax]
         const inst = try disassembleSingle(&.{ 0x48, 0x8b, 0x18 });
-        const as = try inst.toAsmAlloc(testing.allocator);
-        defer testing.allocator.free(as);
-        try testing.expectEqualStrings("mov rbx, qword ptr [rax]", as);
+        var buf = std.ArrayList(u8).init(gpa);
+        defer buf.deinit();
+        try inst.fmtPrint(buf.writer());
+        try testing.expectEqualStrings("mov rbx, qword ptr [rax]", buf.items);
     }
 }

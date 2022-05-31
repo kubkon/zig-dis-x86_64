@@ -22,8 +22,10 @@ pub fn main() !void {
     }
 
     const inst = try zig_dis_x86_64.disassembleSingle(bytes.items);
-    const as = try inst.toAsmAlloc(gpa);
-    defer gpa.free(as);
 
-    std.log.warn("disassembled: {s}  {s}", .{ input_hex, as });
+    var buf = std.ArrayList(u8).init(gpa);
+    defer buf.deinit();
+    try inst.fmtPrint(buf.writer());
+
+    std.log.warn("disassembled: {s}  {s}", .{ input_hex, buf.items });
 }
