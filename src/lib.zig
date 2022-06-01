@@ -263,7 +263,7 @@ pub const Instruction = struct {
         mr: Mr,
         rm: Rm,
 
-        fn oi(reg: Register, imm: u64) Data {
+        pub fn oi(reg: Register, imm: u64) Data {
             return .{
                 .oi = .{
                     .reg = reg,
@@ -272,7 +272,7 @@ pub const Instruction = struct {
             };
         }
 
-        fn mi(reg_or_mem: RegisterOrMemory, imm: u32) Data {
+        pub fn mi(reg_or_mem: RegisterOrMemory, imm: u32) Data {
             return .{
                 .mi = .{
                     .reg_or_mem = reg_or_mem,
@@ -281,7 +281,7 @@ pub const Instruction = struct {
             };
         }
 
-        fn rm(reg: Register, reg_or_mem: RegisterOrMemory) Data {
+        pub fn rm(reg: Register, reg_or_mem: RegisterOrMemory) Data {
             return .{
                 .rm = .{
                     .reg = reg,
@@ -290,7 +290,7 @@ pub const Instruction = struct {
             };
         }
 
-        fn mr(reg_or_mem: RegisterOrMemory, reg: Register) Data {
+        pub fn mr(reg_or_mem: RegisterOrMemory, reg: Register) Data {
             return .{
                 .mr = .{
                     .reg_or_mem = reg_or_mem,
