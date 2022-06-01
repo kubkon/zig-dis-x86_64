@@ -183,7 +183,7 @@ pub const Memory = struct {
         }
     };
 
-    fn fmtPrint(self: Memory, writer: anytype) !void {
+    pub fn fmtPrint(self: Memory, writer: anytype) !void {
         assert(self.scale_index == null); // TODO handle SIB
 
         switch (self.size) {
@@ -223,15 +223,15 @@ pub const RegisterOrMemory = union(enum) {
     reg: Register,
     mem: Memory,
 
-    fn reg(register: Register) RegisterOrMemory {
+    pub fn reg(register: Register) RegisterOrMemory {
         return .{ .reg = register };
     }
 
-    fn mem(memory: Memory) RegisterOrMemory {
+    pub fn mem(memory: Memory) RegisterOrMemory {
         return .{ .mem = memory };
     }
 
-    fn fmtPrint(self: RegisterOrMemory, writer: anytype) !void {
+    pub fn fmtPrint(self: RegisterOrMemory, writer: anytype) !void {
         switch (self) {
             .reg => |r| try r.fmtPrint(writer),
             .mem => |m| try m.fmtPrint(writer),
