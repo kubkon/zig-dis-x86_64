@@ -161,7 +161,7 @@ pub const Memory = struct {
         rip: void,
         seg: void, // TODO
     },
-    disp: u32,
+    disp: ?u32 = null,
 
     pub const ScaleIndex = packed struct {
         scale: u2,
@@ -201,8 +201,8 @@ pub const Memory = struct {
             .seg => unreachable, // TODO handle segment registers
         }
 
-        if (self.disp > 0) {
-            const disp_signed: i32 = @bitCast(i32, self.disp);
+        if (self.disp) |disp| {
+            const disp_signed: i32 = @bitCast(i32, disp);
             const disp_abs: u32 = @intCast(u32, try std.math.absInt(disp_signed));
             if (sign(disp_signed) < 0) {
                 try writer.writeAll(" - ");
@@ -245,7 +245,9 @@ pub const Instruction = struct {
     data: Data,
 
     pub const Tag = enum {
+        add,
         mov,
+        lea,
     };
 
     pub const Enc = enum {
@@ -320,6 +322,7 @@ pub const Instruction = struct {
 
     pub fn fmtPrint(self: Instruction, writer: anytype) !void {
         switch (self.tag) {
+            .add => try writer.writeAll("add "),
             .mov => blk: {
                 switch (self.enc) {
                     .oi => {
@@ -331,6 +334,7 @@ pub const Instruction = struct {
                 }
                 try writer.writeAll("mov ");
             },
+            .lea => try writer.writeAll("lea "),
         }
 
         switch (self.enc) {
@@ -386,6 +390,13 @@ const ParsedOpc = struct {
     fn parse(reader: anytype) Error!ParsedOpc {
         const next_byte = try reader.readByte();
         switch (next_byte) {
+            // add
+            0x80 => return ParsedOpc.new(.add, .mi, true, 0),
+            0x81 => return ParsedOpc.new(.add, .mi, false, 0),
+            0x00 => return ParsedOpc.new(.add, .mr, true, 0),
+            0x01 => return ParsedOpc.new(.add, .mr, false, 0),
+            0x02 => return ParsedOpc.new(.add, .rm, true, 0),
+            0x03 => return ParsedOpc.new(.add, .rm, false, 0),
             // mov
             0x88 => return ParsedOpc.new(.mov, .mr, true, 0),
             0x89 => return ParsedOpc.new(.mov, .mr, false, 0),
@@ -399,6 +410,8 @@ const ParsedOpc = struct {
             0xa3 => return error.Todo,
             0xc6 => return ParsedOpc.new(.mov, .mi, true, 0),
             0xc7 => return ParsedOpc.new(.mov, .mi, false, 0),
+            // lea
+            0x8d => return ParsedOpc.new(.lea, .rm, false, 0),
             // remaining
             else => {},
         }
@@ -586,7 +599,6 @@ pub const Disassembler = struct {
                             break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
                                 .size = Memory.Size.fromBitSize(size),
                                 .base = .{ .reg = reg },
-                                .disp = 0,
                             }), imm);
                         },
                     }
@@ -659,7 +671,6 @@ pub const Disassembler = struct {
                             break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
                                 .size = Memory.Size.fromBitSize(size),
                                 .base = .{ .reg = reg2 },
-                                .disp = 0,
                             }));
                         },
                     }
@@ -732,7 +743,6 @@ pub const Disassembler = struct {
                             break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
                                 .size = Memory.Size.fromBitSize(size),
                                 .base = .{ .reg = reg1 },
-                                .disp = 0,
                             }), reg2);
                         },
                     }
@@ -842,7 +852,7 @@ test "disassemble" {
         try testing.expect(inst.data.rm.reg_or_mem.mem.size == .qword);
         try testing.expect(inst.data.rm.reg_or_mem.mem.scale_index == null);
         try testing.expect(inst.data.rm.reg_or_mem.mem.base.reg == .rbp);
-        try testing.expect(@intCast(i8, @bitCast(i32, inst.data.rm.reg_or_mem.mem.disp)) == -0x10);
+        try testing.expect(@intCast(i8, @bitCast(i32, inst.data.rm.reg_or_mem.mem.disp.?)) == -0x10);
     }
 
     {
@@ -853,7 +863,7 @@ test "disassemble" {
         try testing.expect(inst.data.rm.reg_or_mem.mem.size == .qword);
         try testing.expect(inst.data.rm.reg_or_mem.mem.scale_index == null);
         try testing.expect(inst.data.rm.reg_or_mem.mem.base.reg == .rbp);
-        try testing.expect(@bitCast(i32, inst.data.rm.reg_or_mem.mem.disp) == -0x1000);
+        try testing.expect(@bitCast(i32, inst.data.rm.reg_or_mem.mem.disp.?) == -0x1000);
     }
 
     {
@@ -864,7 +874,7 @@ test "disassemble" {
         try testing.expect(inst.data.rm.reg_or_mem.mem.size == .qword);
         try testing.expect(inst.data.rm.reg_or_mem.mem.scale_index == null);
         try testing.expect(inst.data.rm.reg_or_mem.mem.base == .rip);
-        try testing.expect(@bitCast(i32, inst.data.rm.reg_or_mem.mem.disp) == 0x0);
+        try testing.expect(@bitCast(i32, inst.data.rm.reg_or_mem.mem.disp.?) == 0x0);
     }
 
     {
@@ -875,7 +885,7 @@ test "disassemble" {
         try testing.expect(inst.data.rm.reg_or_mem.mem.size == .qword);
         try testing.expect(inst.data.rm.reg_or_mem.mem.scale_index == null);
         try testing.expect(inst.data.rm.reg_or_mem.mem.base.reg == .rax);
-        try testing.expect(@bitCast(i32, inst.data.rm.reg_or_mem.mem.disp) == 0);
+        try testing.expect(inst.data.rm.reg_or_mem.mem.disp == null);
     }
 }
 
@@ -891,6 +901,10 @@ test "disassemble - mnemonic" {
         0xc6, 0x45, 0xf0, 0x10,
         0x49, 0xc7, 0x43, 0xf0, 0x10, 0x00, 0x00, 0x00,
         0x49, 0x89, 0x43, 0xf0,
+        0x48, 0x8d, 0x45, 0xf0,
+        0x41, 0x8d, 0x43, 0x10,
+        0x4c, 0x8d, 0x25, 0x00, 0x00, 0x00, 0x00,
+        0x48, 0x03, 0x05, 0x00, 0x00, 0x00, 0x00,
         // zig fmt: on
     });
 
@@ -911,6 +925,10 @@ test "disassemble - mnemonic" {
         \\mov byte ptr [rbp - 0x10], 0x10
         \\mov qword ptr [r11 - 0x10], 0x10
         \\mov qword ptr [r11 - 0x10], rax
+        \\lea rax, qword ptr [rbp - 0x10]
+        \\lea eax, dword ptr [r11 + 0x10]
+        \\lea r12, qword ptr [rip + 0x0]
+        \\add rax, qword ptr [rip + 0x0]
         \\
     , buf.items);
 }
