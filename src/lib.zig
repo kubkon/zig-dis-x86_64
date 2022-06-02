@@ -221,6 +221,70 @@ pub const Memory = struct {
     pub fn size_(self: Memory) u7 {
         return @intCast(u7, self.size.bitSize());
     }
+
+    pub fn encode(self: Memory, operand: u3, encoder: anytype) !void {
+        switch (self.base) {
+            .reg => |reg| {
+                const dst = reg.lowEnc();
+                const src = operand;
+                if (dst == 4 or self.scale_index != null) {
+                    if (self.disp == null and dst != 5) {
+                        try encoder.modRm_SIBDisp0(src);
+                        if (self.scale_index) |si| {
+                            try encoder.sib_scaleIndexBase(si.scale, si.index.lowEnc(), dst);
+                        } else {
+                            try encoder.sib_base(dst);
+                        }
+                    } else {
+                        const disp = self.disp orelse 0;
+                        if (immOpSize(disp) == 8) {
+                            try encoder.modRm_SIBDisp8(src);
+                            if (self.scale_index) |si| {
+                                try encoder.sib_scaleIndexBaseDisp8(si.scale, si.index.lowEnc(), dst);
+                            } else {
+                                try encoder.sib_baseDisp8(dst);
+                            }
+                            try encoder.disp8(@bitCast(i8, @truncate(u8, disp)));
+                        } else {
+                            try encoder.modRm_SIBDisp32(src);
+                            if (self.scale_index) |si| {
+                                try encoder.sib_scaleIndexBaseDisp32(si.scale, si.index.lowEnc(), dst);
+                            } else {
+                                try encoder.sib_baseDisp32(dst);
+                            }
+                            try encoder.disp32(@bitCast(i32, disp));
+                        }
+                    }
+                } else {
+                    if (self.disp == null and dst != 5) {
+                        try encoder.modRm_indirectDisp0(src, dst);
+                    } else {
+                        const disp = self.disp orelse 0;
+                        if (immOpSize(disp) == 8) {
+                            try encoder.modRm_indirectDisp8(src, dst);
+                            try encoder.disp8(@bitCast(i8, @truncate(u8, disp)));
+                        } else {
+                            try encoder.modRm_indirectDisp32(src, dst);
+                            try encoder.disp32(@bitCast(i32, disp));
+                        }
+                    }
+                }
+            },
+            .rip => {
+                try encoder.modRm_RIPDisp32(operand);
+                try encoder.disp32(@bitCast(i32, self.disp orelse @as(u32, 0)));
+            },
+            .seg => {
+                try encoder.modRm_SIBDisp0(operand);
+                if (self.scale_index) |si| {
+                    try encoder.sib_scaleIndexDisp32(si.scale, si.index.lowEnc());
+                } else {
+                    try encoder.sib_disp32();
+                }
+                try encoder.disp32(@bitCast(i32, self.disp orelse @as(u32, 0)));
+            },
+        }
+    }
 };
 
 pub const RegisterOrMemory = union(enum) {
@@ -259,6 +323,31 @@ pub const Instruction = struct {
         add,
         mov,
         lea,
+
+        fn encode(tag: Tag, enc: Enc, size: u7, encoder: anytype) !void {
+            if (size == 8) switch (tag) {
+                .add => unreachable, // TODO
+                .mov => switch (enc) {
+                    .oi => try encoder.opcode_1byte(0xb0),
+                    .rm => try encoder.opcode_1byte(0x8a),
+                    .mr => try encoder.opcode_1byte(0x88),
+                    .mi => try encoder.opcode_1byte(0xc6),
+                },
+                .lea => unreachable, // does not support 8bit sizes
+            } else switch (tag) {
+                .add => unreachable, // TODO
+                .mov => switch (enc) {
+                    .oi => try encoder.opcode_1byte(0xb8),
+                    .rm => try encoder.opcode_1byte(0x8b),
+                    .mr => try encoder.opcode_1byte(0x89),
+                    .mi => try encoder.opcode_1byte(0xc7),
+                },
+                .lea => switch (enc) {
+                    .rm => try encoder.opcode_1byte(0x8d),
+                    else => unreachable, // does not support different encodings
+                },
+            }
+        }
     };
 
     pub const Enc = enum {
@@ -331,49 +420,88 @@ pub const Instruction = struct {
         reg_or_mem: RegisterOrMemory,
     };
 
-    pub fn encodeFixed(self: Instruction, comptime count: usize, buf: [count]u8) void {
-        var stream = std.io.fixedBufferStream(buf);
-        self.encode(stream.writer()) catch unreachable;
-    }
-
     pub fn encode(self: Instruction, writer: anytype) !void {
+        const encoder = Encoder(@TypeOf(writer)){ .writer = writer };
         switch (self.enc) {
             .oi => unreachable, // TODO
-            .rm => unreachable, // TODO
+            .rm => {
+                const rm = self.data.rm;
+                const dst_reg = rm.reg;
+                if (dst_reg.size() == 16) {
+                    try encoder.prefix16BitMode();
+                }
+                switch (rm.reg_or_mem) {
+                    .reg => |src_reg| {
+                        try encoder.rex(.{
+                            .w = setRexWRegister(dst_reg) or setRexWRegister(src_reg),
+                            .r = dst_reg.isExtended(),
+                            .b = src_reg.isExtended(),
+                        });
+                        try self.tag.encode(.rm, dst_reg.size(), encoder);
+                        try encoder.modRm_direct(dst_reg.lowEnc(), src_reg.lowEnc());
+                    },
+                    .mem => |src_mem| {
+                        switch (src_mem.base) {
+                            .reg => |reg| {
+                                try encoder.rex(.{
+                                    .w = setRexWRegister(dst_reg),
+                                    .r = dst_reg.isExtended(),
+                                    .b = reg.isExtended(),
+                                });
+                            },
+                            .rip, .seg => {
+                                try encoder.rex(.{
+                                    .w = setRexWRegister(dst_reg),
+                                    .r = dst_reg.isExtended(),
+                                });
+                            },
+                        }
+                        try self.tag.encode(.rm, dst_reg.size(), encoder);
+                        try src_mem.encode(dst_reg.lowEnc(), encoder);
+                    },
+                }
+            },
             .mr => unreachable, // TODO
             .mi => {
                 const mi = self.data.mi;
-                const opc: u8 = switch (self.tag) {
-                    .mov => if (mi.reg_or_mem.size() == 8) @as(u8, 0xc6) else 0xc7,
-                    else => unreachable, // TODO
-                };
                 const modrm_ext: u3 = switch (self.tag) {
                     .mov => 0,
                     else => unreachable,
                 };
-                const encoder = Encoder(@TypeOf(writer)){ .writer = writer };
                 switch (mi.reg_or_mem) {
                     .reg => |dst_reg| {
                         if (dst_reg.size() == 16) {
                             try encoder.prefix16BitMode();
                         }
                         try encoder.rex(.{
-                            .w = dst_reg.size() == 64,
+                            .w = setRexWRegister(dst_reg),
                             .b = dst_reg.isExtended(),
                         });
-                        try encoder.opcode_1byte(opc);
+                        try self.tag.encode(.mi, dst_reg.size(), encoder);
                         try encoder.modRm_direct(modrm_ext, dst_reg.lowEnc());
-                        switch (dst_reg.size()) {
-                            8 => try encoder.imm8(@bitCast(i8, @truncate(u8, mi.imm))),
-                            16 => try encoder.imm16(@bitCast(i16, @truncate(u16, mi.imm))),
-                            32, 64 => try encoder.imm32(@bitCast(i32, mi.imm)),
-                            else => unreachable,
-                        }
                     },
-                    .mem => |_| {
-                        unreachable; // TODO
+                    .mem => |dst_mem| {
+                        if (dst_mem.size == .word) {
+                            try encoder.prefix16BitMode();
+                        }
+                        switch (dst_mem.base) {
+                            .reg => |reg| {
+                                try encoder.rex(.{
+                                    .w = dst_mem.size == .qword,
+                                    .b = reg.isExtended(),
+                                });
+                            },
+                            .rip, .seg => {
+                                try encoder.rex(.{
+                                    .w = dst_mem.size == .qword,
+                                });
+                            },
+                        }
+                        try self.tag.encode(.mi, dst_mem.size_(), encoder);
+                        try dst_mem.encode(modrm_ext, encoder);
                     },
                 }
+                try encodeImm(mi.imm, mi.reg_or_mem.size(), encoder);
             },
         }
     }
@@ -438,6 +566,35 @@ pub const Instruction = struct {
         }
     }
 };
+
+inline fn setRexWRegister(reg: Register) bool {
+    if (reg.size() > 64) return false;
+    if (reg.size() == 64) return true;
+    return switch (reg) {
+        .ah, .ch, .dh, .bh => true,
+        else => false,
+    };
+}
+
+inline fn immOpSize(u_imm: u32) u6 {
+    const imm = @bitCast(i32, u_imm);
+    if (math.minInt(i8) <= imm and imm <= math.maxInt(i8)) {
+        return 8;
+    }
+    if (math.minInt(i16) <= imm and imm <= math.maxInt(i16)) {
+        return 16;
+    }
+    return 32;
+}
+
+fn encodeImm(imm: u32, size: u7, encoder: anytype) !void {
+    switch (size) {
+        8 => try encoder.imm8(@bitCast(i8, @truncate(u8, imm))),
+        16 => try encoder.imm16(@bitCast(i16, @truncate(u16, imm))),
+        32, 64 => try encoder.imm32(@bitCast(i32, imm)),
+        else => unreachable,
+    }
+}
 
 const ParsedOpc = struct {
     tag: Instruction.Tag,
