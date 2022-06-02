@@ -478,6 +478,8 @@ pub const Instruction = struct {
             .mi => {
                 const mi = self.data.mi;
                 const modrm_ext: u3 = switch (self.tag) {
+                    .add => 0,
+                    .cmp => 7,
                     .mov => 0,
                     else => unreachable,
                 };
