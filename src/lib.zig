@@ -321,12 +321,19 @@ pub const Instruction = struct {
 
     pub const Tag = enum {
         add,
+        cmp,
         mov,
         lea,
 
         fn encode(tag: Tag, enc: Enc, size: u7, encoder: anytype) !void {
             if (size == 8) switch (tag) {
                 .add => unreachable, // TODO
+                .cmp => switch (enc) {
+                    .oi => unreachable, // does not support this encoding
+                    .rm => try encoder.opcode_1byte(0x3a),
+                    .mr => try encoder.opcode_1byte(0x38),
+                    .mi => try encoder.opcode_1byte(0x80),
+                },
                 .mov => switch (enc) {
                     .oi => try encoder.opcode_1byte(0xb0),
                     .rm => try encoder.opcode_1byte(0x8a),
@@ -336,6 +343,12 @@ pub const Instruction = struct {
                 .lea => unreachable, // does not support 8bit sizes
             } else switch (tag) {
                 .add => unreachable, // TODO
+                .cmp => switch (enc) {
+                    .oi => unreachable, // does not support this encoding
+                    .rm => try encoder.opcode_1byte(0x3b),
+                    .mr => try encoder.opcode_1byte(0x39),
+                    .mi => try encoder.opcode_1byte(0x81),
+                },
                 .mov => switch (enc) {
                     .oi => try encoder.opcode_1byte(0xb8),
                     .rm => try encoder.opcode_1byte(0x8b),
@@ -509,6 +522,7 @@ pub const Instruction = struct {
     pub fn fmtPrint(self: Instruction, writer: anytype) !void {
         switch (self.tag) {
             .add => try writer.writeAll("add "),
+            .cmp => try writer.writeAll("cmp "),
             .mov => blk: {
                 switch (self.enc) {
                     .oi => {
@@ -600,54 +614,92 @@ const ParsedOpc = struct {
     tag: Instruction.Tag,
     enc: Instruction.Enc,
     is_byte_sized: bool,
-    reg: u3,
+    extra: u3,
+    /// Set to false once we know exactly what instruction we are dealing with.
+    is_wip: bool,
+    byte: u8,
 
     fn parse(reader: anytype) Error!ParsedOpc {
         const next_byte = try reader.readByte();
-        switch (next_byte) {
-            // add
-            0x80 => return ParsedOpc.new(.add, .mi, true, 0),
-            0x81 => return ParsedOpc.new(.add, .mi, false, 0),
-            0x00 => return ParsedOpc.new(.add, .mr, true, 0),
-            0x01 => return ParsedOpc.new(.add, .mr, false, 0),
-            0x02 => return ParsedOpc.new(.add, .rm, true, 0),
-            0x03 => return ParsedOpc.new(.add, .rm, false, 0),
-            // mov
-            0x88 => return ParsedOpc.new(.mov, .mr, true, 0),
-            0x89 => return ParsedOpc.new(.mov, .mr, false, 0),
-            0x8a => return ParsedOpc.new(.mov, .rm, true, 0),
-            0x8b => return ParsedOpc.new(.mov, .rm, false, 0),
-            0x8c => return ParsedOpc.new(.mov, .mr, false, 0),
-            0x8e => return ParsedOpc.new(.mov, .rm, false, 0),
-            0xa0 => return error.Todo,
-            0xa1 => return error.Todo,
-            0xa2 => return error.Todo,
-            0xa3 => return error.Todo,
-            0xc6 => return ParsedOpc.new(.mov, .mi, true, 0),
-            0xc7 => return ParsedOpc.new(.mov, .mi, false, 0),
-            // lea
-            0x8d => return ParsedOpc.new(.lea, .rm, false, 0),
-            // remaining
-            else => {},
-        }
+        var opc: ParsedOpc = blk: {
+            switch (next_byte) {
+                // MI encoding will be resolved fully later, once
+                // we parse the ModRM byte.
+                0x80 => break :blk ParsedOpc.wip(.mi, true),
+                0x81 => break :blk ParsedOpc.wip(.mi, false),
+                0xc6 => break :blk ParsedOpc.wip(.mi, true),
+                0xc7 => break :blk ParsedOpc.wip(.mi, false),
+                // add
+                0x00 => break :blk ParsedOpc.new(.add, .mr, true),
+                0x01 => break :blk ParsedOpc.new(.add, .mr, false),
+                0x02 => break :blk ParsedOpc.new(.add, .rm, true),
+                0x03 => break :blk ParsedOpc.new(.add, .rm, false),
+                // cmp
+                0x38 => break :blk ParsedOpc.new(.cmp, .mr, true),
+                0x39 => break :blk ParsedOpc.new(.cmp, .mr, false),
+                0x3a => break :blk ParsedOpc.new(.cmp, .rm, true),
+                0x3b => break :blk ParsedOpc.new(.cmp, .rm, false),
+                // mov
+                0x88 => break :blk ParsedOpc.new(.mov, .mr, true),
+                0x89 => break :blk ParsedOpc.new(.mov, .mr, false),
+                0x8a => break :blk ParsedOpc.new(.mov, .rm, true),
+                0x8b => break :blk ParsedOpc.new(.mov, .rm, false),
+                0x8c => break :blk ParsedOpc.new(.mov, .mr, false),
+                0x8e => break :blk ParsedOpc.new(.mov, .rm, false),
+                0xa0 => return error.Todo,
+                0xa1 => return error.Todo,
+                0xa2 => return error.Todo,
+                0xa3 => return error.Todo,
+                // lea
+                0x8d => break :blk ParsedOpc.new(.lea, .rm, false),
+                // remaining
+                else => {},
+            }
 
-        // check for OI encoding
-        const mask: u8 = 0b1111_1000;
-        switch (next_byte & mask) {
-            // mov
-            0xb0 => return ParsedOpc.new(.mov, .oi, true, @truncate(u3, next_byte)),
-            0xb8 => return ParsedOpc.new(.mov, .oi, false, @truncate(u3, next_byte)),
-            // remaining
-            else => return error.Todo,
-        }
+            // check for OI encoding
+            const mask: u8 = 0b1111_1000;
+            switch (next_byte & mask) {
+                // mov
+                0xb0 => break :blk ParsedOpc.newWithExtra(.mov, .oi, true, @truncate(u3, next_byte)),
+                0xb8 => break :blk ParsedOpc.newWithExtra(.mov, .oi, false, @truncate(u3, next_byte)),
+                // remaining
+                else => return error.Todo,
+            }
+        };
+        opc.byte = next_byte;
+        return opc;
     }
 
-    fn new(tag: Instruction.Tag, enc: Instruction.Enc, is_byte_sized: bool, reg: u3) ParsedOpc {
+    fn new(tag: Instruction.Tag, enc: Instruction.Enc, is_byte_sized: bool) ParsedOpc {
         return .{
             .tag = tag,
             .enc = enc,
             .is_byte_sized = is_byte_sized,
-            .reg = reg,
+            .extra = undefined,
+            .is_wip = false,
+            .byte = undefined,
+        };
+    }
+
+    fn newWithExtra(tag: Instruction.Tag, enc: Instruction.Enc, is_byte_sized: bool, extra: u3) ParsedOpc {
+        return .{
+            .tag = tag,
+            .enc = enc,
+            .is_byte_sized = is_byte_sized,
+            .extra = extra,
+            .is_wip = false,
+            .byte = undefined,
+        };
+    }
+
+    fn wip(enc: Instruction.Enc, is_byte_sized: bool) ParsedOpc {
+        return .{
+            .tag = undefined,
+            .enc = enc,
+            .is_byte_sized = is_byte_sized,
+            .extra = undefined,
+            .is_wip = true,
+            .byte = undefined,
         };
     }
 
@@ -729,14 +781,14 @@ pub const Disassembler = struct {
             try self.stream.seekBy(-1);
             break :blk .{};
         };
-        const opc = try ParsedOpc.parse(reader);
+        var opc = try ParsedOpc.parse(reader);
         const size = opc.size(rex);
 
         const data: Instruction.Data = data: {
             switch (opc.enc) {
                 .oi => {
                     if (rex.r or rex.x) return error.InvalidRexForEncoding;
-                    const reg = Register.fromLowEnc(opc.reg, rex.b, size);
+                    const reg = Register.fromLowEnc(opc.extra, rex.b, size);
                     const imm: u64 = switch (size) {
                         8 => @bitCast(u64, @intCast(i64, try reader.readInt(i8, .Little))),
                         16, 32 => @bitCast(u64, @intCast(i64, try reader.readInt(i32, .Little))),
@@ -751,7 +803,19 @@ pub const Disassembler = struct {
                     const op1: u3 = @truncate(u3, modrm_byte >> 3);
                     const op2: u3 = @truncate(u3, modrm_byte);
 
-                    if (op1 != opc.reg) return error.InvalidModRmByte;
+                    assert(opc.is_wip);
+                    opc.tag = switch (op1) {
+                        0 => switch (opc.byte) {
+                            0x80, 0x81 => Instruction.Tag.add,
+                            0xc6, 0xc7 => Instruction.Tag.mov,
+                            else => unreachable,
+                        },
+                        7 => switch (opc.byte) {
+                            0x80, 0x81 => Instruction.Tag.cmp,
+                            else => unreachable,
+                        },
+                        else => unreachable,
+                    };
 
                     switch (mod) {
                         0b11 => {
