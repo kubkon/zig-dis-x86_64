@@ -78,78 +78,7 @@ pub const Register = enum(u7) {
     }
 
     pub fn fmtPrint(self: Register, writer: anytype) !void {
-        const as_str = switch (self) {
-            // zig fmt: off
-            .rax => "rax",
-            .rbx => "rbx",
-            .rcx => "rcx",
-            .rdx => "rdx",
-            .rsp => "rsp",
-            .rbp => "rbp",
-            .rsi => "rsi",
-            .rdi => "rdi",
-            .r8  => "r8",
-            .r9  => "r9",
-            .r10 => "r10",
-            .r11 => "r11",
-            .r12 => "r12",
-            .r13 => "r13",
-            .r14 => "r14",
-            .r15 => "r15",
-
-            .eax  => "eax",
-            .ebx  => "ebx",
-            .ecx  => "ecx",
-            .edx  => "edx",
-            .esp  => "esp",
-            .ebp  => "ebp",
-            .esi  => "esi",
-            .edi  => "edi",
-            .r8d  => "r8d",
-            .r9d  => "r9d",
-            .r10d => "r10d",
-            .r11d => "r11d",
-            .r12d => "r12d",
-            .r13d => "r13d",
-            .r14d => "r14d",
-            .r15d => "r15d",
-
-            .ax   => "ax",
-            .bx   => "bx",
-            .cx   => "cx",
-            .dx   => "dx",
-            .sp   => "sp",
-            .bp   => "bp",
-            .si   => "si",
-            .di   => "di",
-            .r8w  => "r8w",
-            .r9w  => "r9w",
-            .r10w => "r10w",
-            .r11w => "r11w",
-            .r12w => "r12w",
-            .r13w => "r13w",
-            .r14w => "r14w",
-            .r15w => "r15w",
-
-            .al   => "al",
-            .bl   => "bl",
-            .cl   => "cl",
-            .dl   => "dl",
-            .ah   => "ah",
-            .bh   => "bh",
-            .ch   => "ch",
-            .dh   => "dh",
-            .r8b  => "r8b",
-            .r9b  => "r9b",
-            .r10b => "r10b",
-            .r11b => "r11b",
-            .r12b => "r12b",
-            .r13b => "r13b",
-            .r14b => "r14b",
-            .r15b => "r15b",
-            // zig fmt: on
-        };
-        try writer.writeAll(as_str);
+        try writer.writeAll(@tagName(self));
     }
 };
 
