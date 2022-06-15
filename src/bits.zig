@@ -87,7 +87,7 @@ pub const Memory = struct {
         rip: void,
         seg: void, // TODO
     },
-    disp: ?u32 = null,
+    disp: ?i32 = null,
 
     pub const ScaleIndex = packed struct {
         scale: u2,
@@ -163,14 +163,14 @@ pub const Memory = struct {
                         }
                     } else {
                         const disp = self.disp orelse 0;
-                        if (immOpBitSize(disp) == 8) {
+                        if (immOpBitSize(@bitCast(u32, disp)) == 8) {
                             try encoder.modRm_SIBDisp8(src);
                             if (self.scale_index) |si| {
                                 try encoder.sib_scaleIndexBaseDisp8(si.scale, si.index.lowEnc(), dst);
                             } else {
                                 try encoder.sib_baseDisp8(dst);
                             }
-                            try encoder.disp8(@bitCast(i8, @truncate(u8, disp)));
+                            try encoder.disp8(@truncate(i8, disp));
                         } else {
                             try encoder.modRm_SIBDisp32(src);
                             if (self.scale_index) |si| {
@@ -178,7 +178,7 @@ pub const Memory = struct {
                             } else {
                                 try encoder.sib_baseDisp32(dst);
                             }
-                            try encoder.disp32(@bitCast(i32, disp));
+                            try encoder.disp32(disp);
                         }
                     }
                 } else {
@@ -186,19 +186,19 @@ pub const Memory = struct {
                         try encoder.modRm_indirectDisp0(src, dst);
                     } else {
                         const disp = self.disp orelse 0;
-                        if (immOpBitSize(disp) == 8) {
+                        if (immOpBitSize(@bitCast(u32, disp)) == 8) {
                             try encoder.modRm_indirectDisp8(src, dst);
-                            try encoder.disp8(@bitCast(i8, @truncate(u8, disp)));
+                            try encoder.disp8(@truncate(i8, disp));
                         } else {
                             try encoder.modRm_indirectDisp32(src, dst);
-                            try encoder.disp32(@bitCast(i32, disp));
+                            try encoder.disp32(disp);
                         }
                     }
                 }
             },
             .rip => {
                 try encoder.modRm_RIPDisp32(operand);
-                try encoder.disp32(@bitCast(i32, self.disp orelse @as(u32, 0)));
+                try encoder.disp32(self.disp orelse @as(i32, 0));
             },
             .seg => {
                 try encoder.modRm_SIBDisp0(operand);
@@ -207,7 +207,7 @@ pub const Memory = struct {
                 } else {
                     try encoder.sib_disp32();
                 }
-                try encoder.disp32(@bitCast(i32, self.disp orelse @as(u32, 0)));
+                try encoder.disp32(self.disp orelse @as(i32, 0));
             },
         }
     }

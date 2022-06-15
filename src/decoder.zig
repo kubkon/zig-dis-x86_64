@@ -94,7 +94,7 @@ pub const Disassembler = struct {
                             }
 
                             const reg = Register.fromLowEnc(op2, rex.b, 64);
-                            const disp: u32 = @bitCast(u32, @intCast(i32, try reader.readInt(i8, .Little)));
+                            const disp = try reader.readInt(i8, .Little);
                             const imm = try parseImm(reader, bit_size);
                             break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
@@ -110,7 +110,7 @@ pub const Disassembler = struct {
                             }
 
                             const reg = Register.fromLowEnc(op2, rex.b, 64);
-                            const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                            const disp = try reader.readInt(i32, .Little);
                             const imm = try parseImm(reader, bit_size);
                             break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
@@ -122,7 +122,7 @@ pub const Disassembler = struct {
                             // indirect addressing
                             if (op2 == 0b101) {
                                 // RIP with 32bit displacement
-                                const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                                const disp = try reader.readInt(i32, .Little);
                                 const imm = try parseImm(reader, bit_size);
                                 break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
                                     .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
@@ -167,7 +167,7 @@ pub const Disassembler = struct {
 
                             const reg1 = Register.fromLowEnc(op1, rex.r, bit_size);
                             const reg2 = Register.fromLowEnc(op2, rex.b, 64);
-                            const disp: u32 = @bitCast(u32, @intCast(i32, try reader.readInt(i8, .Little)));
+                            const disp = try reader.readInt(i8, .Little);
                             break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                                 .base = .{ .reg = reg2 },
@@ -183,7 +183,7 @@ pub const Disassembler = struct {
 
                             const reg1 = Register.fromLowEnc(op1, rex.r, bit_size);
                             const reg2 = Register.fromLowEnc(op2, rex.b, 64);
-                            const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                            const disp = try reader.readInt(i32, .Little);
                             break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                                 .base = .{ .reg = reg2 },
@@ -195,7 +195,7 @@ pub const Disassembler = struct {
                             if (op2 == 0b101) {
                                 // RIP with 32bit displacement
                                 const reg1 = Register.fromLowEnc(op1, rex.r, bit_size);
-                                const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                                const disp = try reader.readInt(i32, .Little);
                                 break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
                                     .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                                     .base = .rip,
@@ -239,7 +239,7 @@ pub const Disassembler = struct {
 
                             const reg1 = Register.fromLowEnc(op1, rex.b, 64);
                             const reg2 = Register.fromLowEnc(op2, rex.r, bit_size);
-                            const disp: u32 = @bitCast(u32, @intCast(i32, try reader.readInt(i8, .Little)));
+                            const disp = try reader.readInt(i8, .Little);
                             break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                                 .base = .{ .reg = reg1 },
@@ -255,7 +255,7 @@ pub const Disassembler = struct {
 
                             const reg1 = Register.fromLowEnc(op1, rex.b, 64);
                             const reg2 = Register.fromLowEnc(op2, rex.r, bit_size);
-                            const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                            const disp = try reader.readInt(i32, .Little);
                             break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                                 .base = .{ .reg = reg1 },
@@ -267,7 +267,7 @@ pub const Disassembler = struct {
                             if (op2 == 0b101) {
                                 // RIP with 32bit displacement
                                 const reg1 = Register.fromLowEnc(op1, rex.b, bit_size);
-                                const disp: u32 = @bitCast(u32, try reader.readInt(i32, .Little));
+                                const disp = try reader.readInt(i32, .Little);
                                 break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
                                     .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                                     .base = .rip,
@@ -401,11 +401,11 @@ const ParsedOpc = struct {
     }
 };
 
-fn parseImm(reader: anytype, bit_size: u7) !u32 {
-    const imm: u32 = switch (bit_size) {
-        8 => @bitCast(u32, @intCast(i32, try reader.readInt(i8, .Little))),
-        16 => @bitCast(u32, @intCast(i32, try reader.readInt(i16, .Little))),
-        32, 64 => @bitCast(u32, try reader.readInt(i32, .Little)),
+fn parseImm(reader: anytype, bit_size: u7) !i32 {
+    const imm: i32 = switch (bit_size) {
+        8 => try reader.readInt(i8, .Little),
+        16 => try reader.readInt(i16, .Little),
+        32, 64 => try reader.readInt(i32, .Little),
         else => unreachable,
     };
     return imm;

@@ -19,7 +19,12 @@ pub const Instruction = struct {
 
         fn encode(tag: Tag, enc: Enc, bit_size: u7, encoder: anytype) !void {
             if (bit_size == 8) switch (tag) {
-                .add => unreachable, // TODO
+                .add => switch (enc) {
+                    .oi => unreachable, // does not support this encoding
+                    .rm => try encoder.opcode_1byte(0x02),
+                    .mr => try encoder.opcode_1byte(0x00),
+                    .mi => try encoder.opcode_1byte(0x80),
+                },
                 .cmp => switch (enc) {
                     .oi => unreachable, // does not support this encoding
                     .rm => try encoder.opcode_1byte(0x3a),
@@ -27,14 +32,19 @@ pub const Instruction = struct {
                     .mi => try encoder.opcode_1byte(0x80),
                 },
                 .mov => switch (enc) {
-                    .oi => try encoder.opcode_1byte(0xb0),
+                    .oi => unreachable, // use encodeWithReg instead
                     .rm => try encoder.opcode_1byte(0x8a),
                     .mr => try encoder.opcode_1byte(0x88),
                     .mi => try encoder.opcode_1byte(0xc6),
                 },
                 .lea => unreachable, // does not support 8bit sizes
             } else switch (tag) {
-                .add => unreachable, // TODO
+                .add => switch (enc) {
+                    .oi => unreachable, // does not support this encoding
+                    .rm => try encoder.opcode_1byte(0x03),
+                    .mr => try encoder.opcode_1byte(0x01),
+                    .mi => try encoder.opcode_1byte(0x81),
+                },
                 .cmp => switch (enc) {
                     .oi => unreachable, // does not support this encoding
                     .rm => try encoder.opcode_1byte(0x3b),
@@ -42,7 +52,7 @@ pub const Instruction = struct {
                     .mi => try encoder.opcode_1byte(0x81),
                 },
                 .mov => switch (enc) {
-                    .oi => try encoder.opcode_1byte(0xb8),
+                    .oi => unreachable, // use encodeWithReg instead
                     .rm => try encoder.opcode_1byte(0x8b),
                     .mr => try encoder.opcode_1byte(0x89),
                     .mi => try encoder.opcode_1byte(0xc7),
@@ -51,6 +61,16 @@ pub const Instruction = struct {
                     .rm => try encoder.opcode_1byte(0x8d),
                     else => unreachable, // does not support different encodings
                 },
+            }
+        }
+
+        fn encodeWithReg(tag: Tag, reg: Register, encoder: anytype) !void {
+            if (reg.bitSize() == 8) switch (tag) {
+                .mov => try encoder.opcode_withReg(0xb0, reg.lowEnc()),
+                else => unreachable,
+            } else switch (tag) {
+                .mov => try encoder.opcode_withReg(0xb8, reg.lowEnc()),
+                else => unreachable,
             }
         }
     };
@@ -77,7 +97,7 @@ pub const Instruction = struct {
             };
         }
 
-        pub fn mi(reg_or_mem: RegisterOrMemory, imm: u32) Data {
+        pub fn mi(reg_or_mem: RegisterOrMemory, imm: i32) Data {
             return .{
                 .mi = .{
                     .reg_or_mem = reg_or_mem,
@@ -112,7 +132,7 @@ pub const Instruction = struct {
 
     pub const Mi = struct {
         reg_or_mem: RegisterOrMemory,
-        imm: u32,
+        imm: i32,
     };
 
     pub const Mr = struct {
@@ -128,7 +148,20 @@ pub const Instruction = struct {
     pub fn encode(self: Instruction, writer: anytype) !void {
         const encoder = Encoder(@TypeOf(writer)){ .writer = writer };
         switch (self.enc) {
-            .oi => unreachable, // TODO
+            .oi => {
+                const oi = self.data.oi;
+                const reg = oi.reg;
+                const imm = oi.imm;
+                if (reg.bitSize() == 16) {
+                    try encoder.prefix16BitMode();
+                }
+                try encoder.rex(.{
+                    .w = setRexWRegister(reg),
+                    .b = reg.isExtended(),
+                });
+                try self.tag.encodeWithReg(reg, encoder);
+                try encodeImmUnsigned(imm, reg.bitSize(), encoder);
+            },
             .rm => {
                 const rm = self.data.rm;
                 const dst_reg = rm.reg;
@@ -166,7 +199,46 @@ pub const Instruction = struct {
                     },
                 }
             },
-            .mr => unreachable, // TODO
+            .mr => {
+                const mr = self.data.mr;
+                const src_reg = mr.reg;
+                switch (mr.reg_or_mem) {
+                    .reg => |dst_reg| {
+                        if (dst_reg.bitSize() == 16) {
+                            try encoder.prefix16BitMode();
+                        }
+                        try encoder.rex(.{
+                            .w = setRexWRegister(dst_reg) or setRexWRegister(src_reg),
+                            .r = src_reg.isExtended(),
+                            .b = dst_reg.isExtended(),
+                        });
+                        try self.tag.encode(.mr, dst_reg.bitSize(), encoder);
+                        try encoder.modRm_direct(src_reg.lowEnc(), dst_reg.lowEnc());
+                    },
+                    .mem => |dst_mem| {
+                        if (src_reg.bitSize() == 16) {
+                            try encoder.prefix16BitMode();
+                        }
+                        switch (dst_mem.base) {
+                            .reg => |dst_reg| {
+                                try encoder.rex(.{
+                                    .w = dst_mem.ptr_size == .qword or setRexWRegister(src_reg),
+                                    .r = src_reg.isExtended(),
+                                    .b = dst_reg.isExtended(),
+                                });
+                            },
+                            .rip, .seg => {
+                                try encoder.rex(.{
+                                    .w = dst_mem.ptr_size == .qword or setRexWRegister(src_reg),
+                                    .r = src_reg.isExtended(),
+                                });
+                            },
+                        }
+                        try self.tag.encode(.mr, dst_mem.bitSize(), encoder);
+                        try dst_mem.encode(src_reg.lowEnc(), encoder);
+                    },
+                }
+            },
             .mi => {
                 const mi = self.data.mi;
                 const modrm_ext: u3 = switch (self.tag) {
@@ -208,7 +280,7 @@ pub const Instruction = struct {
                         try dst_mem.encode(modrm_ext, encoder);
                     },
                 }
-                try encodeImm(mi.imm, mi.reg_or_mem.bitSize(), encoder);
+                try encodeImmSigned(mi.imm, mi.reg_or_mem.bitSize(), encoder);
             },
         }
     }
@@ -284,11 +356,21 @@ inline fn setRexWRegister(reg: Register) bool {
     };
 }
 
-fn encodeImm(imm: u32, bit_size: u7, encoder: anytype) !void {
+inline fn encodeImmUnsigned(imm: u64, bit_size: u7, encoder: anytype) !void {
     switch (bit_size) {
         8 => try encoder.imm8(@bitCast(i8, @truncate(u8, imm))),
         16 => try encoder.imm16(@bitCast(i16, @truncate(u16, imm))),
-        32, 64 => try encoder.imm32(@bitCast(i32, imm)),
+        32 => try encoder.imm32(@bitCast(i32, @truncate(u32, imm))),
+        64 => try encoder.imm64(imm),
+        else => unreachable,
+    }
+}
+
+inline fn encodeImmSigned(imm: i32, bit_size: u7, encoder: anytype) !void {
+    switch (bit_size) {
+        8 => try encoder.imm8(@truncate(i8, imm)),
+        16 => try encoder.imm16(@truncate(i16, imm)),
+        32, 64 => try encoder.imm32(imm),
         else => unreachable,
     }
 }
