@@ -5,19 +5,19 @@ pub fn build(b: *std.build.Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
-    const lib = b.addStaticLibrary("zig-dis-x86_64", "src/lib.zig");
+    const lib = b.addStaticLibrary("dis_x86_64", "src/dis_x86_64.zig");
     lib.setBuildMode(mode);
     lib.install();
 
-    const lib_tests = b.addTest("src/lib.zig");
+    const lib_tests = b.addTest("src/dis_x86_64.zig");
     lib_tests.setBuildMode(mode);
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&lib_tests.step);
 
-    const exe = b.addExecutable("zig-dis-x86_64", "src/main.zig");
+    const exe = b.addExecutable("dis_x86_64", "src/main.zig");
     exe.setBuildMode(mode);
-    exe.addPackagePath("zig-dis-x86_64", "src/lib.zig");
+    exe.addPackagePath("dis_x86_64", "src/dis_x86_64.zig");
     exe.install();
 
     const run_cmd = exe.run();

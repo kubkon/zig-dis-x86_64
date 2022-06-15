@@ -1,5 +1,5 @@
 const std = @import("std");
-const Disassembler = @import("zig-dis-x86_64").Disassembler;
+const Disassembler = @import("dis_x86_64").Disassembler;
 
 var gpa_alloc = std.heap.GeneralPurposeAllocator(.{}){};
 const gpa = gpa_alloc.allocator();
@@ -30,5 +30,7 @@ pub fn main() !void {
         try buf.append('\n');
     }
 
-    std.log.warn("disassembled: {s}  {s}", .{ input_hex, buf.items });
+    const stdout = std.io.getStdOut().writer();
+    try stdout.writeAll("disassembled:\n");
+    try stdout.print("  {s}  {s}", .{ input_hex, buf.items });
 }
