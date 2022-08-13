@@ -20,6 +20,7 @@ pub const Instruction = struct {
         @"or",
         lea,
         sbb,
+        sub,
 
         fn encode(tag: Tag, enc: Enc, bit_size: u7, encoder: anytype) !void {
             if (bit_size == 8) switch (tag) {
@@ -66,6 +67,12 @@ pub const Instruction = struct {
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
                     .rm => try encoder.opcode_1byte(0x1a),
                     .mr => try encoder.opcode_1byte(0x18),
+                },
+                .sub => switch (enc) {
+                    .oi => unreachable, // does not support this encoding
+                    .mi, .mi8 => try encoder.opcode_1byte(0x80),
+                    .rm => try encoder.opcode_1byte(0x2a),
+                    .mr => try encoder.opcode_1byte(0x28),
                 },
             } else switch (tag) {
                 .adc => switch (enc) {
@@ -120,6 +127,13 @@ pub const Instruction = struct {
                     .mi8 => try encoder.opcode_1byte(0x83),
                     .rm => try encoder.opcode_1byte(0x1b),
                     .mr => try encoder.opcode_1byte(0x19),
+                },
+                .sub => switch (enc) {
+                    .oi => unreachable, // does not support this encoding
+                    .mi => try encoder.opcode_1byte(0x81),
+                    .mi8 => try encoder.opcode_1byte(0x83),
+                    .rm => try encoder.opcode_1byte(0x2b),
+                    .mr => try encoder.opcode_1byte(0x29),
                 },
             }
         }
@@ -308,6 +322,7 @@ pub const Instruction = struct {
                     .adc => 2,
                     .sbb => 3,
                     .@"and" => 4,
+                    .sub => 5,
                     .cmp => 7,
                     .mov => 0,
                     .lea => unreachable, // unsupported encoding
@@ -370,6 +385,7 @@ pub const Instruction = struct {
             .@"or" => try writer.writeAll("or "),
             .lea => try writer.writeAll("lea "),
             .sbb => try writer.writeAll("sbb "),
+            .sub => try writer.writeAll("sub "),
         }
 
         switch (self.enc) {
