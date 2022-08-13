@@ -72,6 +72,7 @@ pub const Disassembler = struct {
                             0 => Instruction.Tag.add,
                             1 => Instruction.Tag.@"or",
                             2 => Instruction.Tag.adc,
+                            3 => Instruction.Tag.sbb,
                             4 => Instruction.Tag.@"and",
                             7 => Instruction.Tag.cmp,
                             else => unreachable, // unhandled MI encoding
@@ -87,7 +88,7 @@ pub const Disassembler = struct {
 
                     switch (mod) {
                         0b11 => {
-                            const reg = Register.fromLowEnc(op2, rex.r, bit_size);
+                            const reg = Register.fromLowEnc(op2, rex.b, bit_size);
                             const imm = try parseImm(reader, imm_bit_size);
                             break :data Instruction.Data.mi(RegisterOrMemory.reg(reg), imm);
                         },

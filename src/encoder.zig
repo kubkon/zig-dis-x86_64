@@ -19,6 +19,7 @@ pub const Instruction = struct {
         mov,
         @"or",
         lea,
+        sbb,
 
         fn encode(tag: Tag, enc: Enc, bit_size: u7, encoder: anytype) !void {
             if (bit_size == 8) switch (tag) {
@@ -60,6 +61,12 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x08),
                 },
                 .lea => unreachable, // does not support 8bit sizes
+                .sbb => switch (enc) {
+                    .oi => unreachable, // does not support this encoding
+                    .mi, .mi8 => try encoder.opcode_1byte(0x80),
+                    .rm => try encoder.opcode_1byte(0x1a),
+                    .mr => try encoder.opcode_1byte(0x18),
+                },
             } else switch (tag) {
                 .adc => switch (enc) {
                     .oi => unreachable, // does not support this encoding
@@ -106,6 +113,13 @@ pub const Instruction = struct {
                 .lea => switch (enc) {
                     .rm => try encoder.opcode_1byte(0x8d),
                     else => unreachable, // does not support different encodings
+                },
+                .sbb => switch (enc) {
+                    .oi => unreachable, // does not support this encoding
+                    .mi => try encoder.opcode_1byte(0x81),
+                    .mi8 => try encoder.opcode_1byte(0x83),
+                    .rm => try encoder.opcode_1byte(0x1b),
+                    .mr => try encoder.opcode_1byte(0x19),
                 },
             }
         }
@@ -292,6 +306,7 @@ pub const Instruction = struct {
                     .add => 0,
                     .@"or" => 1,
                     .adc => 2,
+                    .sbb => 3,
                     .@"and" => 4,
                     .cmp => 7,
                     .mov => 0,
@@ -354,6 +369,7 @@ pub const Instruction = struct {
             },
             .@"or" => try writer.writeAll("or "),
             .lea => try writer.writeAll("lea "),
+            .sbb => try writer.writeAll("sbb "),
         }
 
         switch (self.enc) {
