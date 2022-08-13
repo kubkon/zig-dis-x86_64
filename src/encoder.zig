@@ -14,6 +14,7 @@ pub const Instruction = struct {
     pub const Tag = enum {
         adc,
         add,
+        @"and",
         cmp,
         mov,
         lea,
@@ -31,6 +32,12 @@ pub const Instruction = struct {
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
                     .rm => try encoder.opcode_1byte(0x02),
                     .mr => try encoder.opcode_1byte(0x00),
+                },
+                .@"and" => switch (enc) {
+                    .oi => unreachable, // does not support this encoding
+                    .mi, .mi8 => try encoder.opcode_1byte(0x80),
+                    .rm => try encoder.opcode_1byte(0x22),
+                    .mr => try encoder.opcode_1byte(0x20),
                 },
                 .cmp => switch (enc) {
                     .oi => unreachable, // does not support this encoding
@@ -60,6 +67,13 @@ pub const Instruction = struct {
                     .mi8 => try encoder.opcode_1byte(0x83),
                     .rm => try encoder.opcode_1byte(0x03),
                     .mr => try encoder.opcode_1byte(0x01),
+                },
+                .@"and" => switch (enc) {
+                    .oi => unreachable, // does not support this encoding
+                    .mi => try encoder.opcode_1byte(0x81),
+                    .mi8 => try encoder.opcode_1byte(0x83),
+                    .rm => try encoder.opcode_1byte(0x23),
+                    .mr => try encoder.opcode_1byte(0x21),
                 },
                 .cmp => switch (enc) {
                     .oi => unreachable, // does not support this encoding
@@ -263,9 +277,10 @@ pub const Instruction = struct {
                 const modrm_ext: u3 = switch (self.tag) {
                     .adc => 2,
                     .add => 0,
+                    .@"and" => 4,
                     .cmp => 7,
                     .mov => 0,
-                    else => unreachable, // MI encoding selected without ModRM ext bits specified
+                    .lea => unreachable, // unsupported encoding
                 };
                 switch (mi.reg_or_mem) {
                     .reg => |dst_reg| {
@@ -309,6 +324,7 @@ pub const Instruction = struct {
         switch (self.tag) {
             .adc => try writer.writeAll("adc "),
             .add => try writer.writeAll("add "),
+            .@"and" => try writer.writeAll("and "),
             .cmp => try writer.writeAll("cmp "),
             .mov => blk: {
                 switch (self.enc) {
