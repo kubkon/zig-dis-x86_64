@@ -67,17 +67,18 @@ pub const Disassembler = struct {
                     const op2: u3 = @truncate(u3, modrm_byte);
 
                     assert(opc.is_wip);
-                    opc.tag = switch (op1) {
-                        0 => switch (opc.byte) {
-                            0x80, 0x81, 0x83 => Instruction.Tag.add,
-                            0xc6, 0xc7 => Instruction.Tag.mov,
-                            else => unreachable,
+                    opc.tag = switch (opc.byte) {
+                        0x80, 0x81, 0x83 => switch (op1) {
+                            0 => Instruction.Tag.add,
+                            2 => Instruction.Tag.adc,
+                            7 => Instruction.Tag.cmp,
+                            else => unreachable, // unhandled MI encoding
                         },
-                        7 => switch (opc.byte) {
-                            0x80, 0x81, 0x83 => Instruction.Tag.cmp,
-                            else => unreachable,
+                        0xc6, 0xc7 => switch (op1) {
+                            0 => Instruction.Tag.mov,
+                            else => unreachable, // unsupported MI encoding
                         },
-                        else => unreachable,
+                        else => unreachable, // unhandled MI encoding
                     };
 
                     const imm_bit_size = if (opc.enc == .mi8) 8 else bit_size;

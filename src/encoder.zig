@@ -12,6 +12,7 @@ pub const Instruction = struct {
     data: Data,
 
     pub const Tag = enum {
+        adc,
         add,
         cmp,
         mov,
@@ -19,47 +20,60 @@ pub const Instruction = struct {
 
         fn encode(tag: Tag, enc: Enc, bit_size: u7, encoder: anytype) !void {
             if (bit_size == 8) switch (tag) {
+                .adc => switch (enc) {
+                    .oi => unreachable,
+                    .mi, .mi8 => try encoder.opcode_1byte(0x80),
+                    .rm => try encoder.opcode_1byte(0x12),
+                    .mr => try encoder.opcode_1byte(0x10),
+                },
                 .add => switch (enc) {
                     .oi => unreachable, // does not support this encoding
+                    .mi, .mi8 => try encoder.opcode_1byte(0x80),
                     .rm => try encoder.opcode_1byte(0x02),
                     .mr => try encoder.opcode_1byte(0x00),
-                    .mi, .mi8 => try encoder.opcode_1byte(0x80),
                 },
                 .cmp => switch (enc) {
                     .oi => unreachable, // does not support this encoding
+                    .mi, .mi8 => try encoder.opcode_1byte(0x80),
                     .rm => try encoder.opcode_1byte(0x3a),
                     .mr => try encoder.opcode_1byte(0x38),
-                    .mi, .mi8 => try encoder.opcode_1byte(0x80),
                 },
                 .mov => switch (enc) {
                     .oi => unreachable, // use encodeWithReg instead
-                    .rm => try encoder.opcode_1byte(0x8a),
-                    .mr => try encoder.opcode_1byte(0x88),
                     .mi => try encoder.opcode_1byte(0xc6),
                     .mi8 => unreachable, // does not support this encoding
+                    .rm => try encoder.opcode_1byte(0x8a),
+                    .mr => try encoder.opcode_1byte(0x88),
                 },
                 .lea => unreachable, // does not support 8bit sizes
             } else switch (tag) {
-                .add => switch (enc) {
+                .adc => switch (enc) {
                     .oi => unreachable, // does not support this encoding
-                    .rm => try encoder.opcode_1byte(0x03),
-                    .mr => try encoder.opcode_1byte(0x01),
                     .mi => try encoder.opcode_1byte(0x81),
                     .mi8 => try encoder.opcode_1byte(0x83),
+                    .rm => try encoder.opcode_1byte(0x13),
+                    .mr => try encoder.opcode_1byte(0x11),
+                },
+                .add => switch (enc) {
+                    .oi => unreachable, // does not support this encoding
+                    .mi => try encoder.opcode_1byte(0x81),
+                    .mi8 => try encoder.opcode_1byte(0x83),
+                    .rm => try encoder.opcode_1byte(0x03),
+                    .mr => try encoder.opcode_1byte(0x01),
                 },
                 .cmp => switch (enc) {
                     .oi => unreachable, // does not support this encoding
-                    .rm => try encoder.opcode_1byte(0x3b),
-                    .mr => try encoder.opcode_1byte(0x39),
                     .mi => try encoder.opcode_1byte(0x81),
                     .mi8 => try encoder.opcode_1byte(0x83),
+                    .rm => try encoder.opcode_1byte(0x3b),
+                    .mr => try encoder.opcode_1byte(0x39),
                 },
                 .mov => switch (enc) {
                     .oi => unreachable, // use encodeWithReg instead
-                    .rm => try encoder.opcode_1byte(0x8b),
-                    .mr => try encoder.opcode_1byte(0x89),
                     .mi => try encoder.opcode_1byte(0xc7),
                     .mi8 => unreachable, // does not support this encoding
+                    .rm => try encoder.opcode_1byte(0x8b),
+                    .mr => try encoder.opcode_1byte(0x89),
                 },
                 .lea => switch (enc) {
                     .rm => try encoder.opcode_1byte(0x8d),
@@ -247,10 +261,11 @@ pub const Instruction = struct {
             .mi, .mi8 => {
                 const mi = self.data.mi;
                 const modrm_ext: u3 = switch (self.tag) {
+                    .adc => 2,
                     .add => 0,
                     .cmp => 7,
                     .mov => 0,
-                    else => unreachable,
+                    else => unreachable, // MI encoding selected without ModRM ext bits specified
                 };
                 switch (mi.reg_or_mem) {
                     .reg => |dst_reg| {
@@ -292,6 +307,7 @@ pub const Instruction = struct {
 
     pub fn fmtPrint(self: Instruction, writer: anytype) !void {
         switch (self.tag) {
+            .adc => try writer.writeAll("adc "),
             .add => try writer.writeAll("add "),
             .cmp => try writer.writeAll("cmp "),
             .mov => blk: {
