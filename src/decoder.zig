@@ -75,8 +75,8 @@ pub const Disassembler = struct {
                             3 => Instruction.Tag.sbb,
                             4 => Instruction.Tag.@"and",
                             5 => Instruction.Tag.sub,
+                            6 => Instruction.Tag.xor,
                             7 => Instruction.Tag.cmp,
-                            else => unreachable, // unhandled MI encoding
                         },
                         0xc6, 0xc7 => switch (op1) {
                             0 => Instruction.Tag.mov,

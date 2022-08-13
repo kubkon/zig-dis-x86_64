@@ -21,6 +21,7 @@ pub const Instruction = struct {
         lea,
         sbb,
         sub,
+        xor,
 
         fn encode(tag: Tag, enc: Enc, bit_size: u7, encoder: anytype) !void {
             if (bit_size == 8) switch (tag) {
@@ -73,6 +74,12 @@ pub const Instruction = struct {
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
                     .rm => try encoder.opcode_1byte(0x2a),
                     .mr => try encoder.opcode_1byte(0x28),
+                },
+                .xor => switch (enc) {
+                    .oi => unreachable, // does not support this encoding
+                    .mi, .mi8 => try encoder.opcode_1byte(0x80),
+                    .rm => try encoder.opcode_1byte(0x32),
+                    .mr => try encoder.opcode_1byte(0x30),
                 },
             } else switch (tag) {
                 .adc => switch (enc) {
@@ -134,6 +141,13 @@ pub const Instruction = struct {
                     .mi8 => try encoder.opcode_1byte(0x83),
                     .rm => try encoder.opcode_1byte(0x2b),
                     .mr => try encoder.opcode_1byte(0x29),
+                },
+                .xor => switch (enc) {
+                    .oi => unreachable, // does not support this encoding
+                    .mi => try encoder.opcode_1byte(0x81),
+                    .mi8 => try encoder.opcode_1byte(0x83),
+                    .rm => try encoder.opcode_1byte(0x33),
+                    .mr => try encoder.opcode_1byte(0x31),
                 },
             }
         }
@@ -323,6 +337,7 @@ pub const Instruction = struct {
                     .sbb => 3,
                     .@"and" => 4,
                     .sub => 5,
+                    .xor => 6,
                     .cmp => 7,
                     .mov => 0,
                     .lea => unreachable, // unsupported encoding
@@ -386,6 +401,7 @@ pub const Instruction = struct {
             .lea => try writer.writeAll("lea "),
             .sbb => try writer.writeAll("sbb "),
             .sub => try writer.writeAll("sub "),
+            .xor => try writer.writeAll("xor "),
         }
 
         switch (self.enc) {
