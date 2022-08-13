@@ -70,6 +70,7 @@ pub const Disassembler = struct {
                     opc.tag = switch (opc.byte) {
                         0x80, 0x81, 0x83 => switch (op1) {
                             0 => Instruction.Tag.add,
+                            1 => Instruction.Tag.@"or",
                             2 => Instruction.Tag.adc,
                             4 => Instruction.Tag.@"and",
                             7 => Instruction.Tag.cmp,

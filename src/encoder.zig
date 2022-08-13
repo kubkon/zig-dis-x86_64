@@ -17,6 +17,7 @@ pub const Instruction = struct {
         @"and",
         cmp,
         mov,
+        @"or",
         lea,
 
         fn encode(tag: Tag, enc: Enc, bit_size: u7, encoder: anytype) !void {
@@ -51,6 +52,12 @@ pub const Instruction = struct {
                     .mi8 => unreachable, // does not support this encoding
                     .rm => try encoder.opcode_1byte(0x8a),
                     .mr => try encoder.opcode_1byte(0x88),
+                },
+                .@"or" => switch (enc) {
+                    .oi => unreachable, // does not support this encoding
+                    .mi, .mi8 => try encoder.opcode_1byte(0x80),
+                    .rm => try encoder.opcode_1byte(0x0a),
+                    .mr => try encoder.opcode_1byte(0x08),
                 },
                 .lea => unreachable, // does not support 8bit sizes
             } else switch (tag) {
@@ -88,6 +95,13 @@ pub const Instruction = struct {
                     .mi8 => unreachable, // does not support this encoding
                     .rm => try encoder.opcode_1byte(0x8b),
                     .mr => try encoder.opcode_1byte(0x89),
+                },
+                .@"or" => switch (enc) {
+                    .oi => unreachable, // does not support this encoding
+                    .mi => try encoder.opcode_1byte(0x81),
+                    .mi8 => try encoder.opcode_1byte(0x83),
+                    .rm => try encoder.opcode_1byte(0x0b),
+                    .mr => try encoder.opcode_1byte(0x09),
                 },
                 .lea => switch (enc) {
                     .rm => try encoder.opcode_1byte(0x8d),
@@ -275,8 +289,9 @@ pub const Instruction = struct {
             .mi, .mi8 => {
                 const mi = self.data.mi;
                 const modrm_ext: u3 = switch (self.tag) {
-                    .adc => 2,
                     .add => 0,
+                    .@"or" => 1,
+                    .adc => 2,
                     .@"and" => 4,
                     .cmp => 7,
                     .mov => 0,
@@ -337,6 +352,7 @@ pub const Instruction = struct {
                 }
                 try writer.writeAll("mov ");
             },
+            .@"or" => try writer.writeAll("or "),
             .lea => try writer.writeAll("lea "),
         }
 
