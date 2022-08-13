@@ -154,6 +154,8 @@ test "disassemble - mnemonic" {
         0x41, 0x8d, 0x43, 0x10,
         0x4c, 0x8d, 0x25, 0x00, 0x00, 0x00, 0x00,
         0x48, 0x03, 0x05, 0x00, 0x00, 0x00, 0x00,
+        0x48, 0x83, 0xc0, 0x10,
+        0x48, 0x83, 0x45, 0xf0, 0xf0,
         // zig fmt: on
     });
 
@@ -178,6 +180,8 @@ test "disassemble - mnemonic" {
         \\lea eax, dword ptr [r11 + 0x10]
         \\lea r12, qword ptr [rip + 0x0]
         \\add rax, qword ptr [rip + 0x0]
+        \\add rax, 0x10
+        \\add qword ptr [rbp - 0x10], -0x10
         \\
     , buf.items);
 }
@@ -332,8 +336,15 @@ test "lower MI encoding" {
         "mov qword ptr [rcx*2 + 0x10000000], 0x10",
     );
 
-    // try lowerToMiImm8Enc(.add, RegisterOrMemory.reg(.rax), 0x10, emit.code());
-    // try expectEqualHexStrings("\x48\x83\xC0\x10", emit.lowered(), "add rax, 0x10");
+    try enc.encode(.{ .tag = .add, .enc = .mi8, .data = Instruction.Data.mi(RegisterOrMemory.reg(.rax), 0x10) });
+    try expectEqualHexStrings("\x48\x83\xC0\x10", enc.code(), "add rax, 0x10");
+
+    try enc.encode(.{ .tag = .add, .enc = .mi8, .data = Instruction.Data.mi(RegisterOrMemory.mem(.{
+        .ptr_size = .qword,
+        .base = .{ .reg = .rbp },
+        .disp = -0x10,
+    }), -0x10) });
+    try expectEqualHexStrings("\x48\x83\x45\xF0\xF0", enc.code(), "add qword ptr [rbp - 0x10], -0x10");
 }
 
 test "lower RM encoding" {

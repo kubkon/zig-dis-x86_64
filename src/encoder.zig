@@ -23,19 +23,20 @@ pub const Instruction = struct {
                     .oi => unreachable, // does not support this encoding
                     .rm => try encoder.opcode_1byte(0x02),
                     .mr => try encoder.opcode_1byte(0x00),
-                    .mi => try encoder.opcode_1byte(0x80),
+                    .mi, .mi8 => try encoder.opcode_1byte(0x80),
                 },
                 .cmp => switch (enc) {
                     .oi => unreachable, // does not support this encoding
                     .rm => try encoder.opcode_1byte(0x3a),
                     .mr => try encoder.opcode_1byte(0x38),
-                    .mi => try encoder.opcode_1byte(0x80),
+                    .mi, .mi8 => try encoder.opcode_1byte(0x80),
                 },
                 .mov => switch (enc) {
                     .oi => unreachable, // use encodeWithReg instead
                     .rm => try encoder.opcode_1byte(0x8a),
                     .mr => try encoder.opcode_1byte(0x88),
                     .mi => try encoder.opcode_1byte(0xc6),
+                    .mi8 => unreachable, // does not support this encoding
                 },
                 .lea => unreachable, // does not support 8bit sizes
             } else switch (tag) {
@@ -44,18 +45,21 @@ pub const Instruction = struct {
                     .rm => try encoder.opcode_1byte(0x03),
                     .mr => try encoder.opcode_1byte(0x01),
                     .mi => try encoder.opcode_1byte(0x81),
+                    .mi8 => try encoder.opcode_1byte(0x83),
                 },
                 .cmp => switch (enc) {
                     .oi => unreachable, // does not support this encoding
                     .rm => try encoder.opcode_1byte(0x3b),
                     .mr => try encoder.opcode_1byte(0x39),
                     .mi => try encoder.opcode_1byte(0x81),
+                    .mi8 => try encoder.opcode_1byte(0x83),
                 },
                 .mov => switch (enc) {
                     .oi => unreachable, // use encodeWithReg instead
                     .rm => try encoder.opcode_1byte(0x8b),
                     .mr => try encoder.opcode_1byte(0x89),
                     .mi => try encoder.opcode_1byte(0xc7),
+                    .mi8 => unreachable, // does not support this encoding
                 },
                 .lea => switch (enc) {
                     .rm => try encoder.opcode_1byte(0x8d),
@@ -78,6 +82,7 @@ pub const Instruction = struct {
     pub const Enc = enum {
         oi,
         mi,
+        mi8,
         mr,
         rm,
     };
@@ -239,7 +244,7 @@ pub const Instruction = struct {
                     },
                 }
             },
-            .mi => {
+            .mi, .mi8 => {
                 const mi = self.data.mi;
                 const modrm_ext: u3 = switch (self.tag) {
                     .add => 0,
@@ -256,7 +261,7 @@ pub const Instruction = struct {
                             .w = setRexWRegister(dst_reg),
                             .b = dst_reg.isExtended(),
                         });
-                        try self.tag.encode(.mi, dst_reg.bitSize(), encoder);
+                        try self.tag.encode(self.enc, dst_reg.bitSize(), encoder);
                         try encoder.modRm_direct(modrm_ext, dst_reg.lowEnc());
                     },
                     .mem => |dst_mem| {
@@ -276,11 +281,11 @@ pub const Instruction = struct {
                                 });
                             },
                         }
-                        try self.tag.encode(.mi, dst_mem.bitSize(), encoder);
+                        try self.tag.encode(self.enc, dst_mem.bitSize(), encoder);
                         try dst_mem.encode(modrm_ext, encoder);
                     },
                 }
-                try encodeImmSigned(mi.imm, mi.reg_or_mem.bitSize(), encoder);
+                try encodeImmSigned(mi.imm, if (self.enc == .mi8) 8 else mi.reg_or_mem.bitSize(), encoder);
             },
         }
     }
@@ -320,7 +325,7 @@ pub const Instruction = struct {
                     try writer.print("0x{x}", .{imm_abs});
                 }
             },
-            .mi => {
+            .mi, .mi8 => {
                 const mi = self.data.mi;
                 try mi.reg_or_mem.fmtPrint(writer);
                 try writer.writeAll(", ");

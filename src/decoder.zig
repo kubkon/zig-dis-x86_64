@@ -60,7 +60,7 @@ pub const Disassembler = struct {
                     };
                     break :data Instruction.Data.oi(reg, imm);
                 },
-                .mi => {
+                .mi, .mi8 => {
                     const modrm_byte = try reader.readByte();
                     const mod: u2 = @truncate(u2, modrm_byte >> 6);
                     const op1: u3 = @truncate(u3, modrm_byte >> 3);
@@ -69,21 +69,23 @@ pub const Disassembler = struct {
                     assert(opc.is_wip);
                     opc.tag = switch (op1) {
                         0 => switch (opc.byte) {
-                            0x80, 0x81 => Instruction.Tag.add,
+                            0x80, 0x81, 0x83 => Instruction.Tag.add,
                             0xc6, 0xc7 => Instruction.Tag.mov,
                             else => unreachable,
                         },
                         7 => switch (opc.byte) {
-                            0x80, 0x81 => Instruction.Tag.cmp,
+                            0x80, 0x81, 0x83 => Instruction.Tag.cmp,
                             else => unreachable,
                         },
                         else => unreachable,
                     };
 
+                    const imm_bit_size = if (opc.enc == .mi8) 8 else bit_size;
+
                     switch (mod) {
                         0b11 => {
                             const reg = Register.fromLowEnc(op2, rex.r, bit_size);
-                            const imm = try parseImm(reader, bit_size);
+                            const imm = try parseImm(reader, imm_bit_size);
                             break :data Instruction.Data.mi(RegisterOrMemory.reg(reg), imm);
                         },
                         0b01 => {
@@ -95,7 +97,7 @@ pub const Disassembler = struct {
 
                             const reg = Register.fromLowEnc(op2, rex.b, 64);
                             const disp = try reader.readInt(i8, .Little);
-                            const imm = try parseImm(reader, bit_size);
+                            const imm = try parseImm(reader, imm_bit_size);
                             break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                                 .base = .{ .reg = reg },
@@ -111,7 +113,7 @@ pub const Disassembler = struct {
 
                             const reg = Register.fromLowEnc(op2, rex.b, 64);
                             const disp = try reader.readInt(i32, .Little);
-                            const imm = try parseImm(reader, bit_size);
+                            const imm = try parseImm(reader, imm_bit_size);
                             break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                                 .base = .{ .reg = reg },
@@ -123,7 +125,7 @@ pub const Disassembler = struct {
                             if (op2 == 0b101) {
                                 // RIP with 32bit displacement
                                 const disp = try reader.readInt(i32, .Little);
-                                const imm = try parseImm(reader, bit_size);
+                                const imm = try parseImm(reader, imm_bit_size);
                                 break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
                                     .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                                     .base = .rip,
@@ -137,7 +139,7 @@ pub const Disassembler = struct {
                             }
 
                             const reg = Register.fromLowEnc(op2, rex.b, 64);
-                            const imm = try parseImm(reader, bit_size);
+                            const imm = try parseImm(reader, imm_bit_size);
                             break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                                 .base = .{ .reg = reg },
@@ -317,6 +319,7 @@ const ParsedOpc = struct {
                 // we parse the ModRM byte.
                 0x80 => break :blk ParsedOpc.wip(.mi, true),
                 0x81 => break :blk ParsedOpc.wip(.mi, false),
+                0x83 => break :blk ParsedOpc.wip(.mi8, false),
                 0xc6 => break :blk ParsedOpc.wip(.mi, true),
                 0xc7 => break :blk ParsedOpc.wip(.mi, false),
                 // add
