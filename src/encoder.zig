@@ -1,5 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const math = std.math;
 
 const bits = @import("bits.zig");
 const sign = bits.sign;
@@ -26,37 +27,42 @@ pub const Instruction = struct {
         fn encode(tag: Tag, enc: Enc, bit_size: u7, encoder: anytype) !void {
             if (bit_size == 8) switch (tag) {
                 .adc => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x14),
                     .oi => unreachable,
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
                     .rm => try encoder.opcode_1byte(0x12),
                     .mr => try encoder.opcode_1byte(0x10),
                 },
                 .add => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x04),
                     .oi => unreachable, // does not support this encoding
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
                     .rm => try encoder.opcode_1byte(0x02),
                     .mr => try encoder.opcode_1byte(0x00),
                 },
                 .@"and" => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x24),
                     .oi => unreachable, // does not support this encoding
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
                     .rm => try encoder.opcode_1byte(0x22),
                     .mr => try encoder.opcode_1byte(0x20),
                 },
                 .cmp => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x3c),
                     .oi => unreachable, // does not support this encoding
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
                     .rm => try encoder.opcode_1byte(0x3a),
                     .mr => try encoder.opcode_1byte(0x38),
                 },
                 .mov => switch (enc) {
-                    .oi => unreachable, // use encodeWithReg instead
+                    .i, .oi => unreachable, // use encodeWithReg instead
                     .mi => try encoder.opcode_1byte(0xc6),
                     .mi8 => unreachable, // does not support this encoding
                     .rm => try encoder.opcode_1byte(0x8a),
                     .mr => try encoder.opcode_1byte(0x88),
                 },
                 .@"or" => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x0c),
                     .oi => unreachable, // does not support this encoding
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
                     .rm => try encoder.opcode_1byte(0x0a),
@@ -64,18 +70,21 @@ pub const Instruction = struct {
                 },
                 .lea => unreachable, // does not support 8bit sizes
                 .sbb => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x1c),
                     .oi => unreachable, // does not support this encoding
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
                     .rm => try encoder.opcode_1byte(0x1a),
                     .mr => try encoder.opcode_1byte(0x18),
                 },
                 .sub => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x2c),
                     .oi => unreachable, // does not support this encoding
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
                     .rm => try encoder.opcode_1byte(0x2a),
                     .mr => try encoder.opcode_1byte(0x28),
                 },
                 .xor => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x34),
                     .oi => unreachable, // does not support this encoding
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
                     .rm => try encoder.opcode_1byte(0x32),
@@ -83,6 +92,7 @@ pub const Instruction = struct {
                 },
             } else switch (tag) {
                 .adc => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x15),
                     .oi => unreachable, // does not support this encoding
                     .mi => try encoder.opcode_1byte(0x81),
                     .mi8 => try encoder.opcode_1byte(0x83),
@@ -90,6 +100,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x11),
                 },
                 .add => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x05),
                     .oi => unreachable, // does not support this encoding
                     .mi => try encoder.opcode_1byte(0x81),
                     .mi8 => try encoder.opcode_1byte(0x83),
@@ -97,6 +108,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x01),
                 },
                 .@"and" => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x25),
                     .oi => unreachable, // does not support this encoding
                     .mi => try encoder.opcode_1byte(0x81),
                     .mi8 => try encoder.opcode_1byte(0x83),
@@ -104,6 +116,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x21),
                 },
                 .cmp => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x3d),
                     .oi => unreachable, // does not support this encoding
                     .mi => try encoder.opcode_1byte(0x81),
                     .mi8 => try encoder.opcode_1byte(0x83),
@@ -111,13 +124,14 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x39),
                 },
                 .mov => switch (enc) {
-                    .oi => unreachable, // use encodeWithReg instead
+                    .i, .oi => unreachable, // does not support this encoding
                     .mi => try encoder.opcode_1byte(0xc7),
                     .mi8 => unreachable, // does not support this encoding
                     .rm => try encoder.opcode_1byte(0x8b),
                     .mr => try encoder.opcode_1byte(0x89),
                 },
                 .@"or" => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x0d),
                     .oi => unreachable, // does not support this encoding
                     .mi => try encoder.opcode_1byte(0x81),
                     .mi8 => try encoder.opcode_1byte(0x83),
@@ -129,6 +143,7 @@ pub const Instruction = struct {
                     else => unreachable, // does not support different encodings
                 },
                 .sbb => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x1d),
                     .oi => unreachable, // does not support this encoding
                     .mi => try encoder.opcode_1byte(0x81),
                     .mi8 => try encoder.opcode_1byte(0x83),
@@ -136,6 +151,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x19),
                 },
                 .sub => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x2d),
                     .oi => unreachable, // does not support this encoding
                     .mi => try encoder.opcode_1byte(0x81),
                     .mi8 => try encoder.opcode_1byte(0x83),
@@ -143,6 +159,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x29),
                 },
                 .xor => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x35),
                     .oi => unreachable, // does not support this encoding
                     .mi => try encoder.opcode_1byte(0x81),
                     .mi8 => try encoder.opcode_1byte(0x83),
@@ -164,6 +181,7 @@ pub const Instruction = struct {
     };
 
     pub const Enc = enum {
+        i,
         oi,
         mi,
         mi8,
@@ -172,46 +190,51 @@ pub const Instruction = struct {
     };
 
     pub const Data = union {
+        i: I,
         oi: Oi,
         mi: Mi,
         mr: Mr,
         rm: Rm,
 
+        pub fn i(imm: i32, bit_size: ?u7) Data {
+            return .{ .i = .{ .bit_size = bit_size, .imm = imm } };
+        }
+
         pub fn oi(reg: Register, imm: u64) Data {
-            return .{
-                .oi = .{
-                    .reg = reg,
-                    .imm = imm,
-                },
-            };
+            return .{ .oi = .{
+                .reg = reg,
+                .imm = imm,
+            } };
         }
 
         pub fn mi(reg_or_mem: RegisterOrMemory, imm: i32) Data {
-            return .{
-                .mi = .{
-                    .reg_or_mem = reg_or_mem,
-                    .imm = imm,
-                },
-            };
+            return .{ .mi = .{
+                .reg_or_mem = reg_or_mem,
+                .imm = imm,
+            } };
         }
 
         pub fn rm(reg: Register, reg_or_mem: RegisterOrMemory) Data {
-            return .{
-                .rm = .{
-                    .reg = reg,
-                    .reg_or_mem = reg_or_mem,
-                },
-            };
+            return .{ .rm = .{
+                .reg = reg,
+                .reg_or_mem = reg_or_mem,
+            } };
         }
 
         pub fn mr(reg_or_mem: RegisterOrMemory, reg: Register) Data {
-            return .{
-                .mr = .{
-                    .reg_or_mem = reg_or_mem,
-                    .reg = reg,
-                },
-            };
+            return .{ .mr = .{
+                .reg_or_mem = reg_or_mem,
+                .reg = reg,
+            } };
         }
+    };
+
+    pub const I = struct {
+        /// null implies the bit size will be auto-inferred from the immediate.
+        /// Note that auto-inferrence will never promote the instruction to 64bits.
+        /// For that, set the bit size explicitly.
+        bit_size: ?u7 = null,
+        imm: i32,
     };
 
     pub const Oi = struct {
@@ -237,6 +260,19 @@ pub const Instruction = struct {
     pub fn encode(self: Instruction, writer: anytype) !void {
         const encoder = Encoder(@TypeOf(writer)){ .writer = writer };
         switch (self.enc) {
+            .i => {
+                const i = self.data.i;
+                const imm = i.imm;
+                const bit_size = if (i.bit_size) |bs| bs else bitSizeFromImm(imm);
+                if (bit_size == 16) {
+                    try encoder.prefix16BitMode();
+                }
+                try encoder.rex(.{
+                    .w = bit_size == 64,
+                });
+                try self.tag.encode(.i, bit_size, encoder);
+                try encodeImmSigned(imm, bit_size, encoder);
+            },
             .oi => {
                 const oi = self.data.oi;
                 const reg = oi.reg;
@@ -405,6 +441,27 @@ pub const Instruction = struct {
         }
 
         switch (self.enc) {
+            .i => {
+                const i = self.data.i;
+                const bit_size = if (i.bit_size) |bs| bs else bitSizeFromImm(i.imm);
+
+                if (bit_size <= 8) {
+                    try Register.al.fmtPrint(writer);
+                } else if (bit_size <= 16) {
+                    try Register.ax.fmtPrint(writer);
+                } else if (bit_size <= 32) {
+                    try Register.eax.fmtPrint(writer);
+                } else {
+                    try Register.rax.fmtPrint(writer);
+                }
+                try writer.writeAll(", ");
+                const imm_signed: i32 = @bitCast(i32, i.imm);
+                const imm_abs: u32 = @intCast(u32, try math.absInt(imm_signed));
+                if (sign(imm_signed) < 0) {
+                    try writer.writeByte('-');
+                }
+                try writer.print("0x{x}", .{imm_abs});
+            },
             .oi => {
                 const oi = self.data.oi;
                 try oi.reg.fmtPrint(writer);
@@ -414,7 +471,7 @@ pub const Instruction = struct {
                     try writer.print("0x{x}", .{oi.imm});
                 } else {
                     const imm_signed: i64 = @bitCast(i64, oi.imm);
-                    const imm_abs: u64 = @intCast(u64, try std.math.absInt(imm_signed));
+                    const imm_abs: u64 = @intCast(u64, try math.absInt(imm_signed));
                     if (sign(imm_signed) < 0) {
                         try writer.writeByte('-');
                     }
@@ -426,7 +483,7 @@ pub const Instruction = struct {
                 try mi.reg_or_mem.fmtPrint(writer);
                 try writer.writeAll(", ");
                 const imm_signed: i32 = @bitCast(i32, mi.imm);
-                const imm_abs: u32 = @intCast(u32, try std.math.absInt(imm_signed));
+                const imm_abs: u32 = @intCast(u32, try math.absInt(imm_signed));
                 if (sign(imm_signed) < 0) {
                     try writer.writeByte('-');
                 }
@@ -474,6 +531,12 @@ inline fn encodeImmSigned(imm: i32, bit_size: u7, encoder: anytype) !void {
         32, 64 => try encoder.imm32(imm),
         else => unreachable,
     }
+}
+
+inline fn bitSizeFromImm(imm: i32) u7 {
+    if (math.cast(i8, imm)) |_| return 8;
+    if (math.cast(i16, imm)) |_| return 16;
+    return 32;
 }
 
 fn Encoder(comptime T: type) type {

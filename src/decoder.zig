@@ -49,6 +49,10 @@ pub const Disassembler = struct {
 
         const data: Instruction.Data = data: {
             switch (opc.enc) {
+                .i => {
+                    const imm = try parseImm(reader, bit_size);
+                    break :data Instruction.Data.i(imm, bit_size);
+                },
                 .oi => {
                     if (rex.r or rex.x) return error.InvalidRexForEncoding;
                     const reg = Register.fromLowEnc(opc.extra, rex.b, bit_size);
@@ -327,12 +331,22 @@ const ParsedOpc = struct {
                 0x83 => break :blk ParsedOpc.wip(.mi8, false),
                 0xc6 => break :blk ParsedOpc.wip(.mi, true),
                 0xc7 => break :blk ParsedOpc.wip(.mi, false),
+                // adc
+                0x14 => break :blk ParsedOpc.new(.adc, .i, true),
+                0x15 => break :blk ParsedOpc.new(.adc, .i, false),
                 // add
+                0x04 => break :blk ParsedOpc.new(.add, .i, true),
+                0x05 => break :blk ParsedOpc.new(.add, .i, false),
                 0x00 => break :blk ParsedOpc.new(.add, .mr, true),
                 0x01 => break :blk ParsedOpc.new(.add, .mr, false),
                 0x02 => break :blk ParsedOpc.new(.add, .rm, true),
                 0x03 => break :blk ParsedOpc.new(.add, .rm, false),
+                // and
+                0x24 => break :blk ParsedOpc.new(.@"and", .i, true),
+                0x25 => break :blk ParsedOpc.new(.@"and", .i, false),
                 // cmp
+                0x3c => break :blk ParsedOpc.new(.cmp, .i, true),
+                0x3d => break :blk ParsedOpc.new(.cmp, .i, false),
                 0x38 => break :blk ParsedOpc.new(.cmp, .mr, true),
                 0x39 => break :blk ParsedOpc.new(.cmp, .mr, false),
                 0x3a => break :blk ParsedOpc.new(.cmp, .rm, true),
@@ -344,6 +358,18 @@ const ParsedOpc = struct {
                 0x8b => break :blk ParsedOpc.new(.mov, .rm, false),
                 0x8c => break :blk ParsedOpc.new(.mov, .mr, false),
                 0x8e => break :blk ParsedOpc.new(.mov, .rm, false),
+                // or
+                0x0c => break :blk ParsedOpc.new(.@"or", .i, true),
+                0x0d => break :blk ParsedOpc.new(.@"or", .i, false),
+                // sbb
+                0x1c => break :blk ParsedOpc.new(.sbb, .i, true),
+                0x1d => break :blk ParsedOpc.new(.sbb, .i, false),
+                // sub
+                0x2c => break :blk ParsedOpc.new(.sub, .i, true),
+                0x2d => break :blk ParsedOpc.new(.sub, .i, false),
+                // xor
+                0x34 => break :blk ParsedOpc.new(.xor, .i, true),
+                0x35 => break :blk ParsedOpc.new(.xor, .i, false),
                 0xa0 => return error.Todo,
                 0xa1 => return error.Todo,
                 0xa2 => return error.Todo,

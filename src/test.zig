@@ -162,6 +162,9 @@ test "disassemble - mnemonic" {
         0x49, 0x83, 0xdb, 0x08,
         0x49, 0x83, 0xec, 0x00,
         0x41, 0x80, 0x73, 0xf0, 0x20,
+        0x34, 0x10,
+        0x1d, 0x00, 0x00, 0x00, 0x00,
+        0x48, 0x2d, 0x0f, 0x00, 0x00, 0x00,
         // zig fmt: on
     });
 
@@ -194,6 +197,9 @@ test "disassemble - mnemonic" {
         \\sbb r11, 0x8
         \\sub r12, 0x0
         \\xor byte ptr [r11 - 0x10], 0x20
+        \\xor al, 0x10
+        \\sbb eax, 0x0
+        \\sub rax, 0xf
         \\
     , buf.items);
 }
@@ -248,6 +254,13 @@ test "encode" {
     };
     try inst.encode(buf.writer());
     try testing.expectEqualSlices(u8, &.{ 0x48, 0xc7, 0xc3, 0x4, 0x0, 0x0, 0x0 }, buf.items);
+}
+
+test "lower I encoding" {
+    var enc = TestEncode{};
+
+    try enc.encode(.{ .tag = .xor, .enc = .i, .data = Instruction.Data.i(0x10, null) });
+    try expectEqualHexStrings("\x34\x10", enc.code(), "xor al, 0x10");
 }
 
 test "lower MI encoding" {
