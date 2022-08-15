@@ -334,6 +334,10 @@ const ParsedOpc = struct {
                 // adc
                 0x14 => break :blk ParsedOpc.new(.adc, .i, true),
                 0x15 => break :blk ParsedOpc.new(.adc, .i, false),
+                0x10 => break :blk ParsedOpc.new(.adc, .mr, true),
+                0x11 => break :blk ParsedOpc.new(.adc, .mr, false),
+                0x12 => break :blk ParsedOpc.new(.adc, .rm, true),
+                0x13 => break :blk ParsedOpc.new(.adc, .rm, false),
                 // add
                 0x04 => break :blk ParsedOpc.new(.add, .i, true),
                 0x05 => break :blk ParsedOpc.new(.add, .i, false),
@@ -344,6 +348,10 @@ const ParsedOpc = struct {
                 // and
                 0x24 => break :blk ParsedOpc.new(.@"and", .i, true),
                 0x25 => break :blk ParsedOpc.new(.@"and", .i, false),
+                0x20 => break :blk ParsedOpc.new(.@"and", .mr, true),
+                0x21 => break :blk ParsedOpc.new(.@"and", .mr, false),
+                0x22 => break :blk ParsedOpc.new(.@"and", .rm, true),
+                0x23 => break :blk ParsedOpc.new(.@"and", .rm, false),
                 // cmp
                 0x3c => break :blk ParsedOpc.new(.cmp, .i, true),
                 0x3d => break :blk ParsedOpc.new(.cmp, .i, false),
@@ -361,15 +369,31 @@ const ParsedOpc = struct {
                 // or
                 0x0c => break :blk ParsedOpc.new(.@"or", .i, true),
                 0x0d => break :blk ParsedOpc.new(.@"or", .i, false),
+                0x08 => break :blk ParsedOpc.new(.@"or", .mr, true),
+                0x09 => break :blk ParsedOpc.new(.@"or", .mr, false),
+                0x0a => break :blk ParsedOpc.new(.@"or", .rm, true),
+                0x0b => break :blk ParsedOpc.new(.@"or", .rm, false),
                 // sbb
                 0x1c => break :blk ParsedOpc.new(.sbb, .i, true),
                 0x1d => break :blk ParsedOpc.new(.sbb, .i, false),
+                0x18 => break :blk ParsedOpc.new(.sbb, .mr, true),
+                0x19 => break :blk ParsedOpc.new(.sbb, .mr, false),
+                0x1a => break :blk ParsedOpc.new(.sbb, .rm, true),
+                0x1b => break :blk ParsedOpc.new(.sbb, .rm, false),
                 // sub
                 0x2c => break :blk ParsedOpc.new(.sub, .i, true),
                 0x2d => break :blk ParsedOpc.new(.sub, .i, false),
+                0x28 => break :blk ParsedOpc.new(.sub, .mr, true),
+                0x29 => break :blk ParsedOpc.new(.sub, .mr, false),
+                0x2a => break :blk ParsedOpc.new(.sub, .rm, true),
+                0x2b => break :blk ParsedOpc.new(.sub, .rm, false),
                 // xor
                 0x34 => break :blk ParsedOpc.new(.xor, .i, true),
                 0x35 => break :blk ParsedOpc.new(.xor, .i, false),
+                0x30 => break :blk ParsedOpc.new(.xor, .mr, true),
+                0x31 => break :blk ParsedOpc.new(.xor, .mr, false),
+                0x32 => break :blk ParsedOpc.new(.xor, .rm, true),
+                0x33 => break :blk ParsedOpc.new(.xor, .rm, false),
                 0xa0 => return error.Todo,
                 0xa1 => return error.Todo,
                 0xa2 => return error.Todo,
