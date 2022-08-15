@@ -6,6 +6,7 @@ const bits = @import("bits.zig");
 const encoder = @import("encoder.zig");
 
 const Instruction = encoder.Instruction;
+const LegacyPrefixes = encoder.LegacyPrefixes;
 const Memory = bits.Memory;
 const Register = bits.Register;
 const RegisterOrMemory = bits.RegisterOrMemory;
@@ -32,20 +33,23 @@ pub const Disassembler = struct {
     }
 
     pub fn next(self: *Disassembler) Error!?Instruction {
-        const reader = self.stream.reader();
-
-        const next_byte = reader.readByte() catch |err| switch (err) {
+        const prefixes = parsePrefixes(&self.stream) catch |err| switch (err) {
             error.EndOfStream => return null,
             else => |e| return e,
         };
 
-        // TODO parse legacy prefixes such as 0x66, etc.
+        const reader = self.stream.reader();
+        const next_byte = reader.readByte() catch |err| switch (err) {
+            error.EndOfStream => return null,
+            else => |e| return e,
+        };
         const rex: Rex = Rex.parse(next_byte) orelse blk: {
             try self.stream.seekBy(-1);
             break :blk .{};
         };
+
         var opc = try ParsedOpc.parse(reader);
-        const bit_size = opc.bitSize(rex);
+        const bit_size = opc.bitSize(rex, prefixes);
 
         const data: Instruction.Data = data: {
             switch (opc.enc) {
@@ -451,10 +455,10 @@ const ParsedOpc = struct {
         };
     }
 
-    fn bitSize(self: ParsedOpc, rex: Rex) u7 {
+    fn bitSize(self: ParsedOpc, rex: Rex, prefixes: LegacyPrefixes) u7 {
         if (self.is_byte_sized) return 8;
         if (rex.w) return 64;
-        // TODO handle legacy prefixes such as 0x66.
+        if (prefixes.prefix_66) return 16;
         return 32;
     }
 };
@@ -467,4 +471,34 @@ fn parseImm(reader: anytype, bit_size: u7) !i32 {
         else => unreachable,
     };
     return imm;
+}
+
+fn parsePrefixes(stream: anytype) !LegacyPrefixes {
+    var out = LegacyPrefixes{};
+    while (true) {
+        const next_byte = try stream.reader().readByte();
+        switch (next_byte) {
+            0xf0 => out.prefix_f0 = true,
+            0xf2 => out.prefix_f2 = true,
+            0xf3 => out.prefix_f3 = true,
+
+            0x2e => out.prefix_2e = true,
+            0x36 => out.prefix_36 = true,
+            0x26 => out.prefix_26 = true,
+            0x64 => out.prefix_64 = true,
+            0x65 => out.prefix_65 = true,
+
+            0x3e => out.prefix_3e = true,
+
+            0x66 => out.prefix_66 = true,
+
+            0x67 => out.prefix_67 = true,
+
+            else => {
+                try stream.seekBy(-1);
+                break;
+            },
+        }
+    }
+    return out;
 }

@@ -539,6 +539,37 @@ inline fn bitSizeFromImm(imm: i32) u7 {
     return 32;
 }
 
+pub const LegacyPrefixes = packed struct {
+    /// LOCK
+    prefix_f0: bool = false,
+    /// REPNZ, REPNE, REP, Scalar Double-precision
+    prefix_f2: bool = false,
+    /// REPZ, REPE, REP, Scalar Single-precision
+    prefix_f3: bool = false,
+
+    /// CS segment override or Branch not taken
+    prefix_2e: bool = false,
+    /// DS segment override
+    prefix_36: bool = false,
+    /// ES segment override
+    prefix_26: bool = false,
+    /// FS segment override
+    prefix_64: bool = false,
+    /// GS segment override
+    prefix_65: bool = false,
+
+    /// Branch taken
+    prefix_3e: bool = false,
+
+    /// Operand size override (enables 16 bit operation)
+    prefix_66: bool = false,
+
+    /// Address size override (enables 16 bit address size)
+    prefix_67: bool = false,
+
+    padding: u5 = 0,
+};
+
 fn Encoder(comptime T: type) type {
     return struct {
         writer: T,
@@ -548,37 +579,6 @@ fn Encoder(comptime T: type) type {
         // --------
         // Prefixes
         // --------
-
-        pub const LegacyPrefixes = packed struct {
-            /// LOCK
-            prefix_f0: bool = false,
-            /// REPNZ, REPNE, REP, Scalar Double-precision
-            prefix_f2: bool = false,
-            /// REPZ, REPE, REP, Scalar Single-precision
-            prefix_f3: bool = false,
-
-            /// CS segment override or Branch not taken
-            prefix_2e: bool = false,
-            /// DS segment override
-            prefix_36: bool = false,
-            /// ES segment override
-            prefix_26: bool = false,
-            /// FS segment override
-            prefix_64: bool = false,
-            /// GS segment override
-            prefix_65: bool = false,
-
-            /// Branch taken
-            prefix_3e: bool = false,
-
-            /// Operand size override (enables 16 bit operation)
-            prefix_66: bool = false,
-
-            /// Address size override (enables 16 bit address size)
-            prefix_67: bool = false,
-
-            padding: u5 = 0,
-        };
 
         /// Encodes legacy prefixes
         pub fn legacyPrefixes(self: Self, prefixes: LegacyPrefixes) !void {
