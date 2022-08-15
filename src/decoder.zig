@@ -33,21 +33,15 @@ pub const Disassembler = struct {
     }
 
     pub fn next(self: *Disassembler) Error!?Instruction {
-        const prefixes = parsePrefixes(&self.stream) catch |err| switch (err) {
+        const prefixes = parseLegacyPrefixes(&self.stream) catch |err| switch (err) {
             error.EndOfStream => return null,
             else => |e| return e,
         };
-
+        const rex = parseRexPrefix(&self.stream) catch |err| switch (err) {
+            error.EndOfStream => return null,
+            else => |e| return e,
+        };
         const reader = self.stream.reader();
-        const next_byte = reader.readByte() catch |err| switch (err) {
-            error.EndOfStream => return null,
-            else => |e| return e,
-        };
-        const rex: Rex = Rex.parse(next_byte) orelse blk: {
-            try self.stream.seekBy(-1);
-            break :blk .{};
-        };
-
         var opc = try ParsedOpc.parse(reader);
         const bit_size = opc.bitSize(rex, prefixes);
 
@@ -473,7 +467,7 @@ fn parseImm(reader: anytype, bit_size: u7) !i32 {
     return imm;
 }
 
-fn parsePrefixes(stream: anytype) !LegacyPrefixes {
+fn parseLegacyPrefixes(stream: anytype) !LegacyPrefixes {
     var out = LegacyPrefixes{};
     while (true) {
         const next_byte = try stream.reader().readByte();
@@ -501,4 +495,13 @@ fn parsePrefixes(stream: anytype) !LegacyPrefixes {
         }
     }
     return out;
+}
+
+fn parseRexPrefix(stream: anytype) !Rex {
+    const next_byte = try stream.reader().readByte();
+    const rex: Rex = Rex.parse(next_byte) orelse blk: {
+        try stream.seekBy(-1);
+        break :blk .{};
+    };
+    return rex;
 }
