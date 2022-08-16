@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const math = std.math;
+const expect = std.testing.expect;
 
 pub const Register = enum(u7) {
     // zig fmt: off
@@ -15,9 +16,17 @@ pub const Register = enum(u7) {
 
     al, cl, dl, bl, ah, ch, dh, bh,
     r8b, r9b, r10b, r11b, r12b, r13b, r14b, r15b,
+
+    ymm0, ymm1, ymm2,  ymm3,  ymm4,  ymm5,  ymm6,  ymm7,
+    ymm8, ymm9, ymm10, ymm11, ymm12, ymm13, ymm14, ymm15,
+
+    xmm0, xmm1, xmm2,  xmm3,  xmm4,  xmm5,  xmm6,  xmm7,
+    xmm8, xmm9, xmm10, xmm11, xmm12, xmm13, xmm14, xmm15,
+
+    es, cs, ss, ds, fs, gs,
     // zig fmt: on
 
-    pub fn fromLowEnc(low_enc: u3, is_extended: bool, bit_size: u7) Register {
+    pub fn gprFromLowEnc(low_enc: u3, is_extended: bool, bit_size: u7) Register {
         const reg_id: u4 = @intCast(u4, @boolToInt(is_extended)) << 3 | low_enc;
         const unsized = @intToEnum(Register, reg_id);
         return switch (bit_size) {
@@ -29,19 +38,38 @@ pub const Register = enum(u7) {
         };
     }
 
-    pub fn id(self: Register) u4 {
-        return switch (@enumToInt(self)) {
-            0...63 => @truncate(u4, @enumToInt(self)),
+    pub const Class = enum(u2) {
+        gpr,
+        sse,
+        seg,
+    };
+
+    const class_bits_shift: u3 = 4;
+
+    pub fn id(self: Register) u7 {
+        const base_id = @truncate(u4, @enumToInt(self));
+        const class_id: u2 = switch (@enumToInt(self)) {
+            0...63 => @enumToInt(Class.gpr),
+            64...95 => @enumToInt(Class.sse),
+            96...112 => @enumToInt(Class.seg),
             else => unreachable,
         };
+        return @as(u7, class_id) << class_bits_shift | base_id;
     }
 
-    pub fn bitSize(self: Register) u7 {
+    pub fn class(self: Register) Class {
+        return @intToEnum(Class, @truncate(u2, self.id() >> class_bits_shift));
+    }
+
+    pub fn bitSize(self: Register) u9 {
         return switch (@enumToInt(self)) {
             0...15 => 64,
             16...31 => 32,
             32...47 => 16,
             48...63 => 8,
+            64...79 => 256,
+            80...95 => 128,
+            96...112 => 16,
             else => unreachable,
         };
     }
@@ -59,25 +87,66 @@ pub const Register = enum(u7) {
     }
 
     pub fn to64(self: Register) Register {
+        assert(self.class() == .gpr);
         return @intToEnum(Register, self.enc());
     }
 
     pub fn to32(self: Register) Register {
+        assert(self.class() == .gpr);
         return @intToEnum(Register, @as(u8, self.enc()) + 16);
     }
 
     pub fn to16(self: Register) Register {
+        assert(self.class() == .gpr);
         return @intToEnum(Register, @as(u8, self.enc()) + 32);
     }
 
     pub fn to8(self: Register) Register {
+        assert(self.class() == .gpr);
         return @intToEnum(Register, @as(u8, self.enc()) + 48);
+    }
+
+    pub fn to128(self: Register) Register {
+        assert(self.class() == .sse);
+        return @intToEnum(Register, @as(u8, self.enc()) + 80);
+    }
+
+    pub fn to256(self: Register) Register {
+        assert(self.class() == .sse);
+        return @intToEnum(Register, @as(u8, self.enc()) + 64);
     }
 
     pub fn fmtPrint(self: Register, writer: anytype) !void {
         try writer.writeAll(@tagName(self));
     }
 };
+
+test "Register id - different classes" {
+    try expect(Register.al.id() == Register.ax.id());
+    try expect(Register.ax.id() == Register.eax.id());
+    try expect(Register.eax.id() == Register.rax.id());
+
+    try expect(Register.ymm0.id() == 0b10000);
+    try expect(Register.ymm0.id() != Register.rax.id());
+    try expect(Register.xmm0.id() == Register.ymm0.id());
+
+    try expect(Register.es.id() == 0b100000);
+}
+
+test "Register enc - different classes" {
+    try expect(Register.al.enc() == Register.ax.enc());
+    try expect(Register.ax.enc() == Register.eax.enc());
+    try expect(Register.eax.enc() == Register.rax.enc());
+    try expect(Register.ymm0.enc() == Register.rax.enc());
+    try expect(Register.xmm0.enc() == Register.ymm0.enc());
+    try expect(Register.es.enc() == Register.rax.enc());
+}
+
+test "Register classes" {
+    try expect(Register.r11.class() == .gpr);
+    try expect(Register.ymm11.class() == .sse);
+    try expect(Register.fs.class() == .seg);
+}
 
 pub const Memory = struct {
     ptr_size: PtrSize,
@@ -232,7 +301,7 @@ pub const RegisterOrMemory = union(enum) {
         }
     }
 
-    pub fn bitSize(self: RegisterOrMemory) u7 {
+    pub fn bitSize(self: RegisterOrMemory) u9 {
         return switch (self) {
             .reg => |r| r.bitSize(),
             .mem => |m| m.bitSize(),

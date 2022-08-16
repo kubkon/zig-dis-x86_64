@@ -277,7 +277,8 @@ pub const Instruction = struct {
                 const oi = self.data.oi;
                 const reg = oi.reg;
                 const imm = oi.imm;
-                if (reg.bitSize() == 16) {
+                const bit_size = @intCast(u7, reg.bitSize());
+                if (bit_size == 16) {
                     try encoder.prefix16BitMode();
                 }
                 try encoder.rex(.{
@@ -285,12 +286,13 @@ pub const Instruction = struct {
                     .b = reg.isExtended(),
                 });
                 try self.tag.encodeWithReg(reg, encoder);
-                try encodeImmUnsigned(imm, reg.bitSize(), encoder);
+                try encodeImmUnsigned(imm, bit_size, encoder);
             },
             .rm => {
                 const rm = self.data.rm;
                 const dst_reg = rm.reg;
-                if (dst_reg.bitSize() == 16) {
+                const bit_size = @intCast(u7, dst_reg.bitSize());
+                if (bit_size == 16) {
                     try encoder.prefix16BitMode();
                 }
                 switch (rm.reg_or_mem) {
@@ -300,7 +302,7 @@ pub const Instruction = struct {
                             .r = dst_reg.isExtended(),
                             .b = src_reg.isExtended(),
                         });
-                        try self.tag.encode(.rm, dst_reg.bitSize(), encoder);
+                        try self.tag.encode(.rm, bit_size, encoder);
                         try encoder.modRm_direct(dst_reg.lowEnc(), src_reg.lowEnc());
                     },
                     .mem => |src_mem| {
@@ -319,7 +321,7 @@ pub const Instruction = struct {
                                 });
                             },
                         }
-                        try self.tag.encode(.rm, dst_reg.bitSize(), encoder);
+                        try self.tag.encode(.rm, bit_size, encoder);
                         try src_mem.encode(dst_reg.lowEnc(), encoder);
                     },
                 }
@@ -327,9 +329,10 @@ pub const Instruction = struct {
             .mr => {
                 const mr = self.data.mr;
                 const src_reg = mr.reg;
+                const bit_size = @intCast(u7, src_reg.bitSize());
                 switch (mr.reg_or_mem) {
                     .reg => |dst_reg| {
-                        if (dst_reg.bitSize() == 16) {
+                        if (bit_size == 16) {
                             try encoder.prefix16BitMode();
                         }
                         try encoder.rex(.{
@@ -337,11 +340,11 @@ pub const Instruction = struct {
                             .r = src_reg.isExtended(),
                             .b = dst_reg.isExtended(),
                         });
-                        try self.tag.encode(.mr, dst_reg.bitSize(), encoder);
+                        try self.tag.encode(.mr, bit_size, encoder);
                         try encoder.modRm_direct(src_reg.lowEnc(), dst_reg.lowEnc());
                     },
                     .mem => |dst_mem| {
-                        if (src_reg.bitSize() == 16) {
+                        if (bit_size == 16) {
                             try encoder.prefix16BitMode();
                         }
                         switch (dst_mem.base) {
@@ -359,7 +362,7 @@ pub const Instruction = struct {
                                 });
                             },
                         }
-                        try self.tag.encode(.mr, dst_mem.bitSize(), encoder);
+                        try self.tag.encode(.mr, bit_size, encoder);
                         try dst_mem.encode(src_reg.lowEnc(), encoder);
                     },
                 }
@@ -380,14 +383,15 @@ pub const Instruction = struct {
                 };
                 switch (mi.reg_or_mem) {
                     .reg => |dst_reg| {
-                        if (dst_reg.bitSize() == 16) {
+                        const bit_size = @intCast(u7, dst_reg.bitSize());
+                        if (bit_size == 16) {
                             try encoder.prefix16BitMode();
                         }
                         try encoder.rex(.{
                             .w = setRexWRegister(dst_reg),
                             .b = dst_reg.isExtended(),
                         });
-                        try self.tag.encode(self.enc, dst_reg.bitSize(), encoder);
+                        try self.tag.encode(self.enc, bit_size, encoder);
                         try encoder.modRm_direct(modrm_ext, dst_reg.lowEnc());
                     },
                     .mem => |dst_mem| {
@@ -407,11 +411,14 @@ pub const Instruction = struct {
                                 });
                             },
                         }
-                        try self.tag.encode(self.enc, dst_mem.bitSize(), encoder);
+                        try self.tag.encode(self.enc, @intCast(u7, dst_mem.bitSize()), encoder);
                         try dst_mem.encode(modrm_ext, encoder);
                     },
                 }
-                try encodeImmSigned(mi.imm, if (self.enc == .mi8) 8 else mi.reg_or_mem.bitSize(), encoder);
+                try encodeImmSigned(mi.imm, if (self.enc == .mi8)
+                    8
+                else
+                    @intCast(u7, mi.reg_or_mem.bitSize()), encoder);
             },
         }
     }

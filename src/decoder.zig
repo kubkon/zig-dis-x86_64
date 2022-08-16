@@ -53,7 +53,7 @@ pub const Disassembler = struct {
                 },
                 .oi => {
                     if (rex.r or rex.x) return error.InvalidRexForEncoding;
-                    const reg = Register.fromLowEnc(opc.extra, rex.b, bit_size);
+                    const reg = Register.gprFromLowEnc(opc.extra, rex.b, bit_size);
                     const imm: u64 = switch (bit_size) {
                         8 => @bitCast(u64, @intCast(i64, try reader.readInt(i8, .Little))),
                         16, 32 => @bitCast(u64, @intCast(i64, try reader.readInt(i32, .Little))),
@@ -91,7 +91,7 @@ pub const Disassembler = struct {
 
                     switch (mod) {
                         0b11 => {
-                            const reg = Register.fromLowEnc(op2, rex.b, bit_size);
+                            const reg = Register.gprFromLowEnc(op2, rex.b, bit_size);
                             const imm = try parseImm(reader, imm_bit_size);
                             break :data Instruction.Data.mi(RegisterOrMemory.reg(reg), imm);
                         },
@@ -102,7 +102,7 @@ pub const Disassembler = struct {
                                 return error.Todo;
                             }
 
-                            const reg = Register.fromLowEnc(op2, rex.b, 64);
+                            const reg = Register.gprFromLowEnc(op2, rex.b, 64);
                             const disp = try reader.readInt(i8, .Little);
                             const imm = try parseImm(reader, imm_bit_size);
                             break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
@@ -118,7 +118,7 @@ pub const Disassembler = struct {
                                 return error.Todo;
                             }
 
-                            const reg = Register.fromLowEnc(op2, rex.b, 64);
+                            const reg = Register.gprFromLowEnc(op2, rex.b, 64);
                             const disp = try reader.readInt(i32, .Little);
                             const imm = try parseImm(reader, imm_bit_size);
                             break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
@@ -145,7 +145,7 @@ pub const Disassembler = struct {
                                 return error.Todo;
                             }
 
-                            const reg = Register.fromLowEnc(op2, rex.b, 64);
+                            const reg = Register.gprFromLowEnc(op2, rex.b, 64);
                             const imm = try parseImm(reader, imm_bit_size);
                             break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
@@ -163,8 +163,8 @@ pub const Disassembler = struct {
                     switch (mod) {
                         0b11 => {
                             // direct addressing
-                            const reg1 = Register.fromLowEnc(op1, rex.r, bit_size);
-                            const reg2 = Register.fromLowEnc(op2, rex.b, bit_size);
+                            const reg1 = Register.gprFromLowEnc(op1, rex.r, bit_size);
+                            const reg2 = Register.gprFromLowEnc(op2, rex.b, bit_size);
                             break :data Instruction.Data.rm(reg1, RegisterOrMemory.reg(reg2));
                         },
                         0b01 => {
@@ -174,8 +174,8 @@ pub const Disassembler = struct {
                                 return error.Todo;
                             }
 
-                            const reg1 = Register.fromLowEnc(op1, rex.r, bit_size);
-                            const reg2 = Register.fromLowEnc(op2, rex.b, 64);
+                            const reg1 = Register.gprFromLowEnc(op1, rex.r, bit_size);
+                            const reg2 = Register.gprFromLowEnc(op2, rex.b, 64);
                             const disp = try reader.readInt(i8, .Little);
                             break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
@@ -190,8 +190,8 @@ pub const Disassembler = struct {
                                 return error.Todo;
                             }
 
-                            const reg1 = Register.fromLowEnc(op1, rex.r, bit_size);
-                            const reg2 = Register.fromLowEnc(op2, rex.b, 64);
+                            const reg1 = Register.gprFromLowEnc(op1, rex.r, bit_size);
+                            const reg2 = Register.gprFromLowEnc(op2, rex.b, 64);
                             const disp = try reader.readInt(i32, .Little);
                             break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
@@ -203,7 +203,7 @@ pub const Disassembler = struct {
                             // indirect addressing
                             if (op2 == 0b101) {
                                 // RIP with 32bit displacement
-                                const reg1 = Register.fromLowEnc(op1, rex.r, bit_size);
+                                const reg1 = Register.gprFromLowEnc(op1, rex.r, bit_size);
                                 const disp = try reader.readInt(i32, .Little);
                                 break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
                                     .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
@@ -217,8 +217,8 @@ pub const Disassembler = struct {
                                 return error.Todo;
                             }
 
-                            const reg1 = Register.fromLowEnc(op1, rex.r, bit_size);
-                            const reg2 = Register.fromLowEnc(op2, rex.b, 64);
+                            const reg1 = Register.gprFromLowEnc(op1, rex.r, bit_size);
+                            const reg2 = Register.gprFromLowEnc(op2, rex.b, 64);
                             break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                                 .base = .{ .reg = reg2 },
@@ -235,8 +235,8 @@ pub const Disassembler = struct {
                     switch (mod) {
                         0b11 => {
                             // direct addressing
-                            const reg1 = Register.fromLowEnc(op1, rex.b, bit_size);
-                            const reg2 = Register.fromLowEnc(op2, rex.r, bit_size);
+                            const reg1 = Register.gprFromLowEnc(op1, rex.b, bit_size);
+                            const reg2 = Register.gprFromLowEnc(op2, rex.r, bit_size);
                             break :data Instruction.Data.mr(RegisterOrMemory.reg(reg1), reg2);
                         },
                         0b01 => {
@@ -246,8 +246,8 @@ pub const Disassembler = struct {
                                 return error.Todo;
                             }
 
-                            const reg1 = Register.fromLowEnc(op1, rex.b, 64);
-                            const reg2 = Register.fromLowEnc(op2, rex.r, bit_size);
+                            const reg1 = Register.gprFromLowEnc(op1, rex.b, 64);
+                            const reg2 = Register.gprFromLowEnc(op2, rex.r, bit_size);
                             const disp = try reader.readInt(i8, .Little);
                             break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
@@ -262,8 +262,8 @@ pub const Disassembler = struct {
                                 return error.Todo;
                             }
 
-                            const reg1 = Register.fromLowEnc(op1, rex.b, 64);
-                            const reg2 = Register.fromLowEnc(op2, rex.r, bit_size);
+                            const reg1 = Register.gprFromLowEnc(op1, rex.b, 64);
+                            const reg2 = Register.gprFromLowEnc(op2, rex.r, bit_size);
                             const disp = try reader.readInt(i32, .Little);
                             break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
@@ -275,7 +275,7 @@ pub const Disassembler = struct {
                             // indirect addressing
                             if (op2 == 0b101) {
                                 // RIP with 32bit displacement
-                                const reg1 = Register.fromLowEnc(op1, rex.b, bit_size);
+                                const reg1 = Register.gprFromLowEnc(op1, rex.b, bit_size);
                                 const disp = try reader.readInt(i32, .Little);
                                 break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
                                     .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
@@ -289,8 +289,8 @@ pub const Disassembler = struct {
                                 return error.Todo;
                             }
 
-                            const reg1 = Register.fromLowEnc(op1, rex.b, 64);
-                            const reg2 = Register.fromLowEnc(op2, rex.r, bit_size);
+                            const reg1 = Register.gprFromLowEnc(op1, rex.b, 64);
+                            const reg2 = Register.gprFromLowEnc(op2, rex.r, bit_size);
                             break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
                                 .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                                 .base = .{ .reg = reg1 },
@@ -364,6 +364,10 @@ const ParsedOpc = struct {
                 0x8b => break :blk ParsedOpc.new(.mov, .rm, false),
                 0x8c => break :blk ParsedOpc.new(.mov, .mr, false),
                 0x8e => break :blk ParsedOpc.new(.mov, .rm, false),
+                // 0xa0 => break :blk ParsedOpc.new(.mov, .fd, true),
+                // 0xa1 => break :blk ParsedOpc.new(.mov, .fd, false),
+                // 0xa2 => break :blk ParsedOpc.new(.mov, .td, true),
+                // 0xa3 => break :blk ParsedOpc.new(.mov, .td, false),
                 // or
                 0x0c => break :blk ParsedOpc.new(.@"or", .i, true),
                 0x0d => break :blk ParsedOpc.new(.@"or", .i, false),
@@ -392,10 +396,6 @@ const ParsedOpc = struct {
                 0x31 => break :blk ParsedOpc.new(.xor, .mr, false),
                 0x32 => break :blk ParsedOpc.new(.xor, .rm, true),
                 0x33 => break :blk ParsedOpc.new(.xor, .rm, false),
-                0xa0 => return error.Todo,
-                0xa1 => return error.Todo,
-                0xa2 => return error.Todo,
-                0xa3 => return error.Todo,
                 // lea
                 0x8d => break :blk ParsedOpc.new(.lea, .rm, false),
                 // remaining
