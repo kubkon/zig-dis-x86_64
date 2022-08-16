@@ -467,6 +467,7 @@ pub const Instruction = struct {
             .cmp => try writer.writeAll("cmp "),
             .mov => blk: {
                 switch (self.enc) {
+                    .fd, .td => break :blk try writer.writeAll("movabs "),
                     .oi => {
                         if (self.data.oi.reg.bitSize() == 64) {
                             break :blk try writer.writeAll("movabs ");
@@ -487,16 +488,8 @@ pub const Instruction = struct {
             .i => {
                 const i = self.data.i;
                 const bit_size = if (i.bit_size) |bs| bs else bitSizeFromImm(@bitCast(u32, i.imm));
-
-                if (bit_size <= 8) {
-                    try Register.al.fmtPrint(writer);
-                } else if (bit_size <= 16) {
-                    try Register.ax.fmtPrint(writer);
-                } else if (bit_size <= 32) {
-                    try Register.eax.fmtPrint(writer);
-                } else {
-                    try Register.rax.fmtPrint(writer);
-                }
+                const dst_reg = Register.rax.toBitSize(bit_size);
+                try dst_reg.fmtPrint(writer);
                 try writer.writeAll(", ");
                 const imm_signed: i32 = @bitCast(i32, i.imm);
                 const imm_abs: u32 = @intCast(u32, try math.absInt(imm_signed));
@@ -505,22 +498,31 @@ pub const Instruction = struct {
                 }
                 try writer.print("0x{x}", .{imm_abs});
             },
-            .fd, .td => {
+            .fd => {
                 const fd = self.data.fd;
                 const reg = fd.reg;
                 const imm = fd.imm;
-                switch (fd.ptr_size) {
-                    .byte => try Register.al.fmtPrint(writer),
-                    .word => try Register.ax.fmtPrint(writer),
-                    .dword => try Register.eax.fmtPrint(writer),
-                    .qword => try Register.rax.fmtPrint(writer),
-                }
-                try writer.writeAll(", ");
                 if (reg.class() != .seg) {
                     return error.WrongRegisterClass;
                 }
+                const dst_reg = Register.rax.toBitSize(fd.ptr_size.bitSize());
+                try dst_reg.fmtPrint(writer);
+                try writer.writeAll(", ");
                 try reg.fmtPrint(writer);
                 try writer.print(":0x{x}", .{imm});
+            },
+            .td => {
+                const fd = self.data.fd;
+                const reg = fd.reg;
+                const imm = fd.imm;
+                if (reg.class() != .seg) {
+                    return error.WrongRegisterClass;
+                }
+                const dst_reg = Register.rax.toBitSize(fd.ptr_size.bitSize());
+                try reg.fmtPrint(writer);
+                try writer.print(":0x{x}", .{imm});
+                try writer.writeAll(", ");
+                try dst_reg.fmtPrint(writer);
             },
             .oi => {
                 const oi = self.data.oi;

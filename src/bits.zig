@@ -29,13 +29,7 @@ pub const Register = enum(u7) {
     pub fn gprFromLowEnc(low_enc: u3, is_extended: bool, bit_size: u7) Register {
         const reg_id: u4 = @intCast(u4, @boolToInt(is_extended)) << 3 | low_enc;
         const unsized = @intToEnum(Register, reg_id);
-        return switch (bit_size) {
-            8 => unsized.to8(),
-            16 => unsized.to16(),
-            32 => unsized.to32(),
-            64 => unsized.to64(),
-            else => unreachable,
-        };
+        return unsized.toBitSize(bit_size);
     }
 
     pub const Class = enum(u2) {
@@ -84,6 +78,18 @@ pub const Register = enum(u7) {
 
     pub fn lowEnc(self: Register) u3 {
         return @truncate(u3, @enumToInt(self));
+    }
+
+    pub fn toBitSize(self: Register, bit_size: u9) Register {
+        return switch (bit_size) {
+            8 => self.to8(),
+            16 => self.to16(),
+            32 => self.to32(),
+            64 => self.to64(),
+            128 => self.to128(),
+            256 => self.to256(),
+            else => unreachable,
+        };
     }
 
     pub fn to64(self: Register) Register {
@@ -169,12 +175,12 @@ pub const Memory = struct {
         dword = 0b10,
         qword = 0b11,
 
-        pub fn fromBitSize(bit_size: u64) PtrSize {
+        pub fn fromBitSize(bit_size: u7) PtrSize {
             return @intToEnum(PtrSize, math.log2_int(u4, @intCast(u4, @divExact(bit_size, 8))));
         }
 
-        pub fn bitSize(s: PtrSize) u64 {
-            return 8 * (math.powi(u8, 2, @enumToInt(s)) catch unreachable);
+        pub fn bitSize(s: PtrSize) u7 {
+            return 8 * (math.powi(u7, 2, @enumToInt(s)) catch unreachable);
         }
     };
 

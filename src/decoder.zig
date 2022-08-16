@@ -51,7 +51,24 @@ pub const Disassembler = struct {
                     const imm = try parseImm(reader, bit_size);
                     break :data Instruction.Data.i(imm, bit_size);
                 },
-                .fd, .td => unreachable,
+                .fd, .td => {
+                    const imm = try reader.readInt(u64, .Little);
+                    const reg: Register = blk: {
+                        if (prefixes.prefix_2e) break :blk .cs;
+                        if (prefixes.prefix_36) break :blk .ss;
+                        if (prefixes.prefix_26) break :blk .es;
+                        if (prefixes.prefix_64) break :blk .fs;
+                        if (prefixes.prefix_65) break :blk .gs;
+                        break :blk .ds;
+                    };
+                    const ptr_size: Memory.PtrSize = blk: {
+                        if (bit_size <= 8) break :blk .byte;
+                        if (bit_size <= 16) break :blk .word;
+                        if (bit_size <= 32) break :blk .dword;
+                        break :blk .qword;
+                    };
+                    break :data Instruction.Data.fd(reg, imm, ptr_size);
+                },
                 .oi => {
                     if (rex.r or rex.x) return error.InvalidRexForEncoding;
                     const reg = Register.gprFromLowEnc(opc.extra, rex.b, bit_size);
@@ -365,10 +382,10 @@ const ParsedOpc = struct {
                 0x8b => break :blk ParsedOpc.new(.mov, .rm, false),
                 0x8c => break :blk ParsedOpc.new(.mov, .mr, false),
                 0x8e => break :blk ParsedOpc.new(.mov, .rm, false),
-                // 0xa0 => break :blk ParsedOpc.new(.mov, .fd, true),
-                // 0xa1 => break :blk ParsedOpc.new(.mov, .fd, false),
-                // 0xa2 => break :blk ParsedOpc.new(.mov, .td, true),
-                // 0xa3 => break :blk ParsedOpc.new(.mov, .td, false),
+                0xa0 => break :blk ParsedOpc.new(.mov, .fd, true),
+                0xa1 => break :blk ParsedOpc.new(.mov, .fd, false),
+                0xa2 => break :blk ParsedOpc.new(.mov, .td, true),
+                0xa3 => break :blk ParsedOpc.new(.mov, .td, false),
                 // or
                 0x0c => break :blk ParsedOpc.new(.@"or", .i, true),
                 0x0d => break :blk ParsedOpc.new(.@"or", .i, false),
