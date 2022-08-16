@@ -71,7 +71,7 @@ pub const Disassembler = struct {
                 },
                 .oi => {
                     if (rex.r or rex.x) return error.InvalidRexForEncoding;
-                    const reg = Register.gprFromLowEnc(opc.extra, rex.b, bit_size);
+                    const reg = Register.gpFromLowEnc(opc.extra, rex.b, bit_size);
                     const imm: u64 = switch (bit_size) {
                         8 => @bitCast(u64, @intCast(i64, try reader.readInt(i8, .Little))),
                         16, 32 => @bitCast(u64, @intCast(i64, try reader.readInt(i32, .Little))),
@@ -116,7 +116,7 @@ pub const Disassembler = struct {
                     }
 
                     if (modrm.isDirect()) {
-                        const reg = Register.gprFromLowEnc(modrm.op2, rex.b, bit_size);
+                        const reg = Register.gpFromLowEnc(modrm.op2, rex.b, bit_size);
                         break :data Instruction.Data.mi(RegisterOrMemory.reg(reg), imm);
                     }
 
@@ -124,7 +124,7 @@ pub const Disassembler = struct {
                     const base: Register = if (sib) |info|
                         info.baseReg(modrm, rex.b, prefixes)
                     else
-                        Register.gprFromLowEnc(modrm.op2, rex.b, 64);
+                        Register.gpFromLowEnc(modrm.op2, rex.b, 64);
                     break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
                         .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                         .scale_index = scale_index,
@@ -138,7 +138,7 @@ pub const Disassembler = struct {
                     const disp = try parseDisplacement(modrm, sib, reader);
 
                     if (modrm.isRip()) {
-                        const reg1 = Register.gprFromLowEnc(modrm.op1, rex.r, bit_size);
+                        const reg1 = Register.gpFromLowEnc(modrm.op1, rex.r, bit_size);
                         break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
                             .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                             .base = null,
@@ -147,17 +147,17 @@ pub const Disassembler = struct {
                     }
 
                     if (modrm.isDirect()) {
-                        const reg1 = Register.gprFromLowEnc(modrm.op1, rex.r, bit_size);
-                        const reg2 = Register.gprFromLowEnc(modrm.op2, rex.b, bit_size);
+                        const reg1 = Register.gpFromLowEnc(modrm.op1, rex.r, bit_size);
+                        const reg2 = Register.gpFromLowEnc(modrm.op2, rex.b, bit_size);
                         break :data Instruction.Data.rm(reg1, RegisterOrMemory.reg(reg2));
                     }
 
-                    const reg = Register.gprFromLowEnc(modrm.op1, rex.r, bit_size);
+                    const reg = Register.gpFromLowEnc(modrm.op1, rex.r, bit_size);
                     const scale_index: ?Memory.ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
                     const base: Register = if (sib) |info|
                         info.baseReg(modrm, rex.b, prefixes)
                     else
-                        Register.gprFromLowEnc(modrm.op2, rex.b, 64);
+                        Register.gpFromLowEnc(modrm.op2, rex.b, 64);
                     break :data Instruction.Data.rm(reg, RegisterOrMemory.mem(.{
                         .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                         .scale_index = scale_index,
@@ -171,7 +171,7 @@ pub const Disassembler = struct {
                     const disp = try parseDisplacement(modrm, sib, reader);
 
                     if (modrm.isRip()) {
-                        const reg = Register.gprFromLowEnc(modrm.op1, rex.r, bit_size);
+                        const reg = Register.gpFromLowEnc(modrm.op1, rex.r, bit_size);
                         break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
                             .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                             .base = null,
@@ -180,8 +180,8 @@ pub const Disassembler = struct {
                     }
 
                     if (modrm.isDirect()) {
-                        const reg1 = Register.gprFromLowEnc(modrm.op2, rex.b, bit_size);
-                        const reg2 = Register.gprFromLowEnc(modrm.op1, rex.r, bit_size);
+                        const reg1 = Register.gpFromLowEnc(modrm.op2, rex.b, bit_size);
+                        const reg2 = Register.gpFromLowEnc(modrm.op1, rex.r, bit_size);
                         break :data Instruction.Data.mr(RegisterOrMemory.reg(reg1), reg2);
                     }
 
@@ -189,8 +189,8 @@ pub const Disassembler = struct {
                     const base: Register = if (sib) |info|
                         info.baseReg(modrm, rex.b, prefixes)
                     else
-                        Register.gprFromLowEnc(modrm.op2, rex.b, 64);
-                    const reg = Register.gprFromLowEnc(modrm.op1, rex.r, bit_size);
+                        Register.gpFromLowEnc(modrm.op2, rex.b, 64);
+                    const reg = Register.gpFromLowEnc(modrm.op1, rex.r, bit_size);
                     break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
                         .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                         .scale_index = scale_index,
@@ -441,7 +441,7 @@ const Sib = packed struct {
         if (self.index == 0b100) return null;
         return Memory.ScaleIndex{
             .scale = self.ss,
-            .index = Register.gprFromLowEnc(self.index, rex.b, 64),
+            .index = Register.gpFromLowEnc(self.index, rex.b, 64),
         };
     }
 
@@ -455,7 +455,7 @@ const Sib = packed struct {
             if (prefixes.prefix_65) return .gs;
             return .ds;
         }
-        return Register.gprFromLowEnc(self.base, is_extended, 64);
+        return Register.gpFromLowEnc(self.base, is_extended, 64);
     }
 };
 

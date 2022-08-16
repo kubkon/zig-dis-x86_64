@@ -26,14 +26,14 @@ pub const Register = enum(u7) {
     es, cs, ss, ds, fs, gs,
     // zig fmt: on
 
-    pub fn gprFromLowEnc(low_enc: u3, is_extended: bool, bit_size: u7) Register {
+    pub fn gpFromLowEnc(low_enc: u3, is_extended: bool, bit_size: u7) Register {
         const reg_id: u4 = @intCast(u4, @boolToInt(is_extended)) << 3 | low_enc;
         const unsized = @intToEnum(Register, reg_id);
         return unsized.toBitSize(bit_size);
     }
 
     pub const Class = enum(u2) {
-        gpr,
+        gp,
         sse,
         seg,
     };
@@ -43,7 +43,7 @@ pub const Register = enum(u7) {
     pub fn id(self: Register) u7 {
         const base_id = @truncate(u4, @enumToInt(self));
         const class_id: u2 = switch (@enumToInt(self)) {
-            0...63 => @enumToInt(Class.gpr),
+            0...63 => @enumToInt(Class.gp),
             64...95 => @enumToInt(Class.sse),
             96...112 => @enumToInt(Class.seg),
             else => unreachable,
@@ -68,8 +68,8 @@ pub const Register = enum(u7) {
         };
     }
 
-    pub fn isGpr(self: Register) bool {
-        return self.class() == .gpr;
+    pub fn isGp(self: Register) bool {
+        return self.class() == .gp;
     }
 
     pub fn isSegment(self: Register) bool {
@@ -105,22 +105,22 @@ pub const Register = enum(u7) {
     }
 
     pub fn to64(self: Register) Register {
-        assert(self.class() == .gpr);
+        assert(self.class() == .gp);
         return @intToEnum(Register, self.enc());
     }
 
     pub fn to32(self: Register) Register {
-        assert(self.class() == .gpr);
+        assert(self.class() == .gp);
         return @intToEnum(Register, @as(u8, self.enc()) + 16);
     }
 
     pub fn to16(self: Register) Register {
-        assert(self.class() == .gpr);
+        assert(self.class() == .gp);
         return @intToEnum(Register, @as(u8, self.enc()) + 32);
     }
 
     pub fn to8(self: Register) Register {
-        assert(self.class() == .gpr);
+        assert(self.class() == .gp);
         return @intToEnum(Register, @as(u8, self.enc()) + 48);
     }
 
@@ -161,7 +161,7 @@ test "Register enc - different classes" {
 }
 
 test "Register classes" {
-    try expect(Register.r11.class() == .gpr);
+    try expect(Register.r11.class() == .gp);
     try expect(Register.ymm11.class() == .sse);
     try expect(Register.fs.class() == .seg);
 }
@@ -258,7 +258,7 @@ pub const Memory = struct {
                 }
                 try encoder.disp32(self.disp.?);
             } else {
-                assert(reg.class() == .gpr);
+                assert(reg.class() == .gp);
                 const dst = reg.lowEnc();
                 const src = operand;
                 if (dst == 4 or self.scale_index != null) {
