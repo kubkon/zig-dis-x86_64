@@ -572,3 +572,31 @@ test "lower OI encoding" {
     try enc.encode(.{ .tag = .mov, .enc = .oi, .data = Instruction.Data.oi(.r11b, 0x10) });
     try expectEqualHexStrings("\x41\xB3\x10", enc.code(), "mov r11b, 0x10");
 }
+
+test "lower FD/TD encoding" {
+    var enc = TestEncode{};
+
+    try enc.encode(.{ .tag = .mov, .enc = .fd, .data = Instruction.Data.fd(.cs, 0x10, .qword) });
+    try expectEqualHexStrings("\x2E\x48\xA1\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs rax, cs:0x10");
+
+    try enc.encode(.{ .tag = .mov, .enc = .fd, .data = Instruction.Data.fd(.fs, 0x10, .dword) });
+    try expectEqualHexStrings("\x64\xA1\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs eax, fs:0x10");
+
+    try enc.encode(.{ .tag = .mov, .enc = .fd, .data = Instruction.Data.fd(.gs, 0x10, .word) });
+    try expectEqualHexStrings("\x65\x66\xA1\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs ax, gs:0x10");
+
+    try enc.encode(.{ .tag = .mov, .enc = .fd, .data = Instruction.Data.fd(.ds, 0x10, .byte) });
+    try expectEqualHexStrings("\xA0\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs al, ds:0x10");
+
+    try enc.encode(.{ .tag = .mov, .enc = .td, .data = Instruction.Data.fd(.cs, 0x10, .qword) });
+    try expectEqualHexStrings("\x2E\x48\xA3\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs cs:0x10, rax");
+
+    try enc.encode(.{ .tag = .mov, .enc = .td, .data = Instruction.Data.fd(.fs, 0x10, .dword) });
+    try expectEqualHexStrings("\x64\xA3\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs fs:0x10, eax");
+
+    try enc.encode(.{ .tag = .mov, .enc = .td, .data = Instruction.Data.fd(.gs, 0x10, .word) });
+    try expectEqualHexStrings("\x65\x66\xA3\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs gs:0x10, ax");
+
+    try enc.encode(.{ .tag = .mov, .enc = .td, .data = Instruction.Data.fd(.ds, 0x10, .byte) });
+    try expectEqualHexStrings("\xA2\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs ds:0x10, al");
+}

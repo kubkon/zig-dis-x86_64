@@ -51,6 +51,7 @@ pub const Disassembler = struct {
                     const imm = try parseImm(reader, bit_size);
                     break :data Instruction.Data.i(imm, bit_size);
                 },
+                .fd, .td => unreachable,
                 .oi => {
                     if (rex.r or rex.x) return error.InvalidRexForEncoding;
                     const reg = Register.gprFromLowEnc(opc.extra, rex.b, bit_size);
