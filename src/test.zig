@@ -319,11 +319,22 @@ test "lower MI encoding" {
 
     try enc.encode(.{ .tag = .@"and", .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.{
         .ptr_size = .dword,
-        .base = .seg,
+        .base = .{ .reg = .ds },
         .disp = 0x10000000,
     }), 0x10) });
     try expectEqualHexStrings(
         "\x81\x24\x25\x00\x00\x00\x10\x10\x00\x00\x00",
+        enc.code(),
+        "and dword ptr [ds:0x10000000], 0x10",
+    );
+
+    try enc.encode(.{ .tag = .@"and", .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.{
+        .ptr_size = .dword,
+        .base = .{ .reg = .es },
+        .disp = 0x10000000,
+    }), 0x10) });
+    try expectEqualHexStrings(
+        "\x26\x81\x24\x25\x00\x00\x00\x10\x10\x00\x00\x00",
         enc.code(),
         "and dword ptr [ds:0x10000000], 0x10",
     );
@@ -373,7 +384,7 @@ test "lower MI encoding" {
 
     try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.{
         .ptr_size = .qword,
-        .base = .seg,
+        .base = .{ .reg = .ds },
         .disp = 0x10000000,
         .scale_index = .{
             .scale = 1,
@@ -425,17 +436,24 @@ test "lower RM encoding" {
 
     try enc.encode(.{ .tag = .add, .enc = .rm, .data = Instruction.Data.rm(.r11, RegisterOrMemory.mem(.{
         .ptr_size = .qword,
-        .base = .seg,
+        .base = .{ .reg = .ds },
         .disp = 0x10000000,
     })) });
     try expectEqualHexStrings("\x4C\x03\x1C\x25\x00\x00\x00\x10", enc.code(), "add r11, qword ptr [ds:0x10000000]");
 
     try enc.encode(.{ .tag = .add, .enc = .rm, .data = Instruction.Data.rm(.r12b, RegisterOrMemory.mem(.{
         .ptr_size = .byte,
-        .base = .seg,
+        .base = .{ .reg = .ds },
         .disp = 0x10000000,
     })) });
     try expectEqualHexStrings("\x44\x02\x24\x25\x00\x00\x00\x10", enc.code(), "add r11b, byte ptr [ds:0x10000000]");
+
+    try enc.encode(.{ .tag = .add, .enc = .rm, .data = Instruction.Data.rm(.r12b, RegisterOrMemory.mem(.{
+        .ptr_size = .byte,
+        .base = .{ .reg = .fs },
+        .disp = 0x10000000,
+    })) });
+    try expectEqualHexStrings("\x64\x44\x02\x24\x25\x00\x00\x00\x10", enc.code(), "add r11b, byte ptr [fs:0x10000000]");
 
     try enc.encode(.{ .tag = .sub, .enc = .rm, .data = Instruction.Data.rm(.r11, RegisterOrMemory.mem(.{
         .ptr_size = .qword,
@@ -535,17 +553,24 @@ test "lower MR encoding" {
 
     try enc.encode(.{ .tag = .add, .enc = .mr, .data = Instruction.Data.mr(RegisterOrMemory.mem(.{
         .ptr_size = .byte,
-        .base = .seg,
+        .base = .{ .reg = .ds },
         .disp = 0x10000000,
     }), .r12b) });
     try expectEqualHexStrings("\x44\x00\x24\x25\x00\x00\x00\x10", enc.code(), "add byte ptr [ds:0x10000000], r12b");
 
     try enc.encode(.{ .tag = .add, .enc = .mr, .data = Instruction.Data.mr(RegisterOrMemory.mem(.{
         .ptr_size = .dword,
-        .base = .seg,
+        .base = .{ .reg = .ds },
         .disp = 0x10000000,
     }), .r12d) });
     try expectEqualHexStrings("\x44\x01\x24\x25\x00\x00\x00\x10", enc.code(), "add dword ptr [ds:0x10000000], r12d");
+
+    try enc.encode(.{ .tag = .add, .enc = .mr, .data = Instruction.Data.mr(RegisterOrMemory.mem(.{
+        .ptr_size = .dword,
+        .base = .{ .reg = .gs },
+        .disp = 0x10000000,
+    }), .r12d) });
+    try expectEqualHexStrings("\x65\x44\x01\x24\x25\x00\x00\x00\x10", enc.code(), "add dword ptr [gs:0x10000000], r12d");
 
     try enc.encode(.{ .tag = .sub, .enc = .mr, .data = Instruction.Data.mr(RegisterOrMemory.mem(.{
         .ptr_size = .qword,

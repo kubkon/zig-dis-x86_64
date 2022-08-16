@@ -290,17 +290,9 @@ pub const Instruction = struct {
                 }
                 var prefixes = LegacyPrefixes{};
                 if (fd.ptr_size == .word) {
-                    prefixes.prefix_66 = true;
+                    prefixes.set16BitOverride();
                 }
-                switch (reg) {
-                    .cs => prefixes.prefix_2e = true,
-                    .ss => prefixes.prefix_36 = true,
-                    .es => prefixes.prefix_26 = true,
-                    .fs => prefixes.prefix_64 = true,
-                    .gs => prefixes.prefix_65 = true,
-                    .ds => {},
-                    else => unreachable,
-                }
+                prefixes.setSegmentOverride(reg);
                 try encoder.legacyPrefixes(prefixes);
                 try encoder.rex(.{
                     .w = fd.ptr_size == .qword,
@@ -328,9 +320,18 @@ pub const Instruction = struct {
                 const rm = self.data.rm;
                 const dst_reg = rm.reg;
                 const bit_size = @intCast(u7, dst_reg.bitSize());
+                var prefixes = LegacyPrefixes{};
                 if (bit_size == 16) {
-                    try encoder.prefix16BitMode();
+                    prefixes.set16BitOverride();
                 }
+                if (rm.reg_or_mem.isSegment()) {
+                    const reg: Register = switch (rm.reg_or_mem) {
+                        .reg => |r| r,
+                        .mem => |m| m.base.reg,
+                    };
+                    prefixes.setSegmentOverride(reg);
+                }
+                try encoder.legacyPrefixes(prefixes);
                 switch (rm.reg_or_mem) {
                     .reg => |src_reg| {
                         try encoder.rex(.{
@@ -350,7 +351,7 @@ pub const Instruction = struct {
                                     .b = reg.isExtended(),
                                 });
                             },
-                            .rip, .seg => {
+                            .rip => {
                                 try encoder.rex(.{
                                     .w = setRexWRegister(dst_reg),
                                     .r = dst_reg.isExtended(),
@@ -366,11 +367,20 @@ pub const Instruction = struct {
                 const mr = self.data.mr;
                 const src_reg = mr.reg;
                 const bit_size = @intCast(u7, src_reg.bitSize());
+                var prefixes = LegacyPrefixes{};
+                if (bit_size == 16) {
+                    prefixes.set16BitOverride();
+                }
+                if (mr.reg_or_mem.isSegment()) {
+                    const reg: Register = switch (mr.reg_or_mem) {
+                        .reg => |r| r,
+                        .mem => |m| m.base.reg,
+                    };
+                    prefixes.setSegmentOverride(reg);
+                }
+                try encoder.legacyPrefixes(prefixes);
                 switch (mr.reg_or_mem) {
                     .reg => |dst_reg| {
-                        if (bit_size == 16) {
-                            try encoder.prefix16BitMode();
-                        }
                         try encoder.rex(.{
                             .w = setRexWRegister(dst_reg) or setRexWRegister(src_reg),
                             .r = src_reg.isExtended(),
@@ -380,9 +390,6 @@ pub const Instruction = struct {
                         try encoder.modRm_direct(src_reg.lowEnc(), dst_reg.lowEnc());
                     },
                     .mem => |dst_mem| {
-                        if (bit_size == 16) {
-                            try encoder.prefix16BitMode();
-                        }
                         switch (dst_mem.base) {
                             .reg => |dst_reg| {
                                 try encoder.rex(.{
@@ -391,7 +398,7 @@ pub const Instruction = struct {
                                     .b = dst_reg.isExtended(),
                                 });
                             },
-                            .rip, .seg => {
+                            .rip => {
                                 try encoder.rex(.{
                                     .w = dst_mem.ptr_size == .qword or setRexWRegister(src_reg),
                                     .r = src_reg.isExtended(),
@@ -417,12 +424,21 @@ pub const Instruction = struct {
                     .mov => 0,
                     .lea => unreachable, // unsupported encoding
                 };
+                var prefixes = LegacyPrefixes{};
+                const bit_size = @intCast(u7, mi.reg_or_mem.bitSize());
+                if (bit_size == 16) {
+                    prefixes.set16BitOverride();
+                }
+                if (mi.reg_or_mem.isSegment()) {
+                    const reg: Register = switch (mi.reg_or_mem) {
+                        .reg => |r| r,
+                        .mem => |m| m.base.reg,
+                    };
+                    prefixes.setSegmentOverride(reg);
+                }
+                try encoder.legacyPrefixes(prefixes);
                 switch (mi.reg_or_mem) {
                     .reg => |dst_reg| {
-                        const bit_size = @intCast(u7, dst_reg.bitSize());
-                        if (bit_size == 16) {
-                            try encoder.prefix16BitMode();
-                        }
                         try encoder.rex(.{
                             .w = setRexWRegister(dst_reg),
                             .b = dst_reg.isExtended(),
@@ -431,9 +447,6 @@ pub const Instruction = struct {
                         try encoder.modRm_direct(modrm_ext, dst_reg.lowEnc());
                     },
                     .mem => |dst_mem| {
-                        if (dst_mem.ptr_size == .word) {
-                            try encoder.prefix16BitMode();
-                        }
                         switch (dst_mem.base) {
                             .reg => |reg| {
                                 try encoder.rex(.{
@@ -441,13 +454,13 @@ pub const Instruction = struct {
                                     .b = reg.isExtended(),
                                 });
                             },
-                            .rip, .seg => {
+                            .rip => {
                                 try encoder.rex(.{
                                     .w = dst_mem.ptr_size == .qword,
                                 });
                             },
                         }
-                        try self.tag.encode(self.enc, @intCast(u7, dst_mem.bitSize()), encoder);
+                        try self.tag.encode(self.enc, bit_size, encoder);
                         try dst_mem.encode(modrm_ext, encoder);
                     },
                 }
@@ -631,6 +644,23 @@ pub const LegacyPrefixes = packed struct {
     prefix_66: bool = false,
 
     padding: u5 = 0,
+
+    pub fn setSegmentOverride(self: *LegacyPrefixes, reg: Register) void {
+        assert(reg.isSegment());
+        switch (reg) {
+            .cs => self.prefix_2e = true,
+            .ss => self.prefix_36 = true,
+            .es => self.prefix_26 = true,
+            .fs => self.prefix_64 = true,
+            .gs => self.prefix_65 = true,
+            .ds => {},
+            else => unreachable,
+        }
+    }
+
+    pub fn set16BitOverride(self: *LegacyPrefixes) void {
+        self.prefix_66 = true;
+    }
 };
 
 fn Encoder(comptime T: type) type {
