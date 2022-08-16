@@ -110,7 +110,7 @@ pub const Disassembler = struct {
                     if (modrm.isRip()) {
                         break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
                             .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                            .base = .rip,
+                            .base = null,
                             .disp = disp.?,
                         }), imm);
                     }
@@ -128,7 +128,7 @@ pub const Disassembler = struct {
                     break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
                         .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                         .scale_index = scale_index,
-                        .base = .{ .reg = base },
+                        .base = base,
                         .disp = disp,
                     }), imm);
                 },
@@ -141,7 +141,7 @@ pub const Disassembler = struct {
                         const reg1 = Register.gprFromLowEnc(modrm.op1, rex.r, bit_size);
                         break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
                             .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                            .base = .rip,
+                            .base = null,
                             .disp = disp.?,
                         }));
                     }
@@ -161,7 +161,7 @@ pub const Disassembler = struct {
                     break :data Instruction.Data.rm(reg, RegisterOrMemory.mem(.{
                         .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                         .scale_index = scale_index,
-                        .base = .{ .reg = base },
+                        .base = base,
                         .disp = disp,
                     }));
                 },
@@ -174,7 +174,7 @@ pub const Disassembler = struct {
                         const reg = Register.gprFromLowEnc(modrm.op1, rex.r, bit_size);
                         break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
                             .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                            .base = .rip,
+                            .base = null,
                             .disp = disp.?,
                         }), reg);
                     }
@@ -194,7 +194,7 @@ pub const Disassembler = struct {
                     break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
                         .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
                         .scale_index = scale_index,
-                        .base = .{ .reg = base },
+                        .base = base,
                         .disp = disp,
                     }), reg);
                 },

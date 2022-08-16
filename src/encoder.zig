@@ -327,7 +327,7 @@ pub const Instruction = struct {
                 if (rm.reg_or_mem.isSegment()) {
                     const reg: Register = switch (rm.reg_or_mem) {
                         .reg => |r| r,
-                        .mem => |m| m.base.reg,
+                        .mem => |m| m.base.?,
                     };
                     prefixes.setSegmentOverride(reg);
                 }
@@ -343,20 +343,17 @@ pub const Instruction = struct {
                         try encoder.modRm_direct(dst_reg.lowEnc(), src_reg.lowEnc());
                     },
                     .mem => |src_mem| {
-                        switch (src_mem.base) {
-                            .reg => |reg| {
-                                try encoder.rex(.{
-                                    .w = setRexWRegister(dst_reg),
-                                    .r = dst_reg.isExtended(),
-                                    .b = reg.isExtended(),
-                                });
-                            },
-                            .rip => {
-                                try encoder.rex(.{
-                                    .w = setRexWRegister(dst_reg),
-                                    .r = dst_reg.isExtended(),
-                                });
-                            },
+                        if (src_mem.base) |reg| {
+                            try encoder.rex(.{
+                                .w = setRexWRegister(dst_reg),
+                                .r = dst_reg.isExtended(),
+                                .b = reg.isExtended(),
+                            });
+                        } else {
+                            try encoder.rex(.{
+                                .w = setRexWRegister(dst_reg),
+                                .r = dst_reg.isExtended(),
+                            });
                         }
                         try self.tag.encode(.rm, bit_size, encoder);
                         try src_mem.encode(dst_reg.lowEnc(), encoder);
@@ -374,7 +371,7 @@ pub const Instruction = struct {
                 if (mr.reg_or_mem.isSegment()) {
                     const reg: Register = switch (mr.reg_or_mem) {
                         .reg => |r| r,
-                        .mem => |m| m.base.reg,
+                        .mem => |m| m.base.?,
                     };
                     prefixes.setSegmentOverride(reg);
                 }
@@ -390,20 +387,17 @@ pub const Instruction = struct {
                         try encoder.modRm_direct(src_reg.lowEnc(), dst_reg.lowEnc());
                     },
                     .mem => |dst_mem| {
-                        switch (dst_mem.base) {
-                            .reg => |dst_reg| {
-                                try encoder.rex(.{
-                                    .w = dst_mem.ptr_size == .qword or setRexWRegister(src_reg),
-                                    .r = src_reg.isExtended(),
-                                    .b = dst_reg.isExtended(),
-                                });
-                            },
-                            .rip => {
-                                try encoder.rex(.{
-                                    .w = dst_mem.ptr_size == .qword or setRexWRegister(src_reg),
-                                    .r = src_reg.isExtended(),
-                                });
-                            },
+                        if (dst_mem.base) |dst_reg| {
+                            try encoder.rex(.{
+                                .w = dst_mem.ptr_size == .qword or setRexWRegister(src_reg),
+                                .r = src_reg.isExtended(),
+                                .b = dst_reg.isExtended(),
+                            });
+                        } else {
+                            try encoder.rex(.{
+                                .w = dst_mem.ptr_size == .qword or setRexWRegister(src_reg),
+                                .r = src_reg.isExtended(),
+                            });
                         }
                         try self.tag.encode(.mr, bit_size, encoder);
                         try dst_mem.encode(src_reg.lowEnc(), encoder);
@@ -432,7 +426,7 @@ pub const Instruction = struct {
                 if (mi.reg_or_mem.isSegment()) {
                     const reg: Register = switch (mi.reg_or_mem) {
                         .reg => |r| r,
-                        .mem => |m| m.base.reg,
+                        .mem => |m| m.base.?,
                     };
                     prefixes.setSegmentOverride(reg);
                 }
@@ -447,18 +441,15 @@ pub const Instruction = struct {
                         try encoder.modRm_direct(modrm_ext, dst_reg.lowEnc());
                     },
                     .mem => |dst_mem| {
-                        switch (dst_mem.base) {
-                            .reg => |reg| {
-                                try encoder.rex(.{
-                                    .w = dst_mem.ptr_size == .qword,
-                                    .b = reg.isExtended(),
-                                });
-                            },
-                            .rip => {
-                                try encoder.rex(.{
-                                    .w = dst_mem.ptr_size == .qword,
-                                });
-                            },
+                        if (dst_mem.base) |reg| {
+                            try encoder.rex(.{
+                                .w = dst_mem.ptr_size == .qword,
+                                .b = reg.isExtended(),
+                            });
+                        } else {
+                            try encoder.rex(.{
+                                .w = dst_mem.ptr_size == .qword,
+                            });
                         }
                         try self.tag.encode(self.enc, bit_size, encoder);
                         try dst_mem.encode(modrm_ext, encoder);
