@@ -222,10 +222,21 @@ pub const Memory = struct {
         if (self.disp) |disp| {
             const disp_signed: i32 = @bitCast(i32, disp);
             const disp_abs: u32 = @intCast(u32, try std.math.absInt(disp_signed));
-            if (sign(disp_signed) < 0) {
-                try writer.writeAll(" - ");
-            } else {
-                try writer.writeAll(" + ");
+            blk: {
+                if (self.base == .reg) {
+                    if (self.base.reg.isSegment()) {
+                        try writer.writeAll(":");
+                        if (sign(disp_signed) < 0) {
+                            try writer.writeAll("-");
+                        }
+                        break :blk;
+                    }
+                }
+                if (sign(disp_signed) < 0) {
+                    try writer.writeAll(" - ");
+                } else {
+                    try writer.writeAll(" + ");
+                }
             }
             switch (self.ptr_size) {
                 .byte => try writer.print("0x{x}", .{@intCast(u8, disp_abs)}),
@@ -250,7 +261,7 @@ pub const Memory = struct {
                     } else {
                         try encoder.sib_disp32();
                     }
-                    try encoder.disp32(self.disp orelse @as(i32, 0));
+                    try encoder.disp32(self.disp.?);
                 } else {
                     assert(reg.class() == .gpr);
                     const dst = reg.lowEnc();

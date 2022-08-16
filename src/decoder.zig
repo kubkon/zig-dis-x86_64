@@ -81,14 +81,13 @@ pub const Disassembler = struct {
                     break :data Instruction.Data.oi(reg, imm);
                 },
                 .mi, .mi8 => {
-                    const modrm_byte = try reader.readByte();
-                    const mod: u2 = @truncate(u2, modrm_byte >> 6);
-                    const op1: u3 = @truncate(u3, modrm_byte >> 3);
-                    const op2: u3 = @truncate(u3, modrm_byte);
+                    const modrm = try parseModRmByte(reader);
+                    const sib = try parseSibByte(modrm, reader);
+                    const disp = try parseDisplacement(modrm, sib, reader);
 
                     assert(opc.is_wip);
                     opc.tag = switch (opc.byte) {
-                        0x80, 0x81, 0x83 => switch (op1) {
+                        0x80, 0x81, 0x83 => switch (modrm.op1) {
                             0 => Instruction.Tag.add,
                             1 => Instruction.Tag.@"or",
                             2 => Instruction.Tag.adc,
@@ -98,7 +97,7 @@ pub const Disassembler = struct {
                             6 => Instruction.Tag.xor,
                             7 => Instruction.Tag.cmp,
                         },
-                        0xc6, 0xc7 => switch (op1) {
+                        0xc6, 0xc7 => switch (modrm.op1) {
                             0 => Instruction.Tag.mov,
                             else => unreachable, // unsupported MI encoding
                         },
@@ -106,215 +105,98 @@ pub const Disassembler = struct {
                     };
 
                     const imm_bit_size = if (opc.enc == .mi8) 8 else bit_size;
+                    const imm = try parseImm(reader, imm_bit_size);
 
-                    switch (mod) {
-                        0b11 => {
-                            const reg = Register.gprFromLowEnc(op2, rex.b, bit_size);
-                            const imm = try parseImm(reader, imm_bit_size);
-                            break :data Instruction.Data.mi(RegisterOrMemory.reg(reg), imm);
-                        },
-                        0b01 => {
-                            // indirect addressing with an 8bit displacement
-                            if (op2 == 0b100) {
-                                // TODO handle SIB byte addressing
-                                return error.Todo;
-                            }
-
-                            const reg = Register.gprFromLowEnc(op2, rex.b, 64);
-                            const disp = try reader.readInt(i8, .Little);
-                            const imm = try parseImm(reader, imm_bit_size);
-                            break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
-                                .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                                .base = .{ .reg = reg },
-                                .disp = disp,
-                            }), imm);
-                        },
-                        0b10 => {
-                            // indirect addressing with a 32bit displacement
-                            if (op2 == 0b100) {
-                                // TODO handle SIB byte addressing
-                                return error.Todo;
-                            }
-
-                            const reg = Register.gprFromLowEnc(op2, rex.b, 64);
-                            const disp = try reader.readInt(i32, .Little);
-                            const imm = try parseImm(reader, imm_bit_size);
-                            break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
-                                .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                                .base = .{ .reg = reg },
-                                .disp = disp,
-                            }), imm);
-                        },
-                        0b00 => {
-                            // indirect addressing
-                            if (op2 == 0b101) {
-                                // RIP with 32bit displacement
-                                const disp = try reader.readInt(i32, .Little);
-                                const imm = try parseImm(reader, imm_bit_size);
-                                break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
-                                    .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                                    .base = .rip,
-                                    .disp = disp,
-                                }), imm);
-                            }
-
-                            if (op2 == 0b100) {
-                                // TODO SIB with disp 0bit
-                                return error.Todo;
-                            }
-
-                            const reg = Register.gprFromLowEnc(op2, rex.b, 64);
-                            const imm = try parseImm(reader, imm_bit_size);
-                            break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
-                                .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                                .base = .{ .reg = reg },
-                            }), imm);
-                        },
+                    if (modrm.isRip()) {
+                        break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
+                            .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
+                            .base = .rip,
+                            .disp = disp.?,
+                        }), imm);
                     }
+
+                    if (modrm.isDirect()) {
+                        const reg = Register.gprFromLowEnc(modrm.op2, rex.b, bit_size);
+                        break :data Instruction.Data.mi(RegisterOrMemory.reg(reg), imm);
+                    }
+
+                    const scale_index: ?Memory.ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
+                    const base: Register = if (sib) |info|
+                        info.baseReg(modrm, rex.b, prefixes)
+                    else
+                        Register.gprFromLowEnc(modrm.op2, rex.b, 64);
+                    break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
+                        .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
+                        .scale_index = scale_index,
+                        .base = .{ .reg = base },
+                        .disp = disp,
+                    }), imm);
                 },
                 .rm => {
-                    const modrm_byte = try reader.readByte();
-                    const mod: u2 = @truncate(u2, modrm_byte >> 6);
-                    const op1: u3 = @truncate(u3, modrm_byte >> 3);
-                    const op2: u3 = @truncate(u3, modrm_byte);
+                    const modrm = try parseModRmByte(reader);
+                    const sib = try parseSibByte(modrm, reader);
+                    const disp = try parseDisplacement(modrm, sib, reader);
 
-                    switch (mod) {
-                        0b11 => {
-                            // direct addressing
-                            const reg1 = Register.gprFromLowEnc(op1, rex.r, bit_size);
-                            const reg2 = Register.gprFromLowEnc(op2, rex.b, bit_size);
-                            break :data Instruction.Data.rm(reg1, RegisterOrMemory.reg(reg2));
-                        },
-                        0b01 => {
-                            // indirect addressing with an 8bit displacement
-                            if (op2 == 0b100) {
-                                // TODO handle SIB byte addressing
-                                return error.Todo;
-                            }
-
-                            const reg1 = Register.gprFromLowEnc(op1, rex.r, bit_size);
-                            const reg2 = Register.gprFromLowEnc(op2, rex.b, 64);
-                            const disp = try reader.readInt(i8, .Little);
-                            break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
-                                .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                                .base = .{ .reg = reg2 },
-                                .disp = disp,
-                            }));
-                        },
-                        0b10 => {
-                            // indirect addressing with a 32bit displacement
-                            if (op2 == 0b100) {
-                                // TODO handle SIB byte addressing
-                                return error.Todo;
-                            }
-
-                            const reg1 = Register.gprFromLowEnc(op1, rex.r, bit_size);
-                            const reg2 = Register.gprFromLowEnc(op2, rex.b, 64);
-                            const disp = try reader.readInt(i32, .Little);
-                            break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
-                                .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                                .base = .{ .reg = reg2 },
-                                .disp = disp,
-                            }));
-                        },
-                        0b00 => {
-                            // indirect addressing
-                            if (op2 == 0b101) {
-                                // RIP with 32bit displacement
-                                const reg1 = Register.gprFromLowEnc(op1, rex.r, bit_size);
-                                const disp = try reader.readInt(i32, .Little);
-                                break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
-                                    .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                                    .base = .rip,
-                                    .disp = disp,
-                                }));
-                            }
-
-                            if (op2 == 0b100) {
-                                // TODO SIB with disp 0bit
-                                return error.Todo;
-                            }
-
-                            const reg1 = Register.gprFromLowEnc(op1, rex.r, bit_size);
-                            const reg2 = Register.gprFromLowEnc(op2, rex.b, 64);
-                            break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
-                                .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                                .base = .{ .reg = reg2 },
-                            }));
-                        },
+                    if (modrm.isRip()) {
+                        const reg1 = Register.gprFromLowEnc(modrm.op1, rex.r, bit_size);
+                        break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
+                            .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
+                            .base = .rip,
+                            .disp = disp.?,
+                        }));
                     }
+
+                    if (modrm.isDirect()) {
+                        const reg1 = Register.gprFromLowEnc(modrm.op1, rex.r, bit_size);
+                        const reg2 = Register.gprFromLowEnc(modrm.op2, rex.b, bit_size);
+                        break :data Instruction.Data.rm(reg1, RegisterOrMemory.reg(reg2));
+                    }
+
+                    const reg = Register.gprFromLowEnc(modrm.op1, rex.r, bit_size);
+                    const scale_index: ?Memory.ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
+                    const base: Register = if (sib) |info|
+                        info.baseReg(modrm, rex.b, prefixes)
+                    else
+                        Register.gprFromLowEnc(modrm.op2, rex.b, 64);
+                    break :data Instruction.Data.rm(reg, RegisterOrMemory.mem(.{
+                        .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
+                        .scale_index = scale_index,
+                        .base = .{ .reg = base },
+                        .disp = disp,
+                    }));
                 },
                 .mr => {
-                    const modrm_byte = try reader.readByte();
-                    const mod: u2 = @truncate(u2, modrm_byte >> 6);
-                    const op2: u3 = @truncate(u3, modrm_byte >> 3);
-                    const op1: u3 = @truncate(u3, modrm_byte);
+                    const modrm = try parseModRmByte(reader);
+                    const sib = try parseSibByte(modrm, reader);
+                    const disp = try parseDisplacement(modrm, sib, reader);
 
-                    switch (mod) {
-                        0b11 => {
-                            // direct addressing
-                            const reg1 = Register.gprFromLowEnc(op1, rex.b, bit_size);
-                            const reg2 = Register.gprFromLowEnc(op2, rex.r, bit_size);
-                            break :data Instruction.Data.mr(RegisterOrMemory.reg(reg1), reg2);
-                        },
-                        0b01 => {
-                            // indirect addressing with an 8bit displacement
-                            if (op2 == 0b100) {
-                                // TODO handle SIB byte addressing
-                                return error.Todo;
-                            }
-
-                            const reg1 = Register.gprFromLowEnc(op1, rex.b, 64);
-                            const reg2 = Register.gprFromLowEnc(op2, rex.r, bit_size);
-                            const disp = try reader.readInt(i8, .Little);
-                            break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
-                                .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                                .base = .{ .reg = reg1 },
-                                .disp = disp,
-                            }), reg2);
-                        },
-                        0b10 => {
-                            // indirect addressing with a 32bit displacement
-                            if (op2 == 0b100) {
-                                // TODO handle SIB byte addressing
-                                return error.Todo;
-                            }
-
-                            const reg1 = Register.gprFromLowEnc(op1, rex.b, 64);
-                            const reg2 = Register.gprFromLowEnc(op2, rex.r, bit_size);
-                            const disp = try reader.readInt(i32, .Little);
-                            break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
-                                .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                                .base = .{ .reg = reg1 },
-                                .disp = disp,
-                            }), reg2);
-                        },
-                        0b00 => {
-                            // indirect addressing
-                            if (op2 == 0b101) {
-                                // RIP with 32bit displacement
-                                const reg1 = Register.gprFromLowEnc(op1, rex.b, bit_size);
-                                const disp = try reader.readInt(i32, .Little);
-                                break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
-                                    .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                                    .base = .rip,
-                                    .disp = disp,
-                                }), reg1);
-                            }
-
-                            if (op2 == 0b100) {
-                                // TODO SIB with disp 0bit
-                                return error.Todo;
-                            }
-
-                            const reg1 = Register.gprFromLowEnc(op1, rex.b, 64);
-                            const reg2 = Register.gprFromLowEnc(op2, rex.r, bit_size);
-                            break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
-                                .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                                .base = .{ .reg = reg1 },
-                            }), reg2);
-                        },
+                    if (modrm.isRip()) {
+                        const reg = Register.gprFromLowEnc(modrm.op1, rex.r, bit_size);
+                        break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
+                            .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
+                            .base = .rip,
+                            .disp = disp.?,
+                        }), reg);
                     }
+
+                    if (modrm.isDirect()) {
+                        const reg1 = Register.gprFromLowEnc(modrm.op2, rex.b, bit_size);
+                        const reg2 = Register.gprFromLowEnc(modrm.op1, rex.r, bit_size);
+                        break :data Instruction.Data.mr(RegisterOrMemory.reg(reg1), reg2);
+                    }
+
+                    const scale_index: ?Memory.ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
+                    const base: Register = if (sib) |info|
+                        info.baseReg(modrm, rex.b, prefixes)
+                    else
+                        Register.gprFromLowEnc(modrm.op2, rex.b, 64);
+                    const reg = Register.gprFromLowEnc(modrm.op1, rex.r, bit_size);
+                    break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
+                        .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
+                        .scale_index = scale_index,
+                        .base = .{ .reg = base },
+                        .disp = disp,
+                    }), reg);
                 },
             }
         };
@@ -522,4 +404,82 @@ fn parseRexPrefix(stream: anytype) !Rex {
         break :blk .{};
     };
     return rex;
+}
+
+const ModRm = packed struct {
+    mod: u2,
+    op1: u3,
+    op2: u3,
+
+    inline fn isDirect(self: ModRm) bool {
+        return self.mod == 0b11;
+    }
+
+    inline fn isRip(self: ModRm) bool {
+        return self.mod == 0 and self.op2 == 0b101;
+    }
+
+    inline fn usesSib(self: ModRm) bool {
+        return !self.isDirect() and self.op2 == 0b100;
+    }
+};
+
+fn parseModRmByte(reader: anytype) !ModRm {
+    const modrm_byte = try reader.readByte();
+    const mod: u2 = @truncate(u2, modrm_byte >> 6);
+    const op1: u3 = @truncate(u3, modrm_byte >> 3);
+    const op2: u3 = @truncate(u3, modrm_byte);
+    return ModRm{ .mod = mod, .op1 = op1, .op2 = op2 };
+}
+
+const Sib = packed struct {
+    ss: u2,
+    index: u3,
+    base: u3,
+
+    fn scaleIndex(self: Sib, rex: Rex) ?Memory.ScaleIndex {
+        if (self.index == 0b100) return null;
+        return Memory.ScaleIndex{
+            .scale = self.ss,
+            .index = Register.gprFromLowEnc(self.index, rex.b, 64),
+        };
+    }
+
+    fn baseReg(self: Sib, modrm: ModRm, is_extended: bool, prefixes: LegacyPrefixes) Register {
+        if (self.base == 0b101 and modrm.mod == 0) {
+            // Segment register
+            if (prefixes.prefix_2e) return .cs;
+            if (prefixes.prefix_36) return .ss;
+            if (prefixes.prefix_26) return .es;
+            if (prefixes.prefix_64) return .fs;
+            if (prefixes.prefix_65) return .gs;
+            return .ds;
+        }
+        return Register.gprFromLowEnc(self.base, is_extended, 64);
+    }
+};
+
+fn parseSibByte(modrm: ModRm, reader: anytype) !?Sib {
+    if (!modrm.usesSib()) return null;
+    const sib_byte = try reader.readByte();
+    const ss: u2 = @truncate(u2, sib_byte >> 6);
+    const index: u3 = @truncate(u3, sib_byte >> 3);
+    const base: u3 = @truncate(u3, sib_byte);
+    return Sib{ .ss = ss, .index = index, .base = base };
+}
+
+fn parseDisplacement(modrm: ModRm, sib: ?Sib, reader: anytype) !?i32 {
+    if (sib) |info| {
+        if (info.base == 0b101 and modrm.mod == 0) {
+            return try reader.readInt(i32, .Little);
+        }
+    }
+    if (modrm.isRip()) {
+        return try reader.readInt(i32, .Little);
+    }
+    return switch (modrm.mod) {
+        0b01 => try reader.readInt(i8, .Little),
+        0b10 => try reader.readInt(i32, .Little),
+        else => null,
+    };
 }
