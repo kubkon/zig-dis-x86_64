@@ -34,6 +34,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x10),
                     else => unreachable, // does not support this encoding
                 },
+
                 .add => switch (enc) {
                     .i => try encoder.opcode_1byte(0x04),
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
@@ -41,6 +42,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x00),
                     else => unreachable, // does not support this encoding
                 },
+
                 .@"and" => switch (enc) {
                     .i => try encoder.opcode_1byte(0x24),
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
@@ -48,6 +50,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x20),
                     else => unreachable, // does not support this encoding
                 },
+
                 .cmp => switch (enc) {
                     .i => try encoder.opcode_1byte(0x3c),
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
@@ -55,6 +58,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x38),
                     else => unreachable, // does not support this encoding
                 },
+
                 .mov => switch (enc) {
                     .fd => try encoder.opcode_1byte(0xa0),
                     .td => try encoder.opcode_1byte(0xa2),
@@ -64,6 +68,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x88),
                     else => unreachable, // does not support this encoding
                 },
+
                 .@"or" => switch (enc) {
                     .i => try encoder.opcode_1byte(0x0c),
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
@@ -71,7 +76,9 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x08),
                     else => unreachable, // does not support this encoding
                 },
+
                 .lea => unreachable, // does not support 8bit sizes
+                //
                 .sbb => switch (enc) {
                     .i => try encoder.opcode_1byte(0x1c),
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
@@ -79,6 +86,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x18),
                     else => unreachable, // does not support this encoding
                 },
+
                 .sub => switch (enc) {
                     .i => try encoder.opcode_1byte(0x2c),
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
@@ -86,6 +94,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x28),
                     else => unreachable, // does not support this encoding
                 },
+
                 .xor => switch (enc) {
                     .i => try encoder.opcode_1byte(0x34),
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
@@ -102,6 +111,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x11),
                     else => unreachable, // does not support this encoding
                 },
+
                 .add => switch (enc) {
                     .i => try encoder.opcode_1byte(0x05),
                     .mi => try encoder.opcode_1byte(0x81),
@@ -110,6 +120,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x01),
                     else => unreachable, // does not support this encoding
                 },
+
                 .@"and" => switch (enc) {
                     .i => try encoder.opcode_1byte(0x25),
                     .mi => try encoder.opcode_1byte(0x81),
@@ -118,6 +129,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x21),
                     else => unreachable, // does not support this encoding
                 },
+
                 .cmp => switch (enc) {
                     .i => try encoder.opcode_1byte(0x3d),
                     .mi => try encoder.opcode_1byte(0x81),
@@ -126,6 +138,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x39),
                     else => unreachable, // does not support this encoding
                 },
+
                 .mov => switch (enc) {
                     .fd => try encoder.opcode_1byte(0xa1),
                     .td => try encoder.opcode_1byte(0xa3),
@@ -135,6 +148,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x89),
                     else => unreachable, // does not support this encoding
                 },
+
                 .@"or" => switch (enc) {
                     .i => try encoder.opcode_1byte(0x0d),
                     .mi => try encoder.opcode_1byte(0x81),
@@ -143,10 +157,12 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x09),
                     else => unreachable, // does not support this encoding
                 },
+
                 .lea => switch (enc) {
                     .rm => try encoder.opcode_1byte(0x8d),
                     else => unreachable, // does not support different encodings
                 },
+
                 .sbb => switch (enc) {
                     .i => try encoder.opcode_1byte(0x1d),
                     .mi => try encoder.opcode_1byte(0x81),
@@ -155,6 +171,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x19),
                     else => unreachable, // does not support this encoding
                 },
+
                 .sub => switch (enc) {
                     .i => try encoder.opcode_1byte(0x2d),
                     .mi => try encoder.opcode_1byte(0x81),
@@ -163,6 +180,7 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x29),
                     else => unreachable, // does not support this encoding
                 },
+
                 .xor => switch (enc) {
                     .i => try encoder.opcode_1byte(0x35),
                     .mi => try encoder.opcode_1byte(0x81),
@@ -346,20 +364,12 @@ pub const Instruction = struct {
                         try encoder.modRm_direct(dst_reg.lowEnc(), src_reg.lowEnc());
                     },
                     .mem => |src_mem| {
-                        if (src_mem.base) |reg| {
-                            try encoder.rex(.{
-                                .w = setRexWRegister(dst_reg),
-                                .r = dst_reg.isExtended(),
-                                .b = reg.isExtended(),
-                                .x = if (src_mem.scale_index) |si| si.index.isExtended() else false,
-                            });
-                        } else {
-                            try encoder.rex(.{
-                                .w = setRexWRegister(dst_reg),
-                                .r = dst_reg.isExtended(),
-                                .x = if (src_mem.scale_index) |si| si.index.isExtended() else false,
-                            });
-                        }
+                        try encoder.rex(.{
+                            .w = setRexWRegister(dst_reg),
+                            .r = dst_reg.isExtended(),
+                            .b = if (src_mem.base) |base| base.isExtended() else false,
+                            .x = if (src_mem.scale_index) |si| si.index.isExtended() else false,
+                        });
                         try self.tag.encode(.rm, bit_size, encoder);
                         try src_mem.encode(dst_reg.lowEnc(), encoder);
                     },
@@ -393,20 +403,12 @@ pub const Instruction = struct {
                         try encoder.modRm_direct(src_reg.lowEnc(), dst_reg.lowEnc());
                     },
                     .mem => |dst_mem| {
-                        if (dst_mem.base) |dst_reg| {
-                            try encoder.rex(.{
-                                .w = dst_mem.ptr_size == .qword or setRexWRegister(src_reg),
-                                .r = src_reg.isExtended(),
-                                .b = dst_reg.isExtended(),
-                                .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
-                            });
-                        } else {
-                            try encoder.rex(.{
-                                .w = dst_mem.ptr_size == .qword or setRexWRegister(src_reg),
-                                .r = src_reg.isExtended(),
-                                .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
-                            });
-                        }
+                        try encoder.rex(.{
+                            .w = dst_mem.ptr_size == .qword or setRexWRegister(src_reg),
+                            .r = src_reg.isExtended(),
+                            .b = if (dst_mem.base) |base| base.isExtended() else false,
+                            .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
+                        });
                         try self.tag.encode(.mr, bit_size, encoder);
                         try dst_mem.encode(src_reg.lowEnc(), encoder);
                     },
@@ -450,18 +452,11 @@ pub const Instruction = struct {
                         try encoder.modRm_direct(modrm_ext, dst_reg.lowEnc());
                     },
                     .mem => |dst_mem| {
-                        if (dst_mem.base) |reg| {
-                            try encoder.rex(.{
-                                .w = dst_mem.ptr_size == .qword,
-                                .b = reg.isExtended(),
-                                .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
-                            });
-                        } else {
-                            try encoder.rex(.{
-                                .w = dst_mem.ptr_size == .qword,
-                                .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
-                            });
-                        }
+                        try encoder.rex(.{
+                            .w = dst_mem.ptr_size == .qword,
+                            .b = if (dst_mem.base) |base| base.isExtended() else false,
+                            .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
+                        });
                         try self.tag.encode(self.enc, bit_size, encoder);
                         try dst_mem.encode(modrm_ext, encoder);
                     },
@@ -513,6 +508,7 @@ pub const Instruction = struct {
                 }
                 try writer.print("0x{x}", .{imm_abs});
             },
+
             .fd => {
                 const fd = self.data.fd;
                 const reg = fd.reg;
@@ -526,6 +522,7 @@ pub const Instruction = struct {
                 try reg.fmtPrint(writer);
                 try writer.print(":0x{x}", .{imm});
             },
+
             .td => {
                 const fd = self.data.fd;
                 const reg = fd.reg;
@@ -539,6 +536,7 @@ pub const Instruction = struct {
                 try writer.writeAll(", ");
                 try dst_reg.fmtPrint(writer);
             },
+
             .oi => {
                 const oi = self.data.oi;
                 try oi.reg.fmtPrint(writer);
@@ -555,6 +553,7 @@ pub const Instruction = struct {
                     try writer.print("0x{x}", .{imm_abs});
                 }
             },
+
             .mi, .mi8 => {
                 const mi = self.data.mi;
                 try mi.reg_or_mem.fmtPrint(writer);
@@ -566,12 +565,14 @@ pub const Instruction = struct {
                 }
                 try writer.print("0x{x}", .{imm_abs});
             },
+
             .rm => {
                 const rm = self.data.rm;
                 try rm.reg.fmtPrint(writer);
                 try writer.writeAll(", ");
                 try rm.reg_or_mem.fmtPrint(writer);
             },
+
             .mr => {
                 const mr = self.data.mr;
                 try mr.reg_or_mem.fmtPrint(writer);
