@@ -589,6 +589,17 @@ test "lower MR encoding" {
         .disp = 0x10,
     }), .r12) });
     try expectEqualHexStrings("\x4C\x89\x25\x10\x00\x00\x00", enc.code(), "mov qword ptr [rip + 0x10], r12");
+
+    try enc.encode(.{ .tag = .mov, .enc = .mr, .data = Instruction.Data.mr(RegisterOrMemory.mem(.{
+        .ptr_size = .qword,
+        .base = .r11,
+        .scale_index = .{
+            .scale = 1,
+            .index = .r12,
+        },
+        .disp = 0x10,
+    }), .r13) });
+    try expectEqualHexStrings("\x4F\x89\x6C\x63\x10", enc.code(), "mov qword ptr [r11 + 2 * r12 + 0x10], r13");
 }
 
 test "lower OI encoding" {

@@ -281,6 +281,7 @@ pub const Instruction = struct {
                 try self.tag.encode(.i, bit_size, encoder);
                 try encodeImmSigned(imm, bit_size, encoder);
             },
+
             .fd, .td => {
                 const fd = self.data.fd;
                 const reg = fd.reg;
@@ -301,6 +302,7 @@ pub const Instruction = struct {
                 try self.tag.encode(self.enc, bit_size, encoder);
                 try encoder.imm64(imm);
             },
+
             .oi => {
                 const oi = self.data.oi;
                 const reg = oi.reg;
@@ -316,6 +318,7 @@ pub const Instruction = struct {
                 try self.tag.encodeWithReg(reg, encoder);
                 try encodeImmUnsigned(imm, bit_size, encoder);
             },
+
             .rm => {
                 const rm = self.data.rm;
                 const dst_reg = rm.reg;
@@ -348,11 +351,13 @@ pub const Instruction = struct {
                                 .w = setRexWRegister(dst_reg),
                                 .r = dst_reg.isExtended(),
                                 .b = reg.isExtended(),
+                                .x = if (src_mem.scale_index) |si| si.index.isExtended() else false,
                             });
                         } else {
                             try encoder.rex(.{
                                 .w = setRexWRegister(dst_reg),
                                 .r = dst_reg.isExtended(),
+                                .x = if (src_mem.scale_index) |si| si.index.isExtended() else false,
                             });
                         }
                         try self.tag.encode(.rm, bit_size, encoder);
@@ -360,6 +365,7 @@ pub const Instruction = struct {
                     },
                 }
             },
+
             .mr => {
                 const mr = self.data.mr;
                 const src_reg = mr.reg;
@@ -392,11 +398,13 @@ pub const Instruction = struct {
                                 .w = dst_mem.ptr_size == .qword or setRexWRegister(src_reg),
                                 .r = src_reg.isExtended(),
                                 .b = dst_reg.isExtended(),
+                                .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
                             });
                         } else {
                             try encoder.rex(.{
                                 .w = dst_mem.ptr_size == .qword or setRexWRegister(src_reg),
                                 .r = src_reg.isExtended(),
+                                .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
                             });
                         }
                         try self.tag.encode(.mr, bit_size, encoder);
@@ -404,6 +412,7 @@ pub const Instruction = struct {
                     },
                 }
             },
+
             .mi, .mi8 => {
                 const mi = self.data.mi;
                 const modrm_ext: u3 = switch (self.tag) {
@@ -445,10 +454,12 @@ pub const Instruction = struct {
                             try encoder.rex(.{
                                 .w = dst_mem.ptr_size == .qword,
                                 .b = reg.isExtended(),
+                                .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
                             });
                         } else {
                             try encoder.rex(.{
                                 .w = dst_mem.ptr_size == .qword,
+                                .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
                             });
                         }
                         try self.tag.encode(self.enc, bit_size, encoder);
