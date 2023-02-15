@@ -21,6 +21,7 @@ pub const Instruction = struct {
         mov,
         @"or",
         lea,
+        push,
         sbb,
         sub,
         xor,
@@ -78,6 +79,11 @@ pub const Instruction = struct {
                 },
 
                 .lea => unreachable, // does not support 8bit sizes
+
+                .push => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x6a),
+                    else => unreachable, // does not support this encoding
+                },
 
                 .sbb => switch (enc) {
                     .i => try encoder.opcode_1byte(0x1c),
@@ -163,6 +169,11 @@ pub const Instruction = struct {
                     else => unreachable, // does not support different encodings
                 },
 
+                .push => switch (enc) {
+                    .i => try encoder.opcode_1byte(0x68),
+                    else => unreachable, // does not support this encoding
+                },
+
                 .sbb => switch (enc) {
                     .i => try encoder.opcode_1byte(0x1d),
                     .mi => try encoder.opcode_1byte(0x81),
@@ -204,6 +215,7 @@ pub const Instruction = struct {
     };
 
     pub const Enc = enum {
+        o,
         i,
         fd,
         td,
@@ -215,12 +227,17 @@ pub const Instruction = struct {
     };
 
     pub const Data = union {
+        o: O,
         i: I,
         fd: Fd,
         oi: Oi,
         mi: Mi,
         mr: Mr,
         rm: Rm,
+
+        pub fn o(reg: Register) Data {
+            return .{ .o = .{ .reg = reg } };
+        }
 
         pub fn i(imm: i32, bit_size: ?u7) Data {
             return .{ .i = .{ .bit_size = bit_size, .imm = imm } };
@@ -245,6 +262,10 @@ pub const Instruction = struct {
         pub fn mr(reg_or_mem: RegisterOrMemory, reg: Register) Data {
             return .{ .mr = .{ .reg_or_mem = reg_or_mem, .reg = reg } };
         }
+    };
+
+    pub const O = struct {
+        reg: Register,
     };
 
     pub const I = struct {
@@ -286,6 +307,18 @@ pub const Instruction = struct {
     pub fn encode(self: Instruction, writer: anytype) !void {
         const encoder = Encoder(@TypeOf(writer)){ .writer = writer };
         switch (self.enc) {
+            .o => {
+                const reg = self.data.o.reg;
+                const bit_size = @intCast(u7, reg.bitSize());
+                if (bit_size == 16) {
+                    try encoder.prefix16BitMode();
+                }
+                try encoder.rex(.{
+                    .w = false,
+                    .b = reg.isExtended(),
+                });
+                try self.tag.encodeWithReg(reg, encoder);
+            },
             .i => {
                 const i = self.data.i;
                 const imm = i.imm;
@@ -428,6 +461,7 @@ pub const Instruction = struct {
                     .cmp => 7,
                     .mov => 0,
                     .lea => unreachable, // unsupported encoding
+                    .push => unreachable, // unsupported encoding
                 };
                 var prefixes = LegacyPrefixes{};
                 const bit_size = @intCast(u7, mi.reg_or_mem.bitSize());
@@ -489,12 +523,18 @@ pub const Instruction = struct {
             },
             .@"or" => try writer.writeAll("or "),
             .lea => try writer.writeAll("lea "),
+            .push => try writer.writeAll("push "),
             .sbb => try writer.writeAll("sbb "),
             .sub => try writer.writeAll("sub "),
             .xor => try writer.writeAll("xor "),
         }
 
         switch (self.enc) {
+            .o => {
+                const reg = self.data.o.reg;
+                try reg.fmtPrint(writer);
+            },
+
             .i => {
                 const i = self.data.i;
                 const bit_size = if (i.bit_size) |bs| bs else bitSizeFromImm(@bitCast(u32, i.imm));

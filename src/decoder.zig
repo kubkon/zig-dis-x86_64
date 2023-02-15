@@ -23,32 +23,37 @@ pub const Error = error{
 
 pub const Disassembler = struct {
     code: []const u8,
-    stream: std.io.FixedBufferStream([]const u8),
+    pos: usize = 0,
 
     pub fn init(code: []const u8) Disassembler {
-        return .{
-            .code = code,
-            .stream = std.io.fixedBufferStream(code),
-        };
+        return .{ .code = code };
     }
 
     pub fn next(self: *Disassembler) Error!?Instruction {
-        const prefixes = parseLegacyPrefixes(&self.stream) catch |err| switch (err) {
+        const prefixes = self.parseLegacyPrefixes() catch |err| switch (err) {
             error.EndOfStream => return null,
             else => |e| return e,
         };
-        const rex = parseRexPrefix(&self.stream) catch |err| switch (err) {
+        const rex = self.parseRexPrefix() catch |err| switch (err) {
             error.EndOfStream => return null,
             else => |e| return e,
         };
-        const reader = self.stream.reader();
+
+        var stream = std.io.fixedBufferStream(self.code[self.pos..]);
+        var creader = std.io.countingReader(stream.reader());
+        const reader = creader.reader();
+
         var opc = try ParsedOpc.parse(reader);
         const bit_size = opc.bitSize(rex, prefixes);
 
         const data: Instruction.Data = data: {
             switch (opc.enc) {
+                .o => {
+                    const reg = Register.gpFromLowEnc(opc.extra, rex.b, bit_size);
+                    break :data Instruction.Data.o(reg);
+                },
                 .i => {
-                    const imm = try parseImm(reader, bit_size);
+                    const imm = try parseImm(bit_size, reader);
                     break :data Instruction.Data.i(imm, bit_size);
                 },
                 .fd, .td => {
@@ -105,7 +110,7 @@ pub const Disassembler = struct {
                     };
 
                     const imm_bit_size = if (opc.enc == .mi8) 8 else bit_size;
-                    const imm = try parseImm(reader, imm_bit_size);
+                    const imm = try parseImm(imm_bit_size, reader);
 
                     if (modrm.isRip()) {
                         break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
@@ -201,11 +206,69 @@ pub const Disassembler = struct {
             }
         };
 
+        self.pos += creader.bytes_read;
+
         return Instruction{
             .tag = opc.tag,
             .enc = opc.enc,
             .data = data,
         };
+    }
+
+    fn parseImm(bit_size: u7, reader: anytype) !i32 {
+        const imm: i32 = switch (bit_size) {
+            8 => try reader.readInt(i8, .Little),
+            16 => try reader.readInt(i16, .Little),
+            32, 64 => try reader.readInt(i32, .Little),
+            else => unreachable,
+        };
+        return imm;
+    }
+
+    fn parseLegacyPrefixes(self: *Disassembler) !LegacyPrefixes {
+        var stream = std.io.fixedBufferStream(self.code[self.pos..]);
+        const reader = stream.reader();
+        var out = LegacyPrefixes{};
+        while (true) {
+            const next_byte = try reader.readByte();
+            self.pos += 1;
+
+            switch (next_byte) {
+                0xf0 => out.prefix_f0 = true,
+                0xf2 => out.prefix_f2 = true,
+                0xf3 => out.prefix_f3 = true,
+
+                0x2e => out.prefix_2e = true,
+                0x36 => out.prefix_36 = true,
+                0x26 => out.prefix_26 = true,
+                0x64 => out.prefix_64 = true,
+                0x65 => out.prefix_65 = true,
+
+                0x3e => out.prefix_3e = true,
+
+                0x66 => out.prefix_66 = true,
+
+                0x67 => out.prefix_67 = true,
+
+                else => {
+                    self.pos -= 1;
+                    break;
+                },
+            }
+        }
+        return out;
+    }
+
+    fn parseRexPrefix(self: *Disassembler) !Rex {
+        var stream = std.io.fixedBufferStream(self.code[self.pos..]);
+        const reader = stream.reader();
+        const next_byte = try reader.readByte();
+        self.pos += 1;
+        const rex: Rex = Rex.parse(next_byte) orelse blk: {
+            self.pos -= 1;
+            break :blk .{};
+        };
+        return rex;
     }
 };
 
@@ -275,6 +338,9 @@ const ParsedOpc = struct {
                 0x09 => break :blk ParsedOpc.new(.@"or", .mr, false),
                 0x0a => break :blk ParsedOpc.new(.@"or", .rm, true),
                 0x0b => break :blk ParsedOpc.new(.@"or", .rm, false),
+                // push
+                0x6a => break :blk ParsedOpc.new(.push, .i, true),
+                0x68 => break :blk ParsedOpc.new(.push, .i, false),
                 // sbb
                 0x1c => break :blk ParsedOpc.new(.sbb, .i, true),
                 0x1d => break :blk ParsedOpc.new(.sbb, .i, false),
@@ -302,10 +368,11 @@ const ParsedOpc = struct {
                 else => {},
             }
 
-            // check for OI encoding
+            // check for O/OI encoding
             const mask: u8 = 0b1111_1000;
             switch (next_byte & mask) {
                 // mov
+                0x50 => break :blk ParsedOpc.newWithExtra(.push, .o, false, @truncate(u3, next_byte)),
                 0xb0 => break :blk ParsedOpc.newWithExtra(.mov, .oi, true, @truncate(u3, next_byte)),
                 0xb8 => break :blk ParsedOpc.newWithExtra(.mov, .oi, false, @truncate(u3, next_byte)),
                 // remaining
@@ -353,58 +420,10 @@ const ParsedOpc = struct {
         if (self.is_byte_sized) return 8;
         if (rex.w) return 64;
         if (prefixes.prefix_66) return 16;
+        if (self.enc == .o) return 64;
         return 32;
     }
 };
-
-fn parseImm(reader: anytype, bit_size: u7) !i32 {
-    const imm: i32 = switch (bit_size) {
-        8 => try reader.readInt(i8, .Little),
-        16 => try reader.readInt(i16, .Little),
-        32, 64 => try reader.readInt(i32, .Little),
-        else => unreachable,
-    };
-    return imm;
-}
-
-fn parseLegacyPrefixes(stream: anytype) !LegacyPrefixes {
-    var out = LegacyPrefixes{};
-    while (true) {
-        const next_byte = try stream.reader().readByte();
-        switch (next_byte) {
-            0xf0 => out.prefix_f0 = true,
-            0xf2 => out.prefix_f2 = true,
-            0xf3 => out.prefix_f3 = true,
-
-            0x2e => out.prefix_2e = true,
-            0x36 => out.prefix_36 = true,
-            0x26 => out.prefix_26 = true,
-            0x64 => out.prefix_64 = true,
-            0x65 => out.prefix_65 = true,
-
-            0x3e => out.prefix_3e = true,
-
-            0x66 => out.prefix_66 = true,
-
-            0x67 => out.prefix_67 = true,
-
-            else => {
-                try stream.seekBy(-1);
-                break;
-            },
-        }
-    }
-    return out;
-}
-
-fn parseRexPrefix(stream: anytype) !Rex {
-    const next_byte = try stream.reader().readByte();
-    const rex: Rex = Rex.parse(next_byte) orelse blk: {
-        try stream.seekBy(-1);
-        break :blk .{};
-    };
-    return rex;
-}
 
 const ModRm = packed struct {
     mod: u2,
