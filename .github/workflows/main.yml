@@ -22,4 +22,3 @@ jobs:
         version: master
     - run: zig fmt --check src 
     - run: zig build test
-    - run: zig build run -- 488B8500F0FFFF
