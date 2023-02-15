@@ -78,7 +78,7 @@ pub const Instruction = struct {
                 },
 
                 .lea => unreachable, // does not support 8bit sizes
-                //
+
                 .sbb => switch (enc) {
                     .i => try encoder.opcode_1byte(0x1c),
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),

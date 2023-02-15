@@ -1,23 +1,30 @@
 const std = @import("std");
 
-pub fn build(b: *std.build.Builder) void {
-    // Standard release options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
-    const mode = b.standardReleaseOptions();
+pub fn build(b: *std.Build.Builder) void {
+    const target = b.standardTargetOptions(.{});
+    const mode = b.standardOptimizeOption(.{});
 
-    const lib = b.addStaticLibrary("dis_x86_64", "src/dis_x86_64.zig");
-    lib.setBuildMode(mode);
-    lib.install();
+    b.addModule(.{
+        .name = "dis_x86_64",
+        .source_file = .{ .path = "src/dis_x86_64.zig" },
+    });
 
-    const lib_tests = b.addTest("src/dis_x86_64.zig");
-    lib_tests.setBuildMode(mode);
+    const tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/dis_x86_64.zig" },
+        .target = target,
+        .optimize = mode,
+    });
 
     const test_step = b.step("test", "Run library tests");
-    test_step.dependOn(&lib_tests.step);
+    test_step.dependOn(&tests.step);
 
-    const exe = b.addExecutable("dis_x86_64", "src/main.zig");
-    exe.setBuildMode(mode);
-    exe.addPackagePath("dis_x86_64", "src/dis_x86_64.zig");
+    const exe = b.addExecutable(.{
+        .name = "dis_x86_64",
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = mode,
+    });
+    exe.addAnonymousModule("dis_x86_64", .{ .source_file = .{ .path = "src/dis_x86_64.zig" } });
     exe.install();
 
     const run_cmd = exe.run();
