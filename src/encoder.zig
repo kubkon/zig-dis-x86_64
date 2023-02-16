@@ -19,16 +19,28 @@ pub const Instruction = struct {
         @"and",
         call,
         cmp,
+        int3,
         mov,
         @"or",
         lea,
         push,
         pop,
+        ret,
         sbb,
         sub,
+        syscall,
         xor,
 
         fn encode(tag: Tag, enc: Enc, bit_size: u7, encoder: anytype) !void {
+            if (enc == .np) {
+                return switch (tag) {
+                    .int3 => try encoder.opcode_1byte(0xcc),
+                    .ret => try encoder.opcode_1byte(0xc3),
+                    .syscall => try encoder.opcode_2byte(0x0f, 0x05),
+                    else => unreachable, // invalid tag for np encoding
+                };
+            }
+
             if (bit_size == 8) switch (tag) {
                 .adc => switch (enc) {
                     .i => try encoder.opcode_1byte(0x14),
@@ -53,8 +65,6 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x20),
                     else => unreachable, // does not support this encoding
                 },
-
-                .call => unreachable, // does not support 8bit sizes
 
                 .cmp => switch (enc) {
                     .i => try encoder.opcode_1byte(0x3c),
@@ -82,14 +92,10 @@ pub const Instruction = struct {
                     else => unreachable, // does not support this encoding
                 },
 
-                .lea => unreachable, // does not support 8bit sizes
-
                 .push => switch (enc) {
                     .i => try encoder.opcode_1byte(0x6a),
                     else => unreachable, // does not support this encoding
                 },
-
-                .pop => unreachable, // does not support this encoding
 
                 .sbb => switch (enc) {
                     .i => try encoder.opcode_1byte(0x1c),
@@ -114,6 +120,14 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x30),
                     else => unreachable, // does not support this encoding
                 },
+
+                .call,
+                .int3,
+                .lea,
+                .pop,
+                .ret,
+                .syscall,
+                => unreachable,
             } else switch (tag) {
                 .adc => switch (enc) {
                     .i => try encoder.opcode_1byte(0x15),
@@ -186,8 +200,6 @@ pub const Instruction = struct {
                     else => unreachable, // does not support this encoding
                 },
 
-                .pop => unreachable, // does not support this encoding
-
                 .sbb => switch (enc) {
                     .i => try encoder.opcode_1byte(0x1d),
                     .mi => try encoder.opcode_1byte(0x81),
@@ -214,6 +226,12 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x31),
                     else => unreachable, // does not support this encoding
                 },
+
+                .int3,
+                .pop,
+                .ret,
+                .syscall,
+                => unreachable,
             }
         }
 
@@ -233,9 +251,12 @@ pub const Instruction = struct {
                     .cmp => 7,
 
                     .call,
+                    .int3,
                     .lea,
                     .push,
                     .pop,
+                    .ret,
+                    .syscall,
                     => unreachable, // unsupported encoding
                 },
 
@@ -250,10 +271,13 @@ pub const Instruction = struct {
                     .sub,
                     .xor,
                     .cmp,
+                    .int3,
                     .mov,
                     .lea,
                     .push,
                     .pop,
+                    .ret,
+                    .syscall,
                     => unreachable, // unsupported encoding
                 },
 
@@ -275,6 +299,7 @@ pub const Instruction = struct {
     };
 
     pub const Enc = enum {
+        np,
         o,
         i,
         m,
@@ -289,6 +314,7 @@ pub const Instruction = struct {
     };
 
     pub const Data = union {
+        np: void,
         o: O,
         i: I,
         m: M,
@@ -298,6 +324,10 @@ pub const Instruction = struct {
         mi: Mi,
         mr: Mr,
         rm: Rm,
+
+        pub fn np() Data {
+            return .{ .np = {} };
+        }
 
         pub fn o(reg: Register) Data {
             return .{ .o = .{ .reg = reg } };
@@ -387,6 +417,10 @@ pub const Instruction = struct {
     pub fn encode(self: Instruction, writer: anytype) !void {
         const encoder = Encoder(@TypeOf(writer)){ .writer = writer };
         switch (self.enc) {
+            .np => {
+                try self.tag.encode(.np, undefined, encoder);
+            },
+
             .o => {
                 const reg = self.data.o.reg;
                 const bit_size = @intCast(u7, reg.bitSize());
@@ -629,6 +663,8 @@ pub const Instruction = struct {
         try writer.writeByte(' ');
 
         switch (self.enc) {
+            .np => {},
+
             .o => {
                 const reg = self.data.o.reg;
                 try reg.fmtPrint(writer);

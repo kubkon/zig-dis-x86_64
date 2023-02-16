@@ -48,6 +48,8 @@ pub const Disassembler = struct {
 
         const data: Instruction.Data = data: {
             switch (opc.enc) {
+                .np => break :data Instruction.Data.np(),
+
                 .o => {
                     const reg = Register.gpFromLowEnc(opc.extra, rex.b, bit_size);
                     break :data Instruction.Data.o(reg);
@@ -69,7 +71,8 @@ pub const Disassembler = struct {
                     const disp = try parseDisplacement(modrm, sib, reader);
 
                     assert(opc.is_wip);
-                    opc.tag = switch (opc.byte) {
+                    assert(opc.opc_byte_count == 1);
+                    opc.tag = switch (opc.bytes[0]) {
                         0xff => switch (modrm.op1) {
                             2 => Instruction.Tag.call,
                             else => unreachable, // TODO
@@ -140,7 +143,8 @@ pub const Disassembler = struct {
                     const disp = try parseDisplacement(modrm, sib, reader);
 
                     assert(opc.is_wip);
-                    opc.tag = switch (opc.byte) {
+                    assert(opc.opc_byte_count == 1);
+                    opc.tag = switch (opc.bytes[0]) {
                         0x80, 0x81, 0x83 => switch (modrm.op1) {
                             0 => Instruction.Tag.add,
                             1 => Instruction.Tag.@"or",
@@ -330,7 +334,10 @@ const ParsedOpc = struct {
     extra: u3,
     /// Set to false once we know exactly what instruction we are dealing with.
     is_wip: bool,
-    byte: u8,
+    /// Set to true if the instruction is defined by a multibyte opcode.
+    is_multi_byte: bool,
+    bytes: [3]u8 = undefined,
+    opc_byte_count: u2 = 0,
 
     fn parse(reader: anytype) Error!ParsedOpc {
         const next_byte = try reader.readByte();
@@ -344,6 +351,9 @@ const ParsedOpc = struct {
                 0xc6 => break :blk ParsedOpc.wip(.mi, true),
                 0xc7 => break :blk ParsedOpc.wip(.mi, false),
                 0xff => break :blk ParsedOpc.wip(.m, false),
+                // System calls and multibyte opcodes will be resolved fully later, once
+                // we parse additional bytes
+                0x0f => break :blk ParsedOpc.multiByte(.np),
                 // adc
                 0x14 => break :blk ParsedOpc.new(.adc, .i, true),
                 0x15 => break :blk ParsedOpc.new(.adc, .i, false),
@@ -374,6 +384,8 @@ const ParsedOpc = struct {
                 0x39 => break :blk ParsedOpc.new(.cmp, .mr, false),
                 0x3a => break :blk ParsedOpc.new(.cmp, .rm, true),
                 0x3b => break :blk ParsedOpc.new(.cmp, .rm, false),
+                // int3
+                0xcc => break :blk ParsedOpc.new(.int3, .np, false),
                 // mov
                 0x88 => break :blk ParsedOpc.new(.mov, .mr, true),
                 0x89 => break :blk ParsedOpc.new(.mov, .mr, false),
@@ -395,6 +407,8 @@ const ParsedOpc = struct {
                 // push
                 0x6a => break :blk ParsedOpc.new(.push, .i, true),
                 0x68 => break :blk ParsedOpc.new(.push, .i, false),
+                // ret
+                0xc3 => break :blk ParsedOpc.new(.ret, .np, false),
                 // sbb
                 0x1c => break :blk ParsedOpc.new(.sbb, .i, true),
                 0x1d => break :blk ParsedOpc.new(.sbb, .i, false),
@@ -434,7 +448,28 @@ const ParsedOpc = struct {
                 else => return error.Todo,
             }
         };
-        opc.byte = next_byte;
+        opc.bytes[0] = next_byte;
+        opc.opc_byte_count = 1;
+
+        if (opc.is_multi_byte) {
+            assert(opc.is_wip);
+            var count: u2 = 0;
+            while (count < 2) : (count += 1) {
+                const next_next_byte = try reader.readByte();
+                opc.bytes[count + 1] = next_next_byte;
+                opc.opc_byte_count += 1;
+
+                switch (next_next_byte) {
+                    0x05 => {
+                        opc.tag = .syscall;
+                        break;
+                    },
+                    else => return error.Todo,
+                }
+            }
+            opc.is_wip = false;
+        }
+
         return opc;
     }
 
@@ -445,7 +480,7 @@ const ParsedOpc = struct {
             .is_byte_sized = is_byte_sized,
             .extra = undefined,
             .is_wip = false,
-            .byte = undefined,
+            .is_multi_byte = false,
         };
     }
 
@@ -456,7 +491,7 @@ const ParsedOpc = struct {
             .is_byte_sized = is_byte_sized,
             .extra = extra,
             .is_wip = false,
-            .byte = undefined,
+            .is_multi_byte = false,
         };
     }
 
@@ -467,7 +502,18 @@ const ParsedOpc = struct {
             .is_byte_sized = is_byte_sized,
             .extra = undefined,
             .is_wip = true,
-            .byte = undefined,
+            .is_multi_byte = false,
+        };
+    }
+
+    fn multiByte(enc: Instruction.Enc) ParsedOpc {
+        return .{
+            .tag = undefined,
+            .enc = enc,
+            .is_byte_sized = false,
+            .extra = undefined,
+            .is_wip = true,
+            .is_multi_byte = true,
         };
     }
 
@@ -475,8 +521,10 @@ const ParsedOpc = struct {
         if (self.is_byte_sized) return 8;
         if (rex.w) return 64;
         if (prefixes.prefix_66) return 16;
-        if (self.enc == .o) return 64;
-        return 32;
+        switch (self.enc) {
+            .o, .m => return 64,
+            else => return 32,
+        }
     }
 };
 
