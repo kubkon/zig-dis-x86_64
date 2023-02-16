@@ -199,13 +199,17 @@ pub const Memory = struct {
 
     pub fn fmtPrint(self: Memory, writer: anytype) !void {
         switch (self.ptr_size) {
-            .byte => try writer.writeAll("byte ptr "),
-            .word => try writer.writeAll("word ptr "),
-            .dword => try writer.writeAll("dword ptr "),
-            .qword => try writer.writeAll("qword ptr "),
+            .byte => try writer.writeAll("BYTE PTR "),
+            .word => try writer.writeAll("WORD PTR "),
+            .dword => try writer.writeAll("DWORD PTR "),
+            .qword => try writer.writeAll("QWORD PTR "),
         }
 
-        try writer.writeByte('[');
+        const base_is_segment_reg = if (self.base) |r| r.isSegment() else false;
+
+        if (!base_is_segment_reg) {
+            try writer.writeByte('[');
+        }
 
         if (self.base) |r| {
             try r.fmtPrint(writer);
@@ -242,7 +246,9 @@ pub const Memory = struct {
             }
         }
 
-        try writer.writeByte(']');
+        if (!base_is_segment_reg) {
+            try writer.writeByte(']');
+        }
     }
 
     pub fn bitSize(self: Memory) u7 {
