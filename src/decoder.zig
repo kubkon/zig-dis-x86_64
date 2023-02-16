@@ -52,10 +52,57 @@ pub const Disassembler = struct {
                     const reg = Register.gpFromLowEnc(opc.extra, rex.b, bit_size);
                     break :data Instruction.Data.o(reg);
                 },
+
                 .i => {
                     const imm = try parseImm(bit_size, reader);
                     break :data Instruction.Data.i(imm, bit_size);
                 },
+
+                .m_rel => {
+                    const imm = try parseImm(32, reader);
+                    break :data Instruction.Data.mRel(imm);
+                },
+
+                .m => {
+                    const modrm = try parseModRmByte(reader);
+                    const sib = try parseSibByte(modrm, reader);
+                    const disp = try parseDisplacement(modrm, sib, reader);
+
+                    assert(opc.is_wip);
+                    opc.tag = switch (opc.byte) {
+                        0xff => switch (modrm.op1) {
+                            2 => Instruction.Tag.call,
+                            else => unreachable, // TODO
+                        },
+                        else => unreachable, // unhandled M encoding
+                    };
+
+                    if (modrm.isRip()) {
+                        break :data Instruction.Data.m(RegisterOrMemory.mem(.{
+                            .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
+                            .base = null,
+                            .disp = disp.?,
+                        }));
+                    }
+
+                    if (modrm.isDirect()) {
+                        const reg = Register.gpFromLowEnc(modrm.op2, rex.b, bit_size);
+                        break :data Instruction.Data.m(RegisterOrMemory.reg(reg));
+                    }
+
+                    const scale_index: ?Memory.ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
+                    const base: Register = if (sib) |info|
+                        info.baseReg(modrm, rex.b, prefixes)
+                    else
+                        Register.gpFromLowEnc(modrm.op2, rex.b, 64);
+                    break :data Instruction.Data.m(RegisterOrMemory.mem(.{
+                        .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
+                        .scale_index = scale_index,
+                        .base = base,
+                        .disp = disp,
+                    }));
+                },
+
                 .fd, .td => {
                     const imm = try reader.readInt(u64, .Little);
                     const reg: Register = blk: {
@@ -74,6 +121,7 @@ pub const Disassembler = struct {
                     };
                     break :data Instruction.Data.fd(reg, imm, ptr_size);
                 },
+
                 .oi => {
                     if (rex.r or rex.x) return error.InvalidRexForEncoding;
                     const reg = Register.gpFromLowEnc(opc.extra, rex.b, bit_size);
@@ -85,6 +133,7 @@ pub const Disassembler = struct {
                     };
                     break :data Instruction.Data.oi(reg, imm);
                 },
+
                 .mi, .mi8 => {
                     const modrm = try parseModRmByte(reader);
                     const sib = try parseSibByte(modrm, reader);
@@ -137,6 +186,7 @@ pub const Disassembler = struct {
                         .disp = disp,
                     }), imm);
                 },
+
                 .rm => {
                     const modrm = try parseModRmByte(reader);
                     const sib = try parseSibByte(modrm, reader);
@@ -170,6 +220,7 @@ pub const Disassembler = struct {
                         .disp = disp,
                     }));
                 },
+
                 .mr => {
                     const modrm = try parseModRmByte(reader);
                     const sib = try parseSibByte(modrm, reader);
@@ -285,13 +336,14 @@ const ParsedOpc = struct {
         const next_byte = try reader.readByte();
         var opc: ParsedOpc = blk: {
             switch (next_byte) {
-                // MI encoding will be resolved fully later, once
+                // M and MI encodings will be resolved fully later, once
                 // we parse the ModRM byte.
                 0x80 => break :blk ParsedOpc.wip(.mi, true),
                 0x81 => break :blk ParsedOpc.wip(.mi, false),
                 0x83 => break :blk ParsedOpc.wip(.mi8, false),
                 0xc6 => break :blk ParsedOpc.wip(.mi, true),
                 0xc7 => break :blk ParsedOpc.wip(.mi, false),
+                0xff => break :blk ParsedOpc.wip(.m, false),
                 // adc
                 0x14 => break :blk ParsedOpc.new(.adc, .i, true),
                 0x15 => break :blk ParsedOpc.new(.adc, .i, false),
@@ -313,6 +365,8 @@ const ParsedOpc = struct {
                 0x21 => break :blk ParsedOpc.new(.@"and", .mr, false),
                 0x22 => break :blk ParsedOpc.new(.@"and", .rm, true),
                 0x23 => break :blk ParsedOpc.new(.@"and", .rm, false),
+                // call
+                0xe8 => break :blk ParsedOpc.new(.call, .m_rel, false),
                 // cmp
                 0x3c => break :blk ParsedOpc.new(.cmp, .i, true),
                 0x3d => break :blk ParsedOpc.new(.cmp, .i, false),
@@ -373,6 +427,7 @@ const ParsedOpc = struct {
             switch (next_byte & mask) {
                 // mov
                 0x50 => break :blk ParsedOpc.newWithExtra(.push, .o, false, @truncate(u3, next_byte)),
+                0x58 => break :blk ParsedOpc.newWithExtra(.pop, .o, false, @truncate(u3, next_byte)),
                 0xb0 => break :blk ParsedOpc.newWithExtra(.mov, .oi, true, @truncate(u3, next_byte)),
                 0xb8 => break :blk ParsedOpc.newWithExtra(.mov, .oi, false, @truncate(u3, next_byte)),
                 // remaining

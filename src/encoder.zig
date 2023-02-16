@@ -17,11 +17,13 @@ pub const Instruction = struct {
         adc,
         add,
         @"and",
+        call,
         cmp,
         mov,
         @"or",
         lea,
         push,
+        pop,
         sbb,
         sub,
         xor,
@@ -51,6 +53,8 @@ pub const Instruction = struct {
                     .mr => try encoder.opcode_1byte(0x20),
                     else => unreachable, // does not support this encoding
                 },
+
+                .call => unreachable, // does not support 8bit sizes
 
                 .cmp => switch (enc) {
                     .i => try encoder.opcode_1byte(0x3c),
@@ -84,6 +88,8 @@ pub const Instruction = struct {
                     .i => try encoder.opcode_1byte(0x6a),
                     else => unreachable, // does not support this encoding
                 },
+
+                .pop => unreachable, // does not support this encoding
 
                 .sbb => switch (enc) {
                     .i => try encoder.opcode_1byte(0x1c),
@@ -136,6 +142,12 @@ pub const Instruction = struct {
                     else => unreachable, // does not support this encoding
                 },
 
+                .call => switch (enc) {
+                    .m => try encoder.opcode_1byte(0xff),
+                    .m_rel => try encoder.opcode_1byte(0xe8),
+                    else => unreachable, // does not support this encoding
+                },
+
                 .cmp => switch (enc) {
                     .i => try encoder.opcode_1byte(0x3d),
                     .mi => try encoder.opcode_1byte(0x81),
@@ -174,6 +186,8 @@ pub const Instruction = struct {
                     else => unreachable, // does not support this encoding
                 },
 
+                .pop => unreachable, // does not support this encoding
+
                 .sbb => switch (enc) {
                     .i => try encoder.opcode_1byte(0x1d),
                     .mi => try encoder.opcode_1byte(0x81),
@@ -203,12 +217,58 @@ pub const Instruction = struct {
             }
         }
 
+        fn modRmExt(tag: Tag, enc: Enc) ?u3 {
+            switch (enc) {
+                .mi, .mi8 => return switch (tag) {
+                    .add,
+                    .mov,
+                    => 0,
+
+                    .@"or" => 1,
+                    .adc => 2,
+                    .sbb => 3,
+                    .@"and" => 4,
+                    .sub => 5,
+                    .xor => 6,
+                    .cmp => 7,
+
+                    .call,
+                    .lea,
+                    .push,
+                    .pop,
+                    => unreachable, // unsupported encoding
+                },
+
+                .m => return switch (tag) {
+                    .call => 2,
+
+                    .add,
+                    .@"or",
+                    .adc,
+                    .sbb,
+                    .@"and",
+                    .sub,
+                    .xor,
+                    .cmp,
+                    .mov,
+                    .lea,
+                    .push,
+                    .pop,
+                    => unreachable, // unsupported encoding
+                },
+
+                else => unreachable,
+            }
+        }
+
         fn encodeWithReg(tag: Tag, reg: Register, encoder: anytype) !void {
             if (reg.bitSize() == 8) switch (tag) {
                 .mov => try encoder.opcode_withReg(0xb0, reg.lowEnc()),
                 else => unreachable,
             } else switch (tag) {
                 .mov => try encoder.opcode_withReg(0xb8, reg.lowEnc()),
+                .push => try encoder.opcode_withReg(0x50, reg.lowEnc()),
+                .pop => try encoder.opcode_withReg(0x58, reg.lowEnc()),
                 else => unreachable,
             }
         }
@@ -217,6 +277,8 @@ pub const Instruction = struct {
     pub const Enc = enum {
         o,
         i,
+        m,
+        m_rel,
         fd,
         td,
         oi,
@@ -229,6 +291,8 @@ pub const Instruction = struct {
     pub const Data = union {
         o: O,
         i: I,
+        m: M,
+        m_rel: MRel,
         fd: Fd,
         oi: Oi,
         mi: Mi,
@@ -241,6 +305,14 @@ pub const Instruction = struct {
 
         pub fn i(imm: i32, bit_size: ?u7) Data {
             return .{ .i = .{ .bit_size = bit_size, .imm = imm } };
+        }
+
+        pub fn m(reg_or_mem: RegisterOrMemory) Data {
+            return .{ .m = .{ .reg_or_mem = reg_or_mem } };
+        }
+
+        pub fn mRel(imm: i32) Data {
+            return .{ .m_rel = .{ .imm = imm } };
         }
 
         pub fn fd(reg: Register, imm: u64, ptr_size: Memory.PtrSize) Data {
@@ -273,6 +345,14 @@ pub const Instruction = struct {
         /// Note that auto-inferrence will never promote the instruction to 64bits.
         /// For that, set the bit size explicitly.
         bit_size: ?u7 = null,
+        imm: i32,
+    };
+
+    pub const M = struct {
+        reg_or_mem: RegisterOrMemory,
+    };
+
+    pub const MRel = struct {
         imm: i32,
     };
 
@@ -319,6 +399,7 @@ pub const Instruction = struct {
                 });
                 try self.tag.encodeWithReg(reg, encoder);
             },
+
             .i => {
                 const i = self.data.i;
                 const imm = i.imm;
@@ -331,6 +412,40 @@ pub const Instruction = struct {
                 });
                 try self.tag.encode(.i, bit_size, encoder);
                 try encodeImmSigned(imm, bit_size, encoder);
+            },
+
+            .m_rel => {
+                const imm = self.data.m_rel.imm;
+                try self.tag.encode(.m_rel, 32, encoder);
+                try encodeImmSigned(imm, 32, encoder);
+            },
+
+            .m => {
+                const reg_or_mem = self.data.m.reg_or_mem;
+                const modrm_ext = self.tag.modRmExt(self.enc).?;
+                const bit_size = @intCast(u7, reg_or_mem.bitSize());
+                if (bit_size == 16) {
+                    try encoder.prefix16BitMode();
+                }
+                switch (reg_or_mem) {
+                    .reg => |reg| {
+                        try encoder.rex(.{
+                            .w = false,
+                            .b = reg.isExtended(),
+                        });
+                        try self.tag.encode(self.enc, bit_size, encoder);
+                        try encoder.modRm_direct(modrm_ext, reg.lowEnc());
+                    },
+                    .mem => |mem| {
+                        try encoder.rex(.{
+                            .w = false,
+                            .b = if (mem.base) |base| base.isExtended() else false,
+                            .x = if (mem.scale_index) |si| si.index.isExtended() else false,
+                        });
+                        try self.tag.encode(self.enc, bit_size, encoder);
+                        try mem.encode(modrm_ext, encoder);
+                    },
+                }
             },
 
             .fd, .td => {
@@ -450,19 +565,7 @@ pub const Instruction = struct {
 
             .mi, .mi8 => {
                 const mi = self.data.mi;
-                const modrm_ext: u3 = switch (self.tag) {
-                    .add => 0,
-                    .@"or" => 1,
-                    .adc => 2,
-                    .sbb => 3,
-                    .@"and" => 4,
-                    .sub => 5,
-                    .xor => 6,
-                    .cmp => 7,
-                    .mov => 0,
-                    .lea => unreachable, // unsupported encoding
-                    .push => unreachable, // unsupported encoding
-                };
+                const modrm_ext = self.tag.modRmExt(self.enc).?;
                 var prefixes = LegacyPrefixes{};
                 const bit_size = @intCast(u7, mi.reg_or_mem.bitSize());
                 if (bit_size == 16) {
@@ -503,31 +606,27 @@ pub const Instruction = struct {
         }
     }
 
+    fn fmtImm(imm: i32, writer: anytype) !void {
+        const imm_abs: u32 = @intCast(u32, try math.absInt(imm));
+        if (sign(imm) < 0) {
+            try writer.writeByte('-');
+        }
+        try writer.print("0x{x}", .{imm_abs});
+    }
+
     pub fn fmtPrint(self: Instruction, writer: anytype) !void {
         switch (self.tag) {
-            .adc => try writer.writeAll("adc "),
-            .add => try writer.writeAll("add "),
-            .@"and" => try writer.writeAll("and "),
-            .cmp => try writer.writeAll("cmp "),
-            .mov => blk: {
-                switch (self.enc) {
-                    .fd, .td => break :blk try writer.writeAll("movabs "),
-                    .oi => {
-                        if (self.data.oi.reg.bitSize() == 64) {
-                            break :blk try writer.writeAll("movabs ");
-                        }
-                    },
-                    else => {},
-                }
-                try writer.writeAll("mov ");
+            .mov => switch (self.enc) {
+                .fd, .td => try writer.writeAll("movabs"),
+                .oi => if (self.data.oi.reg.bitSize() == 64)
+                    try writer.writeAll("movabs")
+                else
+                    try writer.writeAll("mov"),
+                else => try writer.writeAll("mov"),
             },
-            .@"or" => try writer.writeAll("or "),
-            .lea => try writer.writeAll("lea "),
-            .push => try writer.writeAll("push "),
-            .sbb => try writer.writeAll("sbb "),
-            .sub => try writer.writeAll("sub "),
-            .xor => try writer.writeAll("xor "),
+            else => try writer.print("{s}", .{@tagName(self.tag)}),
         }
+        try writer.writeByte(' ');
 
         switch (self.enc) {
             .o => {
@@ -541,12 +640,17 @@ pub const Instruction = struct {
                 const dst_reg = Register.rax.toBitSize(bit_size);
                 try dst_reg.fmtPrint(writer);
                 try writer.writeAll(", ");
-                const imm_signed: i32 = @bitCast(i32, i.imm);
-                const imm_abs: u32 = @intCast(u32, try math.absInt(imm_signed));
-                if (sign(imm_signed) < 0) {
-                    try writer.writeByte('-');
-                }
-                try writer.print("0x{x}", .{imm_abs});
+                try fmtImm(i.imm, writer);
+            },
+
+            .m_rel => {
+                const imm = self.data.m_rel.imm;
+                try fmtImm(imm, writer);
+            },
+
+            .m => {
+                const reg_or_mem = self.data.m.reg_or_mem;
+                try reg_or_mem.fmtPrint(writer);
             },
 
             .fd => {

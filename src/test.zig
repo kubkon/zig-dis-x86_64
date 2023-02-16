@@ -602,6 +602,19 @@ test "lower MR encoding" {
     try expectEqualHexStrings("\x4F\x89\x6C\x63\x10", enc.code(), "mov qword ptr [r11 + 2 * r12 + 0x10], r13");
 }
 
+test "lower O encoding" {
+    var enc = TestEncode{};
+
+    try enc.encode(.{ .tag = .push, .enc = .o, .data = Instruction.Data.o(.rax) });
+    try expectEqualHexStrings("\x50", enc.code(), "push rax");
+
+    try enc.encode(.{ .tag = .push, .enc = .o, .data = Instruction.Data.o(.r12w) });
+    try expectEqualHexStrings("\x66\x41\x54", enc.code(), "push r12w");
+
+    try enc.encode(.{ .tag = .pop, .enc = .o, .data = Instruction.Data.o(.r12) });
+    try expectEqualHexStrings("\x41\x5c", enc.code(), "pop r12");
+}
+
 test "lower OI encoding" {
     var enc = TestEncode{};
 
