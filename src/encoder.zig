@@ -5,6 +5,7 @@ const math = std.math;
 const bits = @import("bits.zig");
 const sign = bits.sign;
 const Memory = bits.Memory;
+const PtrSize = bits.PtrSize;
 const Register = bits.Register;
 const RegisterOrMemory = bits.RegisterOrMemory;
 
@@ -345,7 +346,7 @@ pub const Instruction = struct {
             return .{ .m_rel = .{ .imm = imm } };
         }
 
-        pub fn fd(reg: Register, imm: u64, ptr_size: Memory.PtrSize) Data {
+        pub fn fd(reg: Register, imm: u64, ptr_size: PtrSize) Data {
             return .{ .fd = .{ .ptr_size = ptr_size, .imm = imm, .reg = reg } };
         }
 
@@ -391,7 +392,7 @@ pub const Instruction = struct {
         /// Destination segment register.
         reg: Register,
         /// Size of the data to transfer.
-        ptr_size: Memory.PtrSize,
+        ptr_size: PtrSize,
     };
 
     pub const Oi = struct {
@@ -1065,10 +1066,9 @@ fn Encoder(comptime T: type) type {
         ///
         /// Remember to add a REX prefix byte if index or base are extended!
         pub fn sib_scaleIndexDisp32(self: Self, scale: u2, index: u3) !void {
-            assert(index != 4);
-
             // scale is actually ignored
-            // index = 4 means no index
+            // index = 4 means no index if and only if we haven't extended the register
+            // TODO enforce this
             // base = 5 means no base, if mod == 0.
             try self.sib(scale, index, 5);
         }

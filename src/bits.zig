@@ -166,40 +166,38 @@ test "Register classes" {
     try expect(Register.fs.class() == .seg);
 }
 
+pub const ScaleIndex = packed struct {
+    scale: u2,
+    index: Register,
+};
+
+pub const PtrSize = enum(u2) {
+    byte = 0b00,
+    word = 0b01,
+    dword = 0b10,
+    qword = 0b11,
+
+    pub fn fromBitSize(bit_size: u7) PtrSize {
+        return @intToEnum(PtrSize, math.log2_int(u4, @intCast(u4, @divExact(bit_size, 8))));
+    }
+
+    pub fn bitSize(s: PtrSize) u7 {
+        return 8 * (math.powi(u7, 2, @enumToInt(s)) catch unreachable);
+    }
+};
+
 pub const Memory = struct {
+    base: ?Register,
+    rip: bool = false,
+    disp: i32,
     ptr_size: PtrSize,
     scale_index: ?ScaleIndex = null,
-    /// null means RIP-relative addressing
-    base: ?Register,
-    disp: ?i32 = null,
-
-    pub const ScaleIndex = packed struct {
-        scale: u2,
-        index: Register,
-    };
-
-    pub const PtrSize = enum(u2) {
-        byte = 0b00,
-        word = 0b01,
-        dword = 0b10,
-        qword = 0b11,
-
-        pub fn fromBitSize(bit_size: u7) PtrSize {
-            return @intToEnum(PtrSize, math.log2_int(u4, @intCast(u4, @divExact(bit_size, 8))));
-        }
-
-        pub fn bitSize(s: PtrSize) u7 {
-            return 8 * (math.powi(u7, 2, @enumToInt(s)) catch unreachable);
-        }
-    };
 
     pub fn isSegment(self: Memory) bool {
         return if (self.base) |r| r.isSegment() else false;
     }
 
     pub fn fmtPrint(self: Memory, writer: anytype) !void {
-        assert(self.scale_index == null); // TODO handle SIB
-
         switch (self.ptr_size) {
             .byte => try writer.writeAll("byte ptr "),
             .word => try writer.writeAll("word ptr "),
@@ -211,24 +209,28 @@ pub const Memory = struct {
 
         if (self.base) |r| {
             try r.fmtPrint(writer);
-        } else {
+        } else if (self.rip) {
             try writer.writeAll("rip");
         }
 
-        if (self.disp) |disp| {
-            const disp_signed: i32 = @bitCast(i32, disp);
-            const disp_abs: u32 = @intCast(u32, try std.math.absInt(disp_signed));
+        if (self.scale_index) |si| {
+            try si.index.fmtPrint(writer);
+            try writer.print(" * {d}", .{math.powi(u4, 2, si.scale) catch unreachable});
+        }
+
+        if (self.disp != 0) {
+            const disp_abs: u32 = @intCast(u32, try std.math.absInt(self.disp));
             blk: {
                 if (self.base) |r| {
                     if (r.isSegment()) {
                         try writer.writeAll(":");
-                        if (sign(disp_signed) < 0) {
+                        if (sign(self.disp) < 0) {
                             try writer.writeAll("-");
                         }
                         break :blk;
                     }
                 }
-                if (sign(disp_signed) < 0) {
+                if (sign(self.disp) < 0) {
                     try writer.writeAll(" - ");
                 } else {
                     try writer.writeAll(" + ");
@@ -244,69 +246,73 @@ pub const Memory = struct {
     }
 
     pub fn bitSize(self: Memory) u7 {
-        return @intCast(u7, self.ptr_size.bitSize());
+        return self.ptr_size.bitSize();
     }
 
     pub fn encode(self: Memory, operand: u3, encoder: anytype) !void {
-        if (self.base) |reg| {
-            if (reg.class() == .seg) {
+        if (self.base) |base| {
+            if (base.class() == .seg) {
+                // TODO audit this wrt SIB
                 try encoder.modRm_SIBDisp0(operand);
                 if (self.scale_index) |si| {
                     try encoder.sib_scaleIndexDisp32(si.scale, si.index.lowEnc());
                 } else {
                     try encoder.sib_disp32();
                 }
-                try encoder.disp32(self.disp.?);
+                try encoder.disp32(self.disp);
             } else {
-                assert(reg.class() == .gp);
-                const dst = reg.lowEnc();
+                assert(base.class() == .gp);
+                const dst = base.lowEnc();
                 const src = operand;
                 if (dst == 4 or self.scale_index != null) {
-                    if (self.disp == null and dst != 5) {
+                    if (self.disp == 0 and dst != 5) {
                         try encoder.modRm_SIBDisp0(src);
                         if (self.scale_index) |si| {
                             try encoder.sib_scaleIndexBase(si.scale, si.index.lowEnc(), dst);
                         } else {
                             try encoder.sib_base(dst);
                         }
-                    } else {
-                        const disp = self.disp orelse 0;
-                        if (immOpBitSize(@bitCast(u32, disp)) == 8) {
-                            try encoder.modRm_SIBDisp8(src);
-                            if (self.scale_index) |si| {
-                                try encoder.sib_scaleIndexBaseDisp8(si.scale, si.index.lowEnc(), dst);
-                            } else {
-                                try encoder.sib_baseDisp8(dst);
-                            }
-                            try encoder.disp8(@truncate(i8, disp));
+                    } else if (immOpBitSize(@bitCast(u32, self.disp)) == 8) {
+                        try encoder.modRm_SIBDisp8(src);
+                        if (self.scale_index) |si| {
+                            try encoder.sib_scaleIndexBaseDisp8(si.scale, si.index.lowEnc(), dst);
                         } else {
-                            try encoder.modRm_SIBDisp32(src);
-                            if (self.scale_index) |si| {
-                                try encoder.sib_scaleIndexBaseDisp32(si.scale, si.index.lowEnc(), dst);
-                            } else {
-                                try encoder.sib_baseDisp32(dst);
-                            }
-                            try encoder.disp32(disp);
+                            try encoder.sib_baseDisp8(dst);
                         }
+                        try encoder.disp8(@truncate(i8, self.disp));
+                    } else {
+                        try encoder.modRm_SIBDisp32(src);
+                        if (self.scale_index) |si| {
+                            try encoder.sib_scaleIndexBaseDisp32(si.scale, si.index.lowEnc(), dst);
+                        } else {
+                            try encoder.sib_baseDisp32(dst);
+                        }
+                        try encoder.disp32(self.disp);
                     }
                 } else {
-                    if (self.disp == null and dst != 5) {
+                    if (self.disp == 0 and dst != 5) {
                         try encoder.modRm_indirectDisp0(src, dst);
+                    } else if (immOpBitSize(@bitCast(u32, self.disp)) == 8) {
+                        try encoder.modRm_indirectDisp8(src, dst);
+                        try encoder.disp8(@truncate(i8, self.disp));
                     } else {
-                        const disp = self.disp orelse 0;
-                        if (immOpBitSize(@bitCast(u32, disp)) == 8) {
-                            try encoder.modRm_indirectDisp8(src, dst);
-                            try encoder.disp8(@truncate(i8, disp));
-                        } else {
-                            try encoder.modRm_indirectDisp32(src, dst);
-                            try encoder.disp32(disp);
-                        }
+                        try encoder.modRm_indirectDisp32(src, dst);
+                        try encoder.disp32(self.disp);
                     }
                 }
             }
         } else {
-            try encoder.modRm_RIPDisp32(operand);
-            try encoder.disp32(self.disp orelse @as(i32, 0));
+            if (self.rip) {
+                try encoder.modRm_RIPDisp32(operand);
+            } else {
+                try encoder.modRm_SIBDisp0(operand);
+                if (self.scale_index) |si| {
+                    try encoder.sib_scaleIndexDisp32(si.scale, si.index.lowEnc());
+                } else {
+                    try encoder.sib_disp32();
+                }
+            }
+            try encoder.disp32(self.disp);
         }
     }
 };
@@ -319,8 +325,26 @@ pub const RegisterOrMemory = union(enum) {
         return .{ .reg = register };
     }
 
-    pub fn mem(memory: Memory) RegisterOrMemory {
-        return .{ .mem = memory };
+    pub fn mem(ptr_size: PtrSize, args: struct {
+        disp: i32,
+        base: ?Register = null,
+        scale_index: ?ScaleIndex = null,
+    }) RegisterOrMemory {
+        return .{ .mem = .{
+            .base = args.base,
+            .disp = args.disp,
+            .ptr_size = ptr_size,
+            .scale_index = args.scale_index,
+        } };
+    }
+
+    pub fn rip(ptr_size: PtrSize, disp: i32) RegisterOrMemory {
+        return .{ .mem = .{
+            .base = null,
+            .rip = true,
+            .disp = disp,
+            .ptr_size = ptr_size,
+        } };
     }
 
     pub fn fmtPrint(self: RegisterOrMemory, writer: anytype) !void {
@@ -345,7 +369,7 @@ pub const RegisterOrMemory = union(enum) {
     }
 };
 
-inline fn immOpBitSize(u_imm: u32) u6 {
+fn immOpBitSize(u_imm: u32) u6 {
     const imm = @bitCast(i32, u_imm);
     if (math.minInt(i8) <= imm and imm <= math.maxInt(i8)) {
         return 8;

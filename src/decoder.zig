@@ -8,9 +8,11 @@ const encoder = @import("encoder.zig");
 const Instruction = encoder.Instruction;
 const LegacyPrefixes = encoder.LegacyPrefixes;
 const Memory = bits.Memory;
+const PtrSize = bits.PtrSize;
 const Register = bits.Register;
 const RegisterOrMemory = bits.RegisterOrMemory;
 const Rex = encoder.Rex;
+const ScaleIndex = bits.ScaleIndex;
 
 const Allocator = std.mem.Allocator;
 
@@ -81,11 +83,7 @@ pub const Disassembler = struct {
                     };
 
                     if (modrm.isRip()) {
-                        break :data Instruction.Data.m(RegisterOrMemory.mem(.{
-                            .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                            .base = null,
-                            .disp = disp.?,
-                        }));
+                        break :data Instruction.Data.m(RegisterOrMemory.rip(PtrSize.fromBitSize(bit_size), disp));
                     }
 
                     if (modrm.isDirect()) {
@@ -93,13 +91,12 @@ pub const Disassembler = struct {
                         break :data Instruction.Data.m(RegisterOrMemory.reg(reg));
                     }
 
-                    const scale_index: ?Memory.ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
-                    const base: Register = if (sib) |info|
-                        info.baseReg(modrm, rex.b, prefixes)
+                    const scale_index: ?ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
+                    const base: ?Register = if (sib) |info|
+                        info.baseReg(modrm, rex, prefixes)
                     else
                         Register.gpFromLowEnc(modrm.op2, rex.b, 64);
-                    break :data Instruction.Data.m(RegisterOrMemory.mem(.{
-                        .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
+                    break :data Instruction.Data.m(RegisterOrMemory.mem(PtrSize.fromBitSize(bit_size), .{
                         .scale_index = scale_index,
                         .base = base,
                         .disp = disp,
@@ -116,7 +113,7 @@ pub const Disassembler = struct {
                         if (prefixes.prefix_65) break :blk .gs;
                         break :blk .ds;
                     };
-                    const ptr_size: Memory.PtrSize = blk: {
+                    const ptr_size: PtrSize = blk: {
                         if (bit_size <= 8) break :blk .byte;
                         if (bit_size <= 16) break :blk .word;
                         if (bit_size <= 32) break :blk .dword;
@@ -166,11 +163,7 @@ pub const Disassembler = struct {
                     const imm = try parseImm(imm_bit_size, reader);
 
                     if (modrm.isRip()) {
-                        break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
-                            .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                            .base = null,
-                            .disp = disp.?,
-                        }), imm);
+                        break :data Instruction.Data.mi(RegisterOrMemory.rip(PtrSize.fromBitSize(bit_size), disp), imm);
                     }
 
                     if (modrm.isDirect()) {
@@ -178,13 +171,12 @@ pub const Disassembler = struct {
                         break :data Instruction.Data.mi(RegisterOrMemory.reg(reg), imm);
                     }
 
-                    const scale_index: ?Memory.ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
-                    const base: Register = if (sib) |info|
-                        info.baseReg(modrm, rex.b, prefixes)
+                    const scale_index: ?ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
+                    const base: ?Register = if (sib) |info|
+                        info.baseReg(modrm, rex, prefixes)
                     else
                         Register.gpFromLowEnc(modrm.op2, rex.b, 64);
-                    break :data Instruction.Data.mi(RegisterOrMemory.mem(.{
-                        .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
+                    break :data Instruction.Data.mi(RegisterOrMemory.mem(PtrSize.fromBitSize(bit_size), .{
                         .scale_index = scale_index,
                         .base = base,
                         .disp = disp,
@@ -198,11 +190,7 @@ pub const Disassembler = struct {
 
                     if (modrm.isRip()) {
                         const reg1 = Register.gpFromLowEnc(modrm.op1, rex.r, bit_size);
-                        break :data Instruction.Data.rm(reg1, RegisterOrMemory.mem(.{
-                            .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                            .base = null,
-                            .disp = disp.?,
-                        }));
+                        break :data Instruction.Data.rm(reg1, RegisterOrMemory.rip(PtrSize.fromBitSize(bit_size), disp));
                     }
 
                     if (modrm.isDirect()) {
@@ -212,13 +200,12 @@ pub const Disassembler = struct {
                     }
 
                     const reg = Register.gpFromLowEnc(modrm.op1, rex.r, bit_size);
-                    const scale_index: ?Memory.ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
-                    const base: Register = if (sib) |info|
-                        info.baseReg(modrm, rex.b, prefixes)
+                    const scale_index: ?ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
+                    const base: ?Register = if (sib) |info|
+                        info.baseReg(modrm, rex, prefixes)
                     else
                         Register.gpFromLowEnc(modrm.op2, rex.b, 64);
-                    break :data Instruction.Data.rm(reg, RegisterOrMemory.mem(.{
-                        .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
+                    break :data Instruction.Data.rm(reg, RegisterOrMemory.mem(PtrSize.fromBitSize(bit_size), .{
                         .scale_index = scale_index,
                         .base = base,
                         .disp = disp,
@@ -232,11 +219,7 @@ pub const Disassembler = struct {
 
                     if (modrm.isRip()) {
                         const reg = Register.gpFromLowEnc(modrm.op1, rex.r, bit_size);
-                        break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
-                            .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
-                            .base = null,
-                            .disp = disp.?,
-                        }), reg);
+                        break :data Instruction.Data.mr(RegisterOrMemory.rip(PtrSize.fromBitSize(bit_size), disp), reg);
                     }
 
                     if (modrm.isDirect()) {
@@ -245,14 +228,13 @@ pub const Disassembler = struct {
                         break :data Instruction.Data.mr(RegisterOrMemory.reg(reg1), reg2);
                     }
 
-                    const scale_index: ?Memory.ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
-                    const base: Register = if (sib) |info|
-                        info.baseReg(modrm, rex.b, prefixes)
+                    const scale_index: ?ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
+                    const base: ?Register = if (sib) |info|
+                        info.baseReg(modrm, rex, prefixes)
                     else
                         Register.gpFromLowEnc(modrm.op2, rex.b, 64);
                     const reg = Register.gpFromLowEnc(modrm.op1, rex.r, bit_size);
-                    break :data Instruction.Data.mr(RegisterOrMemory.mem(.{
-                        .ptr_size = Memory.PtrSize.fromBitSize(bit_size),
+                    break :data Instruction.Data.mr(RegisterOrMemory.mem(PtrSize.fromBitSize(bit_size), .{
                         .scale_index = scale_index,
                         .base = base,
                         .disp = disp,
@@ -559,16 +541,17 @@ const Sib = packed struct {
     index: u3,
     base: u3,
 
-    fn scaleIndex(self: Sib, rex: Rex) ?Memory.ScaleIndex {
-        if (self.index == 0b100) return null;
-        return Memory.ScaleIndex{
+    fn scaleIndex(self: Sib, rex: Rex) ?ScaleIndex {
+        if (self.index == 0b100 and !rex.x) return null;
+        return ScaleIndex{
             .scale = self.ss,
-            .index = Register.gpFromLowEnc(self.index, rex.b, 64),
+            .index = Register.gpFromLowEnc(self.index, rex.x, 64),
         };
     }
 
-    fn baseReg(self: Sib, modrm: ModRm, is_extended: bool, prefixes: LegacyPrefixes) Register {
+    fn baseReg(self: Sib, modrm: ModRm, rex: Rex, prefixes: LegacyPrefixes) ?Register {
         if (self.base == 0b101 and modrm.mod == 0) {
+            if (self.scaleIndex(rex)) |_| return null;
             // Segment register
             if (prefixes.prefix_2e) return .cs;
             if (prefixes.prefix_36) return .ss;
@@ -577,7 +560,7 @@ const Sib = packed struct {
             if (prefixes.prefix_65) return .gs;
             return .ds;
         }
-        return Register.gpFromLowEnc(self.base, is_extended, 64);
+        return Register.gpFromLowEnc(self.base, rex.b, 64);
     }
 };
 
@@ -590,7 +573,7 @@ fn parseSibByte(modrm: ModRm, reader: anytype) !?Sib {
     return Sib{ .ss = ss, .index = index, .base = base };
 }
 
-fn parseDisplacement(modrm: ModRm, sib: ?Sib, reader: anytype) !?i32 {
+fn parseDisplacement(modrm: ModRm, sib: ?Sib, reader: anytype) !i32 {
     if (sib) |info| {
         if (info.base == 0b101 and modrm.mod == 0) {
             return try reader.readInt(i32, .Little);
@@ -602,6 +585,6 @@ fn parseDisplacement(modrm: ModRm, sib: ?Sib, reader: anytype) !?i32 {
     return switch (modrm.mod) {
         0b01 => try reader.readInt(i8, .Little),
         0b10 => try reader.readInt(i32, .Little),
-        else => null,
+        else => 0,
     };
 }
