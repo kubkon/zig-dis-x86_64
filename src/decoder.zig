@@ -188,24 +188,27 @@ pub const Disassembler = struct {
                     const sib = try parseSibByte(modrm, reader);
                     const disp = try parseDisplacement(modrm, sib, reader);
 
+                    const dst_bit_size = bit_size;
+                    const src_bit_size = bit_size;
+
                     if (modrm.isRip()) {
-                        const reg1 = Register.gpFromLowEnc(modrm.op1, rex.r, bit_size);
-                        break :data Instruction.Data.rm(reg1, RegisterOrMemory.rip(PtrSize.fromBitSize(bit_size), disp));
+                        const reg1 = Register.gpFromLowEnc(modrm.op1, rex.r, dst_bit_size);
+                        break :data Instruction.Data.rm(reg1, RegisterOrMemory.rip(PtrSize.fromBitSize(src_bit_size), disp));
                     }
 
                     if (modrm.isDirect()) {
-                        const reg1 = Register.gpFromLowEnc(modrm.op1, rex.r, bit_size);
-                        const reg2 = Register.gpFromLowEnc(modrm.op2, rex.b, bit_size);
+                        const reg1 = Register.gpFromLowEnc(modrm.op1, rex.r, dst_bit_size);
+                        const reg2 = Register.gpFromLowEnc(modrm.op2, rex.b, src_bit_size);
                         break :data Instruction.Data.rm(reg1, RegisterOrMemory.reg(reg2));
                     }
 
-                    const reg = Register.gpFromLowEnc(modrm.op1, rex.r, bit_size);
+                    const reg = Register.gpFromLowEnc(modrm.op1, rex.r, dst_bit_size);
                     const scale_index: ?ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
                     const base: ?Register = if (sib) |info|
                         info.baseReg(modrm, rex, prefixes)
                     else
                         Register.gpFromLowEnc(modrm.op2, rex.b, 64);
-                    break :data Instruction.Data.rm(reg, RegisterOrMemory.mem(PtrSize.fromBitSize(bit_size), .{
+                    break :data Instruction.Data.rm(reg, RegisterOrMemory.mem(PtrSize.fromBitSize(src_bit_size), .{
                         .scale_index = scale_index,
                         .base = base,
                         .disp = disp,
@@ -333,9 +336,9 @@ const ParsedOpc = struct {
                 0xc6 => break :blk ParsedOpc.wip(.mi, true),
                 0xc7 => break :blk ParsedOpc.wip(.mi, false),
                 0xff => break :blk ParsedOpc.wip(.m, false),
-                // System calls and multibyte opcodes will be resolved fully later, once
+                // Multi-byte opcodes will be resolved fully later, once
                 // we parse additional bytes
-                0x0f => break :blk ParsedOpc.multiByte(.np),
+                0x0f => break :blk ParsedOpc.multiByte(),
                 // adc
                 0x14 => break :blk ParsedOpc.new(.adc, .i, true),
                 0x15 => break :blk ParsedOpc.new(.adc, .i, false),
@@ -379,6 +382,8 @@ const ParsedOpc = struct {
                 0xa1 => break :blk ParsedOpc.new(.mov, .fd, false),
                 0xa2 => break :blk ParsedOpc.new(.mov, .td, true),
                 0xa3 => break :blk ParsedOpc.new(.mov, .td, false),
+                // movsxd
+                0x63 => break :blk ParsedOpc.new(.movsxd, .rm, false),
                 // or
                 0x0c => break :blk ParsedOpc.new(.@"or", .i, true),
                 0x0d => break :blk ParsedOpc.new(.@"or", .i, false),
@@ -434,25 +439,38 @@ const ParsedOpc = struct {
         opc.opc_byte_count = 1;
 
         if (opc.is_multi_byte) {
-            assert(opc.is_wip);
-            var count: u2 = 0;
-            while (count < 2) : (count += 1) {
-                const next_next_byte = try reader.readByte();
-                opc.bytes[count + 1] = next_next_byte;
-                opc.opc_byte_count += 1;
-
-                switch (next_next_byte) {
-                    0x05 => {
-                        opc.tag = .syscall;
-                        break;
-                    },
-                    else => return error.Todo,
-                }
-            }
-            opc.is_wip = false;
+            try opc.resolveMultiByte(reader);
         }
 
         return opc;
+    }
+
+    fn resolveMultiByte(opc: *ParsedOpc, reader: anytype) !void {
+        assert(opc.is_wip);
+        var count: u2 = 0;
+        while (count < 2) : (count += 1) {
+            const next_next_byte = try reader.readByte();
+            opc.bytes[count + 1] = next_next_byte;
+            opc.opc_byte_count += 1;
+
+            switch (next_next_byte) {
+                0x05 => {
+                    opc.tag = .syscall;
+                    opc.enc = .np;
+                    break;
+                },
+
+                0xbe, 0xbf => {
+                    opc.tag = .movsx;
+                    opc.is_byte_sized = next_next_byte == 0xbe;
+                    opc.enc = .rm;
+                    break;
+                },
+
+                else => return error.Todo,
+            }
+        }
+        opc.is_wip = false;
     }
 
     fn new(tag: Instruction.Tag, enc: Instruction.Enc, is_byte_sized: bool) ParsedOpc {
@@ -488,10 +506,10 @@ const ParsedOpc = struct {
         };
     }
 
-    fn multiByte(enc: Instruction.Enc) ParsedOpc {
+    fn multiByte() ParsedOpc {
         return .{
             .tag = undefined,
-            .enc = enc,
+            .enc = undefined,
             .is_byte_sized = false,
             .extra = undefined,
             .is_wip = true,

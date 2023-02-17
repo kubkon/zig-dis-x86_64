@@ -18,21 +18,27 @@ pub const Instruction = struct {
         adc,
         add,
         @"and",
-        call,
         cmp,
-        int3,
-        mov,
         @"or",
-        lea,
-        push,
-        pop,
-        ret,
         sbb,
         sub,
-        syscall,
         xor,
 
-        fn encode(tag: Tag, enc: Enc, bit_size: u7, encoder: anytype) !void {
+        lea,
+
+        mov,
+        movsx,
+        movsxd,
+
+        push,
+        pop,
+
+        call,
+        int3,
+        ret,
+        syscall,
+
+        fn encode(tag: Tag, enc: Enc, bit_size: u9, encoder: anytype) !void {
             if (enc == .np) {
                 return switch (tag) {
                     .int3 => try encoder.opcode_1byte(0xcc),
@@ -85,6 +91,11 @@ pub const Instruction = struct {
                     else => unreachable, // does not support this encoding
                 },
 
+                .movsx => switch (enc) {
+                    .rm => try encoder.opcode_2byte(0x0f, 0xbe),
+                    else => unreachable, // does not support this encoding
+                },
+
                 .@"or" => switch (enc) {
                     .i => try encoder.opcode_1byte(0x0c),
                     .mi, .mi8 => try encoder.opcode_1byte(0x80),
@@ -125,6 +136,7 @@ pub const Instruction = struct {
                 .call,
                 .int3,
                 .lea,
+                .movsxd,
                 .pop,
                 .ret,
                 .syscall,
@@ -179,6 +191,16 @@ pub const Instruction = struct {
                     .mi8 => unreachable, // does not support this encoding
                     .rm => try encoder.opcode_1byte(0x8b),
                     .mr => try encoder.opcode_1byte(0x89),
+                    else => unreachable, // does not support this encoding
+                },
+
+                .movsx => switch (enc) {
+                    .rm => try encoder.opcode_2byte(0x0f, 0xbf),
+                    else => unreachable, // does not support this encoding
+                },
+
+                .movsxd => switch (enc) {
+                    .rm => try encoder.opcode_1byte(0x63),
                     else => unreachable, // does not support this encoding
                 },
 
@@ -239,10 +261,7 @@ pub const Instruction = struct {
         fn modRmExt(tag: Tag, enc: Enc) ?u3 {
             switch (enc) {
                 .mi, .mi8 => return switch (tag) {
-                    .add,
-                    .mov,
-                    => 0,
-
+                    .add, .mov => 0,
                     .@"or" => 1,
                     .adc => 2,
                     .sbb => 3,
@@ -251,35 +270,13 @@ pub const Instruction = struct {
                     .xor => 6,
                     .cmp => 7,
 
-                    .call,
-                    .int3,
-                    .lea,
-                    .push,
-                    .pop,
-                    .ret,
-                    .syscall,
-                    => unreachable, // unsupported encoding
+                    else => unreachable, // unsupported encoding
                 },
 
                 .m => return switch (tag) {
                     .call => 2,
 
-                    .add,
-                    .@"or",
-                    .adc,
-                    .sbb,
-                    .@"and",
-                    .sub,
-                    .xor,
-                    .cmp,
-                    .int3,
-                    .mov,
-                    .lea,
-                    .push,
-                    .pop,
-                    .ret,
-                    .syscall,
-                    => unreachable, // unsupported encoding
+                    else => unreachable, // unsupported encoding
                 },
 
                 else => unreachable,
@@ -523,9 +520,8 @@ pub const Instruction = struct {
             .rm => {
                 const rm = self.data.rm;
                 const dst_reg = rm.reg;
-                const bit_size = @intCast(u7, dst_reg.bitSize());
                 var prefixes = LegacyPrefixes{};
-                if (bit_size == 16) {
+                if (dst_reg.bitSize() == 16) {
                     prefixes.set16BitOverride();
                 }
                 if (rm.reg_or_mem.isSegment()) {
@@ -543,7 +539,7 @@ pub const Instruction = struct {
                             .r = dst_reg.isExtended(),
                             .b = src_reg.isExtended(),
                         });
-                        try self.tag.encode(.rm, bit_size, encoder);
+                        try self.tag.encode(.rm, src_reg.bitSize(), encoder);
                         try encoder.modRm_direct(dst_reg.lowEnc(), src_reg.lowEnc());
                     },
                     .mem => |src_mem| {
@@ -553,7 +549,7 @@ pub const Instruction = struct {
                             .b = if (src_mem.base) |base| base.isExtended() else false,
                             .x = if (src_mem.scale_index) |si| si.index.isExtended() else false,
                         });
-                        try self.tag.encode(.rm, bit_size, encoder);
+                        try self.tag.encode(.rm, src_mem.bitSize(), encoder);
                         try src_mem.encode(dst_reg.lowEnc(), encoder);
                     },
                 }

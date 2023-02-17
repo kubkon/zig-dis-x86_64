@@ -174,8 +174,8 @@ test "disassemble - mnemonic" {
         0x26, 0xa3, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x48, 0xa1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x65, 0x44, 0x01, 0x24, 0x25, 0x00, 0x00, 0x00, 0x10,
-        0x42, 0xFF, 0x14, 0x5D, 0x00, 0x00, 0x00, 0x00,
-        0x42, 0xFF, 0x14, 0x65, 0x00, 0x00, 0x00, 0x00,
+        0x42, 0xff, 0x14, 0x5d, 0x00, 0x00, 0x00, 0x00,
+        0x42, 0xff, 0x14, 0x65, 0x00, 0x00, 0x00, 0x00,
         // zig fmt: on
     });
 
@@ -507,6 +507,15 @@ test "lower RM encoding" {
         .disp = 0,
     })) });
     try expectEqualHexStrings("\x48\x8D\x74\x0D\x00", enc.code(), "lea rsi, QWORD PTR [rbp + rcx*1 + 0]");
+
+    try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.eax, RegisterOrMemory.reg(.bx)) });
+    try expectEqualHexStrings("\x0F\xBF\xC3", enc.code(), "movsx eax, bx");
+
+    try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.eax, RegisterOrMemory.reg(.bl)) });
+    try expectEqualHexStrings("\x0F\xBE\xC3", enc.code(), "movsx eax, bl");
+
+    try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.ax, RegisterOrMemory.reg(.bl)) });
+    try expectEqualHexStrings("\x66\x0F\xBE\xC3", enc.code(), "movsx ax, bl");
 }
 
 test "lower MR encoding" {
