@@ -557,28 +557,28 @@ pub const Instruction = struct {
 
             .mr => {
                 const mr = self.data.mr;
+                const dst_reg_or_mem = mr.reg_or_mem;
                 const src_reg = mr.reg;
-                const bit_size = src_reg.bitSize();
                 var prefixes = LegacyPrefixes{};
-                if (bit_size == 16) {
+                if (dst_reg_or_mem.bitSize() == 16) {
                     prefixes.set16BitOverride();
                 }
-                if (mr.reg_or_mem.isSegment()) {
-                    const reg: Register = switch (mr.reg_or_mem) {
+                if (dst_reg_or_mem.isSegment()) {
+                    const reg: Register = switch (dst_reg_or_mem) {
                         .reg => |r| r,
                         .mem => |m| m.base.?,
                     };
                     prefixes.setSegmentOverride(reg);
                 }
                 try encoder.legacyPrefixes(prefixes);
-                switch (mr.reg_or_mem) {
+                switch (dst_reg_or_mem) {
                     .reg => |dst_reg| {
                         try encoder.rex(.{
                             .w = setRexWRegister(dst_reg) or setRexWRegister(src_reg),
                             .r = src_reg.isExtended(),
                             .b = dst_reg.isExtended(),
                         });
-                        try self.tag.encode(.mr, bit_size, encoder);
+                        try self.tag.encode(.mr, src_reg.bitSize(), encoder);
                         try encoder.modRm_direct(src_reg.lowEnc(), dst_reg.lowEnc());
                     },
                     .mem => |dst_mem| {
@@ -588,7 +588,7 @@ pub const Instruction = struct {
                             .b = if (dst_mem.base) |base| base.isExtended() else false,
                             .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
                         });
-                        try self.tag.encode(.mr, bit_size, encoder);
+                        try self.tag.encode(.mr, src_reg.bitSize(), encoder);
                         try dst_mem.encode(src_reg.lowEnc(), encoder);
                     },
                 }
