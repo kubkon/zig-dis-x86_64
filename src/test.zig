@@ -535,6 +535,12 @@ test "lower RM encoding" {
 
     try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.ax, RegisterOrMemory.rip(.byte, 0x10)) });
     try expectEqualHexStrings("\x66\x0F\xBE\x05\x10\x00\x00\x00", enc.code(), "movsx ax, BYTE PTR [rip + 0x10]");
+
+    try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.rax, RegisterOrMemory.reg(.bx)) });
+    try expectEqualHexStrings("\x48\x0F\xBF\xC3", enc.code(), "movsx rax, bx");
+
+    try enc.encode(.{ .tag = .movsxd, .enc = .rm, .data = Instruction.Data.rm(.rax, RegisterOrMemory.reg(.ebx)) });
+    try expectEqualHexStrings("\x48\x63\xC3", enc.code(), "movsxd rax, ebx");
 }
 
 test "lower MR encoding" {
