@@ -26,7 +26,7 @@ pub const Register = enum(u7) {
     es, cs, ss, ds, fs, gs,
     // zig fmt: on
 
-    pub fn gpFromLowEnc(low_enc: u3, is_extended: bool, bit_size: u7) Register {
+    pub fn gpFromLowEnc(low_enc: u3, is_extended: bool, bit_size: u64) Register {
         const reg_id: u4 = @intCast(u4, @boolToInt(is_extended)) << 3 | low_enc;
         const unsized = @intToEnum(Register, reg_id);
         return unsized.toBitSize(bit_size);
@@ -55,7 +55,7 @@ pub const Register = enum(u7) {
         return @intToEnum(Class, @truncate(u2, self.id() >> class_bits_shift));
     }
 
-    pub fn bitSize(self: Register) u9 {
+    pub fn bitSize(self: Register) u64 {
         return switch (@enumToInt(self)) {
             0...15 => 64,
             16...31 => 32,
@@ -92,7 +92,7 @@ pub const Register = enum(u7) {
         return @truncate(u3, @enumToInt(self));
     }
 
-    pub fn toBitSize(self: Register, bit_size: u9) Register {
+    pub fn toBitSize(self: Register, bit_size: u64) Register {
         return switch (bit_size) {
             8 => self.to8(),
             16 => self.to16(),
@@ -177,12 +177,12 @@ pub const PtrSize = enum(u2) {
     dword = 0b10,
     qword = 0b11,
 
-    pub fn fromBitSize(bit_size: u7) PtrSize {
+    pub fn fromBitSize(bit_size: u64) PtrSize {
         return @intToEnum(PtrSize, math.log2_int(u4, @intCast(u4, @divExact(bit_size, 8))));
     }
 
-    pub fn bitSize(s: PtrSize) u7 {
-        return 8 * (math.powi(u7, 2, @enumToInt(s)) catch unreachable);
+    pub fn bitSize(s: PtrSize) u64 {
+        return 8 * (math.powi(u8, 2, @enumToInt(s)) catch unreachable);
     }
 };
 
@@ -251,7 +251,7 @@ pub const Memory = struct {
         }
     }
 
-    pub fn bitSize(self: Memory) u7 {
+    pub fn bitSize(self: Memory) u64 {
         return self.ptr_size.bitSize();
     }
 
@@ -360,7 +360,7 @@ pub const RegisterOrMemory = union(enum) {
         }
     }
 
-    pub fn bitSize(self: RegisterOrMemory) u9 {
+    pub fn bitSize(self: RegisterOrMemory) u64 {
         return switch (self) {
             .reg => |r| r.bitSize(),
             .mem => |m| m.bitSize(),

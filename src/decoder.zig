@@ -255,7 +255,7 @@ pub const Disassembler = struct {
         };
     }
 
-    fn parseImm(bit_size: u7, reader: anytype) !i32 {
+    fn parseImm(bit_size: u64, reader: anytype) !i32 {
         const imm: i32 = switch (bit_size) {
             8 => try reader.readInt(i8, .Little),
             16 => try reader.readInt(i16, .Little),
@@ -517,7 +517,7 @@ const ParsedOpc = struct {
         };
     }
 
-    fn bitSize(self: ParsedOpc, rex: Rex, prefixes: LegacyPrefixes) u7 {
+    fn bitSize(self: ParsedOpc, rex: Rex, prefixes: LegacyPrefixes) u64 {
         if (self.is_byte_sized) return 8;
         if (rex.w) return 64;
         if (prefixes.prefix_66) return 16;

@@ -38,7 +38,7 @@ pub const Instruction = struct {
         ret,
         syscall,
 
-        fn encode(tag: Tag, enc: Enc, bit_size: u9, encoder: anytype) !void {
+        fn encode(tag: Tag, enc: Enc, bit_size: u64, encoder: anytype) !void {
             if (enc == .np) {
                 return switch (tag) {
                     .int3 => try encoder.opcode_1byte(0xcc),
@@ -331,7 +331,7 @@ pub const Instruction = struct {
             return .{ .o = .{ .reg = reg } };
         }
 
-        pub fn i(imm: i32, bit_size: ?u7) Data {
+        pub fn i(imm: i32, bit_size: ?u64) Data {
             return .{ .i = .{ .bit_size = bit_size, .imm = imm } };
         }
 
@@ -372,7 +372,7 @@ pub const Instruction = struct {
         /// null implies the bit size will be auto-inferred from the immediate.
         /// Note that auto-inferrence will never promote the instruction to 64bits.
         /// For that, set the bit size explicitly.
-        bit_size: ?u7 = null,
+        bit_size: ?u64 = null,
         imm: i32,
     };
 
@@ -421,7 +421,7 @@ pub const Instruction = struct {
 
             .o => {
                 const reg = self.data.o.reg;
-                const bit_size = @intCast(u7, reg.bitSize());
+                const bit_size = reg.bitSize();
                 if (bit_size == 16) {
                     try encoder.prefix16BitMode();
                 }
@@ -455,7 +455,7 @@ pub const Instruction = struct {
             .m => {
                 const reg_or_mem = self.data.m.reg_or_mem;
                 const modrm_ext = self.tag.modRmExt(self.enc).?;
-                const bit_size = @intCast(u7, reg_or_mem.bitSize());
+                const bit_size = reg_or_mem.bitSize();
                 if (bit_size == 16) {
                     try encoder.prefix16BitMode();
                 }
@@ -496,7 +496,7 @@ pub const Instruction = struct {
                 try encoder.rex(.{
                     .w = fd.ptr_size == .qword,
                 });
-                const bit_size = @intCast(u7, fd.ptr_size.bitSize());
+                const bit_size = fd.ptr_size.bitSize();
                 try self.tag.encode(self.enc, bit_size, encoder);
                 try encoder.imm64(imm);
             },
@@ -505,7 +505,7 @@ pub const Instruction = struct {
                 const oi = self.data.oi;
                 const reg = oi.reg;
                 const imm = oi.imm;
-                const bit_size = @intCast(u7, reg.bitSize());
+                const bit_size = reg.bitSize();
                 if (bit_size == 16) {
                     try encoder.prefix16BitMode();
                 }
@@ -558,7 +558,7 @@ pub const Instruction = struct {
             .mr => {
                 const mr = self.data.mr;
                 const src_reg = mr.reg;
-                const bit_size = @intCast(u7, src_reg.bitSize());
+                const bit_size = src_reg.bitSize();
                 var prefixes = LegacyPrefixes{};
                 if (bit_size == 16) {
                     prefixes.set16BitOverride();
@@ -598,7 +598,7 @@ pub const Instruction = struct {
                 const mi = self.data.mi;
                 const modrm_ext = self.tag.modRmExt(self.enc).?;
                 var prefixes = LegacyPrefixes{};
-                const bit_size = @intCast(u7, mi.reg_or_mem.bitSize());
+                const bit_size = mi.reg_or_mem.bitSize();
                 if (bit_size == 16) {
                     prefixes.set16BitOverride();
                 }
@@ -629,10 +629,7 @@ pub const Instruction = struct {
                         try dst_mem.encode(modrm_ext, encoder);
                     },
                 }
-                try encodeImmSigned(mi.imm, if (self.enc == .mi8)
-                    8
-                else
-                    @intCast(u7, mi.reg_or_mem.bitSize()), encoder);
+                try encodeImmSigned(mi.imm, if (self.enc == .mi8) 8 else mi.reg_or_mem.bitSize(), encoder);
             },
         }
     }
@@ -760,7 +757,7 @@ pub const Instruction = struct {
     }
 };
 
-inline fn setRexWRegister(reg: Register) bool {
+fn setRexWRegister(reg: Register) bool {
     if (reg.bitSize() > 64) return false;
     if (reg.bitSize() == 64) return true;
     return switch (reg) {
@@ -769,7 +766,7 @@ inline fn setRexWRegister(reg: Register) bool {
     };
 }
 
-inline fn encodeImmUnsigned(imm: u64, bit_size: u7, encoder: anytype) !void {
+fn encodeImmUnsigned(imm: u64, bit_size: u64, encoder: anytype) !void {
     switch (bit_size) {
         8 => try encoder.imm8(@bitCast(i8, @truncate(u8, imm))),
         16 => try encoder.imm16(@bitCast(i16, @truncate(u16, imm))),
@@ -779,7 +776,7 @@ inline fn encodeImmUnsigned(imm: u64, bit_size: u7, encoder: anytype) !void {
     }
 }
 
-inline fn encodeImmSigned(imm: i32, bit_size: u7, encoder: anytype) !void {
+fn encodeImmSigned(imm: i32, bit_size: u64, encoder: anytype) !void {
     switch (bit_size) {
         8 => try encoder.imm8(@truncate(i8, imm)),
         16 => try encoder.imm16(@truncate(i16, imm)),
@@ -788,7 +785,7 @@ inline fn encodeImmSigned(imm: i32, bit_size: u7, encoder: anytype) !void {
     }
 }
 
-inline fn bitSizeFromImm(imm: u64) u7 {
+fn bitSizeFromImm(imm: u64) u64 {
     if (math.cast(u8, imm)) |_| return 8;
     if (math.cast(u16, imm)) |_| return 16;
     if (math.cast(u32, imm)) |_| return 32;
