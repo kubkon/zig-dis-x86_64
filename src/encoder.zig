@@ -191,6 +191,7 @@ pub const Instruction = struct {
                     .mi8 => unreachable, // does not support this encoding
                     .rm => try encoder.opcode_1byte(0x8b),
                     .mr => try encoder.opcode_1byte(0x89),
+                    .oi => unreachable, // use encodeWithReg instead
                     else => unreachable, // does not support this encoding
                 },
 
@@ -314,7 +315,7 @@ pub const Instruction = struct {
     pub const Data = union {
         np: void,
         o: O,
-        i: I,
+        i: Oi,
         m: M,
         m_rel: MRel,
         fd: Fd,
@@ -331,27 +332,39 @@ pub const Instruction = struct {
             return .{ .o = .{ .reg = reg } };
         }
 
-        pub fn i(imm: i32, bit_size: ?u64) Data {
-            return .{ .i = .{ .bit_size = bit_size, .imm = imm } };
+        /// Destination register has to be an alias of `.rax`.
+        pub fn i(reg: Register, imm: u32) Data {
+            assert(reg.to64() == .rax);
+            return Data.oi(reg, imm);
         }
 
         pub fn m(reg_or_mem: RegisterOrMemory) Data {
             return .{ .m = .{ .reg_or_mem = reg_or_mem } };
         }
 
-        pub fn mRel(imm: i32) Data {
+        pub fn mRel(imm: u32) Data {
             return .{ .m_rel = .{ .imm = imm } };
         }
 
-        pub fn fd(reg: Register, imm: u64, ptr_size: PtrSize) Data {
-            return .{ .fd = .{ .ptr_size = ptr_size, .imm = imm, .reg = reg } };
+        /// Destination register has to be a valid segment register.
+        /// Source register has to be an alias of `.rax`.
+        pub fn td(seg: Register, reg: Register, imm: u64) Data {
+            return Data.fd(reg, seg, imm);
+        }
+
+        /// Destination register has to be an alias of `.rax`.
+        /// Source register has to be a valid segment register.
+        pub fn fd(reg: Register, seg: Register, imm: u64) Data {
+            assert(reg.to64() == .rax);
+            assert(seg.isSegment());
+            return .{ .fd = .{ .reg = reg, .seg = seg, .imm = imm } };
         }
 
         pub fn oi(reg: Register, imm: u64) Data {
             return .{ .oi = .{ .reg = reg, .imm = imm } };
         }
 
-        pub fn mi(reg_or_mem: RegisterOrMemory, imm: i32) Data {
+        pub fn mi(reg_or_mem: RegisterOrMemory, imm: u32) Data {
             return .{ .mi = .{ .reg_or_mem = reg_or_mem, .imm = imm } };
         }
 
@@ -368,28 +381,20 @@ pub const Instruction = struct {
         reg: Register,
     };
 
-    pub const I = struct {
-        /// null implies the bit size will be auto-inferred from the immediate.
-        /// Note that auto-inferrence will never promote the instruction to 64bits.
-        /// For that, set the bit size explicitly.
-        bit_size: ?u64 = null,
-        imm: i32,
-    };
-
     pub const M = struct {
         reg_or_mem: RegisterOrMemory,
     };
 
     pub const MRel = struct {
-        imm: i32,
+        imm: u32,
     };
 
     pub const Fd = struct {
-        imm: u64,
-        /// Destination segment register.
+        /// Destination .rax aliased to bit size.
         reg: Register,
-        /// Size of the data to transfer.
-        ptr_size: PtrSize,
+        /// Source segment register.
+        seg: Register,
+        imm: u64,
     };
 
     pub const Oi = struct {
@@ -399,7 +404,7 @@ pub const Instruction = struct {
 
     pub const Mi = struct {
         reg_or_mem: RegisterOrMemory,
-        imm: i32,
+        imm: u32,
     };
 
     pub const Mr = struct {
@@ -421,8 +426,7 @@ pub const Instruction = struct {
 
             .o => {
                 const reg = self.data.o.reg;
-                const bit_size = reg.bitSize();
-                if (bit_size == 16) {
+                if (reg.bitSize() == 16) {
                     try encoder.prefix16BitMode();
                 }
                 try encoder.rex(.{
@@ -432,24 +436,36 @@ pub const Instruction = struct {
                 try self.tag.encodeWithReg(reg, encoder);
             },
 
-            .i => {
-                const i = self.data.i;
-                const imm = i.imm;
-                const bit_size = if (i.bit_size) |bs| bs else bitSizeFromImm(@bitCast(u32, imm));
-                if (bit_size == 16) {
+            .i, .oi => {
+                const oi = self.data.oi;
+                const reg = oi.reg;
+                const imm = oi.imm;
+
+                if (self.enc == .i) {
+                    assert(reg.to64() == .rax);
+                }
+
+                if (reg.bitSize() == 16) {
                     try encoder.prefix16BitMode();
                 }
                 try encoder.rex(.{
-                    .w = bit_size == 64,
+                    .w = setRexWRegister(reg),
+                    .b = reg.isExtended(),
                 });
-                try self.tag.encode(.i, bit_size, encoder);
-                try encodeImmSigned(imm, bit_size, encoder);
+
+                switch (self.enc) {
+                    .i => try self.tag.encode(self.enc, reg.bitSize(), encoder),
+                    .oi => try self.tag.encodeWithReg(reg, encoder),
+                    else => unreachable,
+                }
+
+                try encodeImm(imm, self.enc, reg.bitSize(), encoder);
             },
 
             .m_rel => {
                 const imm = self.data.m_rel.imm;
                 try self.tag.encode(.m_rel, 32, encoder);
-                try encodeImmSigned(imm, 32, encoder);
+                try encodeImm(imm, self.enc, 32, encoder);
             },
 
             .m => {
@@ -483,38 +499,22 @@ pub const Instruction = struct {
             .fd, .td => {
                 const fd = self.data.fd;
                 const reg = fd.reg;
+                const seg = fd.seg;
                 const imm = fd.imm;
-                if (reg.class() != .seg) {
-                    return error.WrongRegisterClass;
-                }
+                assert(reg.to64() == .rax);
+                assert(seg.isSegment());
+
                 var prefixes = LegacyPrefixes{};
-                if (fd.ptr_size == .word) {
+                if (reg.bitSize() == 16) {
                     prefixes.set16BitOverride();
                 }
-                prefixes.setSegmentOverride(reg);
+                prefixes.setSegmentOverride(seg);
                 try encoder.legacyPrefixes(prefixes);
                 try encoder.rex(.{
-                    .w = fd.ptr_size == .qword,
-                });
-                const bit_size = fd.ptr_size.bitSize();
-                try self.tag.encode(self.enc, bit_size, encoder);
-                try encoder.imm64(imm);
-            },
-
-            .oi => {
-                const oi = self.data.oi;
-                const reg = oi.reg;
-                const imm = oi.imm;
-                const bit_size = reg.bitSize();
-                if (bit_size == 16) {
-                    try encoder.prefix16BitMode();
-                }
-                try encoder.rex(.{
                     .w = setRexWRegister(reg),
-                    .b = reg.isExtended(),
                 });
-                try self.tag.encodeWithReg(reg, encoder);
-                try encodeImmUnsigned(imm, bit_size, encoder);
+                try self.tag.encode(self.enc, reg.bitSize(), encoder);
+                try encoder.imm64(imm);
             },
 
             .rm => {
@@ -629,17 +629,9 @@ pub const Instruction = struct {
                         try dst_mem.encode(modrm_ext, encoder);
                     },
                 }
-                try encodeImmSigned(mi.imm, if (self.enc == .mi8) 8 else mi.reg_or_mem.bitSize(), encoder);
+                try encodeImm(mi.imm, self.enc, if (self.enc == .mi8) 8 else mi.reg_or_mem.bitSize(), encoder);
             },
         }
-    }
-
-    fn fmtImm(imm: i32, writer: anytype) !void {
-        const imm_abs: u32 = @intCast(u32, try math.absInt(imm));
-        if (sign(imm) < 0) {
-            try writer.writeByte('-');
-        }
-        try writer.print("0x{x}", .{imm_abs});
     }
 
     pub fn fmtPrint(self: Instruction, writer: anytype) !void {
@@ -664,18 +656,9 @@ pub const Instruction = struct {
                 try reg.fmtPrint(writer);
             },
 
-            .i => {
-                const i = self.data.i;
-                const bit_size = if (i.bit_size) |bs| bs else bitSizeFromImm(@bitCast(u32, i.imm));
-                const dst_reg = Register.rax.toBitSize(bit_size);
-                try dst_reg.fmtPrint(writer);
-                try writer.writeAll(", ");
-                try fmtImm(i.imm, writer);
-            },
-
             .m_rel => {
                 const imm = self.data.m_rel.imm;
-                try fmtImm(imm, writer);
+                try writer.print(":0x{x}", .{imm});
             },
 
             .m => {
@@ -683,35 +666,32 @@ pub const Instruction = struct {
                 try reg_or_mem.fmtPrint(writer);
             },
 
-            .fd => {
+            .fd, .td => {
                 const fd = self.data.fd;
                 const reg = fd.reg;
+                const seg = fd.seg;
                 const imm = fd.imm;
-                if (reg.class() != .seg) {
-                    return error.WrongRegisterClass;
+                assert(reg.to64() == .rax);
+                assert(seg.isSegment());
+
+                switch (self.enc) {
+                    .fd => {
+                        try reg.fmtPrint(writer);
+                        try writer.writeAll(", ");
+                        try seg.fmtPrint(writer);
+                        try writer.print(":0x{x}", .{imm});
+                    },
+                    .td => {
+                        try seg.fmtPrint(writer);
+                        try writer.print(":0x{x}", .{imm});
+                        try writer.writeAll(", ");
+                        try reg.fmtPrint(writer);
+                    },
+                    else => unreachable,
                 }
-                const dst_reg = Register.rax.toBitSize(fd.ptr_size.bitSize());
-                try dst_reg.fmtPrint(writer);
-                try writer.writeAll(", ");
-                try reg.fmtPrint(writer);
-                try writer.print(":0x{x}", .{imm});
             },
 
-            .td => {
-                const fd = self.data.fd;
-                const reg = fd.reg;
-                const imm = fd.imm;
-                if (reg.class() != .seg) {
-                    return error.WrongRegisterClass;
-                }
-                const dst_reg = Register.rax.toBitSize(fd.ptr_size.bitSize());
-                try reg.fmtPrint(writer);
-                try writer.print(":0x{x}", .{imm});
-                try writer.writeAll(", ");
-                try dst_reg.fmtPrint(writer);
-            },
-
-            .oi => {
+            .i, .oi => {
                 const oi = self.data.oi;
                 try oi.reg.fmtPrint(writer);
                 try writer.writeAll(", ");
@@ -766,21 +746,15 @@ fn setRexWRegister(reg: Register) bool {
     };
 }
 
-fn encodeImmUnsigned(imm: u64, bit_size: u64, encoder: anytype) !void {
+fn encodeImm(imm: u64, enc: Instruction.Enc, bit_size: u64, encoder: anytype) !void {
     switch (bit_size) {
         8 => try encoder.imm8(@bitCast(i8, @truncate(u8, imm))),
         16 => try encoder.imm16(@bitCast(i16, @truncate(u16, imm))),
         32 => try encoder.imm32(@bitCast(i32, @truncate(u32, imm))),
-        64 => try encoder.imm64(imm),
-        else => unreachable,
-    }
-}
-
-fn encodeImmSigned(imm: i32, bit_size: u64, encoder: anytype) !void {
-    switch (bit_size) {
-        8 => try encoder.imm8(@truncate(i8, imm)),
-        16 => try encoder.imm16(@truncate(i16, imm)),
-        32, 64 => try encoder.imm32(imm),
+        64 => switch (enc) {
+            .oi, .fd, .td => try encoder.imm64(imm),
+            else => try encoder.imm32(@bitCast(i32, @truncate(u32, imm))),
+        },
         else => unreachable,
     }
 }

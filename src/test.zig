@@ -189,7 +189,7 @@ test "disassemble - mnemonic" {
 
     try testing.expectEqualStrings(
         \\movabs rax, 0x10
-        \\mov r12d, -0x10
+        \\mov r12d, 0xfffffff0
         \\mov r12, QWORD PTR [rbp - 0x10]
         \\mov rax, QWORD PTR [rbp - 0x1000]
         \\mov rbx, QWORD PTR [rax]
@@ -202,7 +202,7 @@ test "disassemble - mnemonic" {
         \\lea r12, QWORD PTR [rip]
         \\add rax, QWORD PTR [rip]
         \\add rax, 0x10
-        \\add QWORD PTR [rbp - 0x10], -0x10
+        \\add QWORD PTR [rbp - 0x10], 0xf0
         \\adc BYTE PTR [rbp - 0x10], 0x10
         \\and QWORD PTR [rax + 0x10], 0x8
         \\or QWORD PTR [rbp + 0x10], 0xf
@@ -213,8 +213,8 @@ test "disassemble - mnemonic" {
         \\sbb eax, 0x0
         \\sub rax, 0xf
         \\sbb ax, 0x1000
-        \\and ax, -0x10
-        \\and rax, -0x10
+        \\and ax, 0xfff0
+        \\and rax, 0xfffffff0
         \\movabs ax, gs:0x10
         \\movabs ss:0x0, al
         \\movabs es:0x8, eax
@@ -281,10 +281,10 @@ test "encode" {
 test "lower I encoding" {
     var enc = TestEncode{};
 
-    try enc.encode(.{ .tag = .xor, .enc = .i, .data = Instruction.Data.i(0x10, null) });
+    try enc.encode(.{ .tag = .xor, .enc = .i, .data = Instruction.Data.i(.al, 0x10) });
     try expectEqualHexStrings("\x34\x10", enc.code(), "xor al, 0x10");
 
-    try enc.encode(.{ .tag = .sbb, .enc = .i, .data = Instruction.Data.i(0x10, 16) });
+    try enc.encode(.{ .tag = .sbb, .enc = .i, .data = Instruction.Data.i(.ax, 0x10) });
     try expectEqualHexStrings("\x66\x1D\x10\x00", enc.code(), "sbb ax, 0x10");
 }
 
@@ -362,7 +362,7 @@ test "lower MI encoding" {
     try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.word, .{
         .base = .rbp,
         .disp = -2,
-    }), -16) });
+    }), @bitCast(u32, @as(i32, -16))) });
     try expectEqualHexStrings("\x66\xC7\x45\xFE\xF0\xFF", enc.code(), "mov word ptr [rbp - 2], -16");
 
     try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.byte, .{
@@ -391,7 +391,7 @@ test "lower MI encoding" {
     try enc.encode(.{ .tag = .add, .enc = .mi8, .data = Instruction.Data.mi(RegisterOrMemory.mem(.qword, .{
         .base = .rbp,
         .disp = -0x10,
-    }), -0x10) });
+    }), @bitCast(u32, @as(i32, -0x10))) });
     try expectEqualHexStrings("\x48\x83\x45\xF0\xF0", enc.code(), "add QWORD PTR [rbp - 0x10], -0x10");
 
     try enc.encode(.{ .tag = .adc, .enc = .mi8, .data = Instruction.Data.mi(RegisterOrMemory.mem(.byte, .{
@@ -661,27 +661,27 @@ test "lower OI encoding" {
 test "lower FD/TD encoding" {
     var enc = TestEncode{};
 
-    try enc.encode(.{ .tag = .mov, .enc = .fd, .data = Instruction.Data.fd(.cs, 0x10, .qword) });
+    try enc.encode(.{ .tag = .mov, .enc = .fd, .data = Instruction.Data.fd(.rax, .cs, 0x10) });
     try expectEqualHexStrings("\x2E\x48\xA1\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs rax, cs:0x10");
 
-    try enc.encode(.{ .tag = .mov, .enc = .fd, .data = Instruction.Data.fd(.fs, 0x10, .dword) });
+    try enc.encode(.{ .tag = .mov, .enc = .fd, .data = Instruction.Data.fd(.eax, .fs, 0x10) });
     try expectEqualHexStrings("\x64\xA1\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs eax, fs:0x10");
 
-    try enc.encode(.{ .tag = .mov, .enc = .fd, .data = Instruction.Data.fd(.gs, 0x10, .word) });
+    try enc.encode(.{ .tag = .mov, .enc = .fd, .data = Instruction.Data.fd(.ax, .gs, 0x10) });
     try expectEqualHexStrings("\x65\x66\xA1\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs ax, gs:0x10");
 
-    try enc.encode(.{ .tag = .mov, .enc = .fd, .data = Instruction.Data.fd(.ds, 0x10, .byte) });
+    try enc.encode(.{ .tag = .mov, .enc = .fd, .data = Instruction.Data.fd(.al, .ds, 0x10) });
     try expectEqualHexStrings("\xA0\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs al, ds:0x10");
 
-    try enc.encode(.{ .tag = .mov, .enc = .td, .data = Instruction.Data.fd(.cs, 0x10, .qword) });
+    try enc.encode(.{ .tag = .mov, .enc = .td, .data = Instruction.Data.td(.cs, .rax, 0x10) });
     try expectEqualHexStrings("\x2E\x48\xA3\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs cs:0x10, rax");
 
-    try enc.encode(.{ .tag = .mov, .enc = .td, .data = Instruction.Data.fd(.fs, 0x10, .dword) });
+    try enc.encode(.{ .tag = .mov, .enc = .td, .data = Instruction.Data.td(.fs, .eax, 0x10) });
     try expectEqualHexStrings("\x64\xA3\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs fs:0x10, eax");
 
-    try enc.encode(.{ .tag = .mov, .enc = .td, .data = Instruction.Data.fd(.gs, 0x10, .word) });
+    try enc.encode(.{ .tag = .mov, .enc = .td, .data = Instruction.Data.td(.gs, .ax, 0x10) });
     try expectEqualHexStrings("\x65\x66\xA3\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs gs:0x10, ax");
 
-    try enc.encode(.{ .tag = .mov, .enc = .td, .data = Instruction.Data.fd(.ds, 0x10, .byte) });
+    try enc.encode(.{ .tag = .mov, .enc = .td, .data = Instruction.Data.td(.ds, .al, 0x10) });
     try expectEqualHexStrings("\xA2\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs ds:0x10, al");
 }

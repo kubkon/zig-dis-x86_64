@@ -58,13 +58,14 @@ pub const Disassembler = struct {
                 },
 
                 .i => {
-                    const imm = try parseImm(bit_size, reader);
-                    break :data Instruction.Data.i(imm, bit_size);
+                    const reg = Register.gpFromLowEnc(Register.rax.lowEnc(), false, bit_size);
+                    const imm = try parseImm(opc.enc, bit_size, reader);
+                    break :data Instruction.Data.i(reg, @intCast(u32, imm));
                 },
 
                 .m_rel => {
-                    const imm = try parseImm(32, reader);
-                    break :data Instruction.Data.mRel(imm);
+                    const imm = try parseImm(opc.enc, 32, reader);
+                    break :data Instruction.Data.mRel(@intCast(u32, imm));
                 },
 
                 .m => {
@@ -105,7 +106,8 @@ pub const Disassembler = struct {
 
                 .fd, .td => {
                     const imm = try reader.readInt(u64, .Little);
-                    const reg: Register = blk: {
+                    const reg = Register.gpFromLowEnc(Register.rax.lowEnc(), false, bit_size);
+                    const seg: Register = blk: {
                         if (prefixes.prefix_2e) break :blk .cs;
                         if (prefixes.prefix_36) break :blk .ss;
                         if (prefixes.prefix_26) break :blk .es;
@@ -113,24 +115,17 @@ pub const Disassembler = struct {
                         if (prefixes.prefix_65) break :blk .gs;
                         break :blk .ds;
                     };
-                    const ptr_size: PtrSize = blk: {
-                        if (bit_size <= 8) break :blk .byte;
-                        if (bit_size <= 16) break :blk .word;
-                        if (bit_size <= 32) break :blk .dword;
-                        break :blk .qword;
+                    break :data switch (opc.enc) {
+                        .fd => Instruction.Data.fd(reg, seg, imm),
+                        .td => Instruction.Data.td(seg, reg, imm),
+                        else => unreachable,
                     };
-                    break :data Instruction.Data.fd(reg, imm, ptr_size);
                 },
 
                 .oi => {
                     if (rex.r or rex.x) return error.InvalidRexForEncoding;
                     const reg = Register.gpFromLowEnc(opc.extra, rex.b, bit_size);
-                    const imm: u64 = switch (bit_size) {
-                        8 => @bitCast(u64, @intCast(i64, try reader.readInt(i8, .Little))),
-                        16, 32 => @bitCast(u64, @intCast(i64, try reader.readInt(i32, .Little))),
-                        64 => try reader.readInt(u64, .Little),
-                        else => unreachable,
-                    };
+                    const imm = try parseImm(opc.enc, bit_size, reader);
                     break :data Instruction.Data.oi(reg, imm);
                 },
 
@@ -160,7 +155,7 @@ pub const Disassembler = struct {
                     };
 
                     const imm_bit_size = if (opc.enc == .mi8) 8 else bit_size;
-                    const imm = try parseImm(imm_bit_size, reader);
+                    const imm = @intCast(u32, try parseImm(opc.enc, imm_bit_size, reader));
 
                     if (modrm.isRip()) {
                         break :data Instruction.Data.mi(RegisterOrMemory.rip(PtrSize.fromBitSize(bit_size), disp), imm);
@@ -255,14 +250,17 @@ pub const Disassembler = struct {
         };
     }
 
-    fn parseImm(bit_size: u64, reader: anytype) !i32 {
-        const imm: i32 = switch (bit_size) {
-            8 => try reader.readInt(i8, .Little),
-            16 => try reader.readInt(i16, .Little),
-            32, 64 => try reader.readInt(i32, .Little),
+    fn parseImm(enc: Instruction.Enc, bit_size: u64, reader: anytype) !u64 {
+        return switch (bit_size) {
+            8 => try reader.readInt(u8, .Little),
+            16 => try reader.readInt(u16, .Little),
+            32 => try reader.readInt(u32, .Little),
+            64 => switch (enc) {
+                .oi, .fd, .td => try reader.readInt(u64, .Little),
+                else => try reader.readInt(u32, .Little),
+            },
             else => unreachable,
         };
-        return imm;
     }
 
     fn parseLegacyPrefixes(self: *Disassembler) !LegacyPrefixes {
