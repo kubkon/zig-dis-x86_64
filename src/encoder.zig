@@ -762,13 +762,6 @@ fn encodeImm(imm: u64, enc: Instruction.Enc, bit_size: u64, encoder: anytype) !v
     }
 }
 
-fn bitSizeFromImm(imm: u64) u64 {
-    if (math.cast(u8, imm)) |_| return 8;
-    if (math.cast(u16, imm)) |_| return 16;
-    if (math.cast(u32, imm)) |_| return 32;
-    return 64;
-}
-
 pub const LegacyPrefixes = packed struct {
     /// LOCK
     prefix_f0: bool = false,
