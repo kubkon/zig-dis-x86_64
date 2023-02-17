@@ -393,6 +393,8 @@ const ParsedOpc = struct {
                 0xa3 => break :blk ParsedOpc.new(.mov, .td, false),
                 // movsxd
                 0x63 => break :blk ParsedOpc.new(.movsxd, .rm, false),
+                // nop
+                0x90 => break :blk ParsedOpc.new(.nop, .np, false),
                 // or
                 0x0c => break :blk ParsedOpc.new(.@"or", .i, true),
                 0x0d => break :blk ParsedOpc.new(.@"or", .i, false),

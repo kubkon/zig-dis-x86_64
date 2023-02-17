@@ -35,6 +35,7 @@ pub const Instruction = struct {
 
         call,
         int3,
+        nop,
         ret,
         syscall,
 
@@ -42,6 +43,7 @@ pub const Instruction = struct {
             if (enc == .np) {
                 return switch (tag) {
                     .int3 => try encoder.opcode_1byte(0xcc),
+                    .nop => try encoder.opcode_1byte(0x90),
                     .ret => try encoder.opcode_1byte(0xc3),
                     .syscall => try encoder.opcode_2byte(0x0f, 0x05),
                     else => unreachable, // invalid tag for np encoding
@@ -137,6 +139,7 @@ pub const Instruction = struct {
                 .int3,
                 .lea,
                 .movsxd,
+                .nop,
                 .pop,
                 .ret,
                 .syscall,
@@ -252,6 +255,7 @@ pub const Instruction = struct {
                 },
 
                 .int3,
+                .nop,
                 .pop,
                 .ret,
                 .syscall,
