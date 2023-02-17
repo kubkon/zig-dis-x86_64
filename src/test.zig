@@ -516,6 +516,25 @@ test "lower RM encoding" {
 
     try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.ax, RegisterOrMemory.reg(.bl)) });
     try expectEqualHexStrings("\x66\x0F\xBE\xC3", enc.code(), "movsx ax, bl");
+
+    try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.eax, RegisterOrMemory.mem(.word, .{
+        .base = .rbp,
+        .disp = 0,
+    })) });
+    try expectEqualHexStrings("\x0F\xBF\x45\x00", enc.code(), "movsx eax, BYTE PTR [rbp]");
+
+    try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.eax, RegisterOrMemory.mem(.byte, .{
+        .base = null,
+        .scale_index = .{
+            .index = .rax,
+            .scale = 1,
+        },
+        .disp = 0,
+    })) });
+    try expectEqualHexStrings("\x0F\xBE\x04\x45\x00\x00\x00\x00", enc.code(), "movsx eax, BYTE PTR [rax * 2]");
+
+    try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.ax, RegisterOrMemory.rip(.byte, 0x10)) });
+    try expectEqualHexStrings("\x66\x0F\xBE\x05\x10\x00\x00\x00", enc.code(), "movsx ax, BYTE PTR [rip + 0x10]");
 }
 
 test "lower MR encoding" {
