@@ -471,8 +471,7 @@ pub const Instruction = struct {
             .m => {
                 const reg_or_mem = self.data.m.reg_or_mem;
                 const modrm_ext = self.tag.modRmExt(self.enc).?;
-                const bit_size = reg_or_mem.bitSize();
-                if (bit_size == 16) {
+                if (reg_or_mem.bitSize() == 16) {
                     try encoder.prefix16BitMode();
                 }
                 switch (reg_or_mem) {
@@ -481,7 +480,7 @@ pub const Instruction = struct {
                             .w = false,
                             .b = reg.isExtended(),
                         });
-                        try self.tag.encode(self.enc, bit_size, encoder);
+                        try self.tag.encode(self.enc, reg_or_mem.bitSize(), encoder);
                         try encoder.modRm_direct(modrm_ext, reg.lowEnc());
                     },
                     .mem => |mem| {
@@ -490,7 +489,7 @@ pub const Instruction = struct {
                             .b = if (mem.base) |base| base.isExtended() else false,
                             .x = if (mem.scale_index) |si| si.index.isExtended() else false,
                         });
-                        try self.tag.encode(self.enc, bit_size, encoder);
+                        try self.tag.encode(self.enc, reg_or_mem.bitSize(), encoder);
                         try mem.encode(modrm_ext, encoder);
                     },
                 }
@@ -596,14 +595,14 @@ pub const Instruction = struct {
 
             .mi, .mi8 => {
                 const mi = self.data.mi;
+                const reg_or_mem = mi.reg_or_mem;
                 const modrm_ext = self.tag.modRmExt(self.enc).?;
                 var prefixes = LegacyPrefixes{};
-                const bit_size = mi.reg_or_mem.bitSize();
-                if (bit_size == 16) {
+                if (reg_or_mem.bitSize() == 16) {
                     prefixes.set16BitOverride();
                 }
-                if (mi.reg_or_mem.isSegment()) {
-                    const reg: Register = switch (mi.reg_or_mem) {
+                if (reg_or_mem.isSegment()) {
+                    const reg: Register = switch (reg_or_mem) {
                         .reg => |r| r,
                         .mem => |m| m.base.?,
                     };
@@ -616,7 +615,7 @@ pub const Instruction = struct {
                             .w = setRexWRegister(dst_reg),
                             .b = dst_reg.isExtended(),
                         });
-                        try self.tag.encode(self.enc, bit_size, encoder);
+                        try self.tag.encode(self.enc, reg_or_mem.bitSize(), encoder);
                         try encoder.modRm_direct(modrm_ext, dst_reg.lowEnc());
                     },
                     .mem => |dst_mem| {
@@ -625,11 +624,11 @@ pub const Instruction = struct {
                             .b = if (dst_mem.base) |base| base.isExtended() else false,
                             .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
                         });
-                        try self.tag.encode(self.enc, bit_size, encoder);
+                        try self.tag.encode(self.enc, reg_or_mem.bitSize(), encoder);
                         try dst_mem.encode(modrm_ext, encoder);
                     },
                 }
-                try encodeImm(mi.imm, self.enc, if (self.enc == .mi8) 8 else mi.reg_or_mem.bitSize(), encoder);
+                try encodeImm(mi.imm, self.enc, if (self.enc == .mi8) 8 else reg_or_mem.bitSize(), encoder);
             },
         }
     }
