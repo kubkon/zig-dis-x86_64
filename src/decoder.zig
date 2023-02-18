@@ -325,7 +325,6 @@ pub const Disassembler = struct {
 const ParsedOpc = struct {
     tag: Instruction.Tag,
     enc: Instruction.Enc,
-    is_byte_sized: bool,
     extra: u3,
     /// Set to false once we know exactly what instruction we are dealing with.
     is_wip: bool,
@@ -334,115 +333,142 @@ const ParsedOpc = struct {
     bytes: [3]u8 = undefined,
     opc_byte_count: u2 = 0,
 
+    const o_mask: u8 = 0b1111_1000;
+
+    fn isDstByteSized(opc: ParsedOpc) bool {
+        if (opc.is_multi_byte) return false; // TODO finish this
+        switch (opc.enc) {
+            .o => return false,
+            .oi => return switch (opc.bytes[0] & o_mask) {
+                0xb0 => true,
+                else => false,
+            },
+            else => return switch (opc.bytes[0]) {
+                // zig fmt: off
+                0x00, 0x02, 0x04, // add
+                0x08, 0x0a, 0x0c, // or
+                0x10, 0x12, 0x14, // adc
+                0x18, 0x1a, 0x1c, // sbb
+                0x20, 0x22, 0x24, // and
+                0x28, 0x2a, 0x2c, // sub
+                0x30, 0x32, 0x34, // xor
+                0x38, 0x3a, 0x3c, // cmp
+                0x6a,             // push
+                0x80, 0x88, 0x8a, 0xa0, 0xa2, 0xc6, // mov
+                => true,
+                // zig fmt: on
+                else => false,
+            },
+        }
+    }
+
+    fn isSrcByteSized(opc: ParsedOpc) bool {
+        if (opc.is_multi_byte) switch (opc.opc_byte_count) {
+            2 => return switch (opc.bytes[1]) {
+                0xbe => true,
+                else => false,
+            },
+            3 => unreachable, // TODO
+            else => unreachable, // impossible
+        };
+        switch (opc.enc) {
+            .o => return false,
+            .oi => return switch (opc.bytes[0] & o_mask) {
+                0xb0 => true,
+                else => false,
+            },
+            else => return switch (opc.bytes[0]) {
+                // zig fmt: off
+                0x00, 0x02, 0x04, // add
+                0x08, 0x0a, 0x0c, // or
+                0x10, 0x12, 0x14, // adc
+                0x18, 0x1a, 0x1c, // sbb
+                0x20, 0x22, 0x24, // and
+                0x28, 0x2a, 0x2c, // sub
+                0x30, 0x32, 0x34, // xor
+                0x38, 0x3a, 0x3c, // cmp
+                0x6a,             // push
+                0x80, 0x88, 0x8a, 0xa0, 0xa2, 0xc6, // mov
+                0x83,
+                => true,
+                // zig fmt: on
+                else => false,
+            },
+        }
+    }
+
     fn parse(reader: anytype) Error!ParsedOpc {
         const next_byte = try reader.readByte();
         var opc: ParsedOpc = blk: {
             switch (next_byte) {
                 // M and MI encodings will be resolved fully later, once
                 // we parse the ModRM byte.
-                0x80 => break :blk ParsedOpc.wip(.mi, true),
-                0x81 => break :blk ParsedOpc.wip(.mi, false),
-                0x83 => break :blk ParsedOpc.wip(.mi, false),
-                0xc6 => break :blk ParsedOpc.wip(.mi, true),
-                0xc7 => break :blk ParsedOpc.wip(.mi, false),
-                0xff => break :blk ParsedOpc.wip(.m, false),
+                0x80, 0x81, 0x83, 0xc6, 0xc7 => break :blk ParsedOpc.wip(.mi),
+                0xff => break :blk ParsedOpc.wip(.m),
                 // Multi-byte opcodes will be resolved fully later, once
                 // we parse additional bytes
                 0x0f => break :blk ParsedOpc.multiByte(),
                 // adc
-                0x14 => break :blk ParsedOpc.new(.adc, .i, true),
-                0x15 => break :blk ParsedOpc.new(.adc, .i, false),
-                0x10 => break :blk ParsedOpc.new(.adc, .mr, true),
-                0x11 => break :blk ParsedOpc.new(.adc, .mr, false),
-                0x12 => break :blk ParsedOpc.new(.adc, .rm, true),
-                0x13 => break :blk ParsedOpc.new(.adc, .rm, false),
+                0x14, 0x15 => break :blk ParsedOpc.new(.adc, .i),
+                0x10, 0x11 => break :blk ParsedOpc.new(.adc, .mr),
+                0x12, 0x13 => break :blk ParsedOpc.new(.adc, .rm),
                 // add
-                0x04 => break :blk ParsedOpc.new(.add, .i, true),
-                0x05 => break :blk ParsedOpc.new(.add, .i, false),
-                0x00 => break :blk ParsedOpc.new(.add, .mr, true),
-                0x01 => break :blk ParsedOpc.new(.add, .mr, false),
-                0x02 => break :blk ParsedOpc.new(.add, .rm, true),
-                0x03 => break :blk ParsedOpc.new(.add, .rm, false),
+                0x04, 0x05 => break :blk ParsedOpc.new(.add, .i),
+                0x00, 0x01 => break :blk ParsedOpc.new(.add, .mr),
+                0x02, 0x03 => break :blk ParsedOpc.new(.add, .rm),
                 // and
-                0x24 => break :blk ParsedOpc.new(.@"and", .i, true),
-                0x25 => break :blk ParsedOpc.new(.@"and", .i, false),
-                0x20 => break :blk ParsedOpc.new(.@"and", .mr, true),
-                0x21 => break :blk ParsedOpc.new(.@"and", .mr, false),
-                0x22 => break :blk ParsedOpc.new(.@"and", .rm, true),
-                0x23 => break :blk ParsedOpc.new(.@"and", .rm, false),
+                0x24, 0x25 => break :blk ParsedOpc.new(.@"and", .i),
+                0x20, 0x21 => break :blk ParsedOpc.new(.@"and", .mr),
+                0x22, 0x23 => break :blk ParsedOpc.new(.@"and", .rm),
                 // call
-                0xe8 => break :blk ParsedOpc.new(.call, .m_rel, false),
+                0xe8 => break :blk ParsedOpc.new(.call, .m_rel),
                 // cmp
-                0x3c => break :blk ParsedOpc.new(.cmp, .i, true),
-                0x3d => break :blk ParsedOpc.new(.cmp, .i, false),
-                0x38 => break :blk ParsedOpc.new(.cmp, .mr, true),
-                0x39 => break :blk ParsedOpc.new(.cmp, .mr, false),
-                0x3a => break :blk ParsedOpc.new(.cmp, .rm, true),
-                0x3b => break :blk ParsedOpc.new(.cmp, .rm, false),
+                0x3c, 0x3d => break :blk ParsedOpc.new(.cmp, .i),
+                0x38, 0x39 => break :blk ParsedOpc.new(.cmp, .mr),
+                0x3a, 0x3b => break :blk ParsedOpc.new(.cmp, .rm),
                 // int3
-                0xcc => break :blk ParsedOpc.new(.int3, .np, false),
+                0xcc => break :blk ParsedOpc.new(.int3, .np),
                 // mov
-                0x88 => break :blk ParsedOpc.new(.mov, .mr, true),
-                0x89 => break :blk ParsedOpc.new(.mov, .mr, false),
-                0x8a => break :blk ParsedOpc.new(.mov, .rm, true),
-                0x8b => break :blk ParsedOpc.new(.mov, .rm, false),
-                0x8c => break :blk ParsedOpc.new(.mov, .mr, false),
-                0x8e => break :blk ParsedOpc.new(.mov, .rm, false),
-                0xa0 => break :blk ParsedOpc.new(.mov, .fd, true),
-                0xa1 => break :blk ParsedOpc.new(.mov, .fd, false),
-                0xa2 => break :blk ParsedOpc.new(.mov, .td, true),
-                0xa3 => break :blk ParsedOpc.new(.mov, .td, false),
+                0x88, 0x89, 0x8c => break :blk ParsedOpc.new(.mov, .mr),
+                0x8a, 0x8b, 0x8e => break :blk ParsedOpc.new(.mov, .rm),
+                0xa0, 0xa1 => break :blk ParsedOpc.new(.mov, .fd),
+                0xa2, 0xa3 => break :blk ParsedOpc.new(.mov, .td),
                 // movsxd
-                0x63 => break :blk ParsedOpc.new(.movsxd, .rm, false),
+                0x63 => break :blk ParsedOpc.new(.movsxd, .rm),
                 // nop
-                0x90 => break :blk ParsedOpc.new(.nop, .np, false),
+                0x90 => break :blk ParsedOpc.new(.nop, .np),
                 // or
-                0x0c => break :blk ParsedOpc.new(.@"or", .i, true),
-                0x0d => break :blk ParsedOpc.new(.@"or", .i, false),
-                0x08 => break :blk ParsedOpc.new(.@"or", .mr, true),
-                0x09 => break :blk ParsedOpc.new(.@"or", .mr, false),
-                0x0a => break :blk ParsedOpc.new(.@"or", .rm, true),
-                0x0b => break :blk ParsedOpc.new(.@"or", .rm, false),
+                0x0c, 0x0d => break :blk ParsedOpc.new(.@"or", .i),
+                0x08, 0x09 => break :blk ParsedOpc.new(.@"or", .mr),
+                0x0a, 0x0b => break :blk ParsedOpc.new(.@"or", .rm),
                 // push
-                0x6a => break :blk ParsedOpc.new(.push, .i, true),
-                0x68 => break :blk ParsedOpc.new(.push, .i, false),
+                0x68, 0x6a => break :blk ParsedOpc.new(.push, .i),
                 // ret
-                0xc3 => break :blk ParsedOpc.new(.ret, .np, false),
+                0xc3 => break :blk ParsedOpc.new(.ret, .np),
                 // sbb
-                0x1c => break :blk ParsedOpc.new(.sbb, .i, true),
-                0x1d => break :blk ParsedOpc.new(.sbb, .i, false),
-                0x18 => break :blk ParsedOpc.new(.sbb, .mr, true),
-                0x19 => break :blk ParsedOpc.new(.sbb, .mr, false),
-                0x1a => break :blk ParsedOpc.new(.sbb, .rm, true),
-                0x1b => break :blk ParsedOpc.new(.sbb, .rm, false),
+                0x1c, 0x1d => break :blk ParsedOpc.new(.sbb, .i),
+                0x18, 0x19 => break :blk ParsedOpc.new(.sbb, .mr),
+                0x1a, 0x1b => break :blk ParsedOpc.new(.sbb, .rm),
                 // sub
-                0x2c => break :blk ParsedOpc.new(.sub, .i, true),
-                0x2d => break :blk ParsedOpc.new(.sub, .i, false),
-                0x28 => break :blk ParsedOpc.new(.sub, .mr, true),
-                0x29 => break :blk ParsedOpc.new(.sub, .mr, false),
-                0x2a => break :blk ParsedOpc.new(.sub, .rm, true),
-                0x2b => break :blk ParsedOpc.new(.sub, .rm, false),
+                0x2c, 0x2d => break :blk ParsedOpc.new(.sub, .i),
+                0x28, 0x29 => break :blk ParsedOpc.new(.sub, .mr),
+                0x2a, 0x2b => break :blk ParsedOpc.new(.sub, .rm),
                 // xor
-                0x34 => break :blk ParsedOpc.new(.xor, .i, true),
-                0x35 => break :blk ParsedOpc.new(.xor, .i, false),
-                0x30 => break :blk ParsedOpc.new(.xor, .mr, true),
-                0x31 => break :blk ParsedOpc.new(.xor, .mr, false),
-                0x32 => break :blk ParsedOpc.new(.xor, .rm, true),
-                0x33 => break :blk ParsedOpc.new(.xor, .rm, false),
+                0x34, 0x35 => break :blk ParsedOpc.new(.xor, .i),
+                0x30, 0x31 => break :blk ParsedOpc.new(.xor, .mr),
+                0x32, 0x33 => break :blk ParsedOpc.new(.xor, .rm),
                 // lea
-                0x8d => break :blk ParsedOpc.new(.lea, .rm, false),
+                0x8d => break :blk ParsedOpc.new(.lea, .rm),
                 // remaining
                 else => {},
             }
 
             // check for O/OI encoding
-            const mask: u8 = 0b1111_1000;
-            switch (next_byte & mask) {
+            switch (next_byte & o_mask) {
                 // mov
-                0x50 => break :blk ParsedOpc.newWithExtra(.push, .o, false, @truncate(u3, next_byte)),
-                0x58 => break :blk ParsedOpc.newWithExtra(.pop, .o, false, @truncate(u3, next_byte)),
-                0xb0 => break :blk ParsedOpc.newWithExtra(.mov, .oi, true, @truncate(u3, next_byte)),
-                0xb8 => break :blk ParsedOpc.newWithExtra(.mov, .oi, false, @truncate(u3, next_byte)),
+                0x50 => break :blk ParsedOpc.newWithExtra(.push, .o, @truncate(u3, next_byte)),
+                0x58 => break :blk ParsedOpc.newWithExtra(.pop, .o, @truncate(u3, next_byte)),
+                0xb0, 0xb8 => break :blk ParsedOpc.newWithExtra(.mov, .oi, @truncate(u3, next_byte)),
                 // remaining
                 else => |missing| {
                     std.log.err("unhandled opcode {x}", .{missing});
@@ -477,7 +503,6 @@ const ParsedOpc = struct {
 
                 0xbe, 0xbf => {
                     opc.tag = .movsx;
-                    opc.is_byte_sized = next_next_byte == 0xbe;
                     opc.enc = .rm;
                     break;
                 },
@@ -488,33 +513,30 @@ const ParsedOpc = struct {
         opc.is_wip = false;
     }
 
-    fn new(tag: Instruction.Tag, enc: Instruction.Enc, is_byte_sized: bool) ParsedOpc {
+    fn new(tag: Instruction.Tag, enc: Instruction.Enc) ParsedOpc {
         return .{
             .tag = tag,
             .enc = enc,
-            .is_byte_sized = is_byte_sized,
             .extra = undefined,
             .is_wip = false,
             .is_multi_byte = false,
         };
     }
 
-    fn newWithExtra(tag: Instruction.Tag, enc: Instruction.Enc, is_byte_sized: bool, extra: u3) ParsedOpc {
+    fn newWithExtra(tag: Instruction.Tag, enc: Instruction.Enc, extra: u3) ParsedOpc {
         return .{
             .tag = tag,
             .enc = enc,
-            .is_byte_sized = is_byte_sized,
             .extra = extra,
             .is_wip = false,
             .is_multi_byte = false,
         };
     }
 
-    fn wip(enc: Instruction.Enc, is_byte_sized: bool) ParsedOpc {
+    fn wip(enc: Instruction.Enc) ParsedOpc {
         return .{
             .tag = undefined,
             .enc = enc,
-            .is_byte_sized = is_byte_sized,
             .extra = undefined,
             .is_wip = true,
             .is_multi_byte = false,
@@ -525,7 +547,6 @@ const ParsedOpc = struct {
         return .{
             .tag = undefined,
             .enc = undefined,
-            .is_byte_sized = false,
             .extra = undefined,
             .is_wip = true,
             .is_multi_byte = true,
@@ -540,7 +561,7 @@ const ParsedOpc = struct {
                 return 32;
             },
             else => {
-                if (self.is_byte_sized) return 8;
+                if (self.isDstByteSized()) return 8;
                 if (rex.w) return 64;
                 if (prefixes.prefix_66) return 16;
                 switch (self.enc) {
@@ -554,14 +575,13 @@ const ParsedOpc = struct {
     fn srcBitSize(self: ParsedOpc, rex: Rex, prefixes: LegacyPrefixes) ?u64 {
         switch (self.tag) {
             .movsx => {
-                if (self.is_byte_sized) return 8;
+                if (self.isSrcByteSized()) return 8;
                 return 16;
             },
             .movsxd => return 32,
             else => switch (self.enc) {
                 .rm, .mr, .oi, .fd, .td, .i, .mi => {
-                    if (self.enc == .mi and self.bytes[0] == 0x83) return 8;
-                    if (self.is_byte_sized) return 8;
+                    if (self.isSrcByteSized()) return 8;
                     if (rex.w) switch (self.enc) {
                         .i, .mi => return 32,
                         else => return 64,
