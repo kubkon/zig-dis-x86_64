@@ -193,11 +193,28 @@ pub const Memory = struct {
     ptr_size: PtrSize,
     scale_index: ?ScaleIndex = null,
 
+    pub fn hasBase(self: Memory) bool {
+        return self.base != null;
+    }
+
+    pub fn hasScaleIndex(self: Memory) bool {
+        return self.scale_index != null;
+    }
+
     pub fn isSegment(self: Memory) bool {
         return if (self.base) |r| r.isSegment() else false;
     }
 
     pub fn fmtPrint(self: Memory, writer: anytype) !void {
+        if (self.base == null and self.scale_index == null and !self.rip) {
+            const disp_abs: u32 = @intCast(u32, try std.math.absInt(self.disp));
+            if (sign(self.disp) < 0) {
+                try writer.writeAll("-");
+            }
+            try writer.print("0x{x}", .{disp_abs});
+            return;
+        }
+
         switch (self.ptr_size) {
             .byte => try writer.writeAll("BYTE PTR "),
             .word => try writer.writeAll("WORD PTR "),
@@ -372,6 +389,14 @@ pub const RegisterOrMemory = union(enum) {
             .reg => |r| r.isSegment(),
             .mem => |m| m.isSegment(),
         };
+    }
+
+    pub fn isRegister(self: RegisterOrMemory) bool {
+        return self == .reg;
+    }
+
+    pub fn isMemory(self: RegisterOrMemory) bool {
+        return self == .mem;
     }
 };
 

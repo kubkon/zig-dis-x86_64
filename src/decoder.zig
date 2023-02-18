@@ -65,12 +65,17 @@ pub const Disassembler = struct {
                     break :data Instruction.Data.i(reg, @intCast(u32, imm));
                 },
 
-                .m_rel => {
-                    const imm = try parseImm(opc.enc, 32, reader);
-                    break :data Instruction.Data.mRel(@intCast(u32, imm));
-                },
-
                 .m => {
+                    if (!opc.is_wip) {
+                        switch (opc.tag) {
+                            .call => break :data Instruction.Data.m(RegisterOrMemory.mem(.qword, .{
+                                .base = null,
+                                .scale_index = null,
+                                .disp = try reader.readInt(i32, .Little),
+                            })),
+                            else => unreachable, // unhandled special relative M encoding
+                        }
+                    }
                     const modrm = try parseModRmByte(reader);
                     const sib = try parseSibByte(modrm, reader);
                     const disp = try parseDisplacement(modrm, sib, reader);
@@ -401,7 +406,7 @@ const ParsedOpc = struct {
         const next_byte = try reader.readByte();
         var opc: ParsedOpc = blk: {
             switch (next_byte) {
-                // M and MI encodings will be resolved fully later, once
+                // Some M and MI encodings will be resolved fully later, once
                 // we parse the ModRM byte.
                 0x80, 0x81, 0x83, 0xc6, 0xc7 => break :blk ParsedOpc.wip(.mi),
                 0xff => break :blk ParsedOpc.wip(.m),
@@ -421,7 +426,7 @@ const ParsedOpc = struct {
                 0x20, 0x21 => break :blk ParsedOpc.new(.@"and", .mr),
                 0x22, 0x23 => break :blk ParsedOpc.new(.@"and", .rm),
                 // call
-                0xe8 => break :blk ParsedOpc.new(.call, .m_rel),
+                0xe8 => break :blk ParsedOpc.new(.call, .m),
                 // cmp
                 0x3c, 0x3d => break :blk ParsedOpc.new(.cmp, .i),
                 0x38, 0x39 => break :blk ParsedOpc.new(.cmp, .mr),
@@ -590,7 +595,7 @@ const ParsedOpc = struct {
                     if (prefixes.prefix_66) return 16;
                     return 32;
                 },
-                .o, .m, .m_rel, .np => return null,
+                .o, .m, .np => return null,
             },
         }
     }

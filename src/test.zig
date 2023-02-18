@@ -180,6 +180,7 @@ test "disassemble - mnemonic" {
         0x0f, 0xbe, 0xc3,
         0x66, 0x0f, 0xbe, 0xc3,
         0x48, 0x63, 0xc3,
+        0xe8, 0x00, 0x00, 0x00, 0x00,
         // zig fmt: on
     });
 
@@ -230,6 +231,7 @@ test "disassemble - mnemonic" {
         \\movsx eax, bl
         \\movsx ax, bl
         \\movsxd rax, ebx
+        \\call 0x0
         \\
     , buf.items);
 }
@@ -636,6 +638,18 @@ test "lower M encoding" {
         .disp = 0,
     })) });
     try expectEqualHexStrings("\x42\xFF\x14\x65\x00\x00\x00\x00", enc.code(), "call QWORD PTR [r12 * 2]");
+
+    try enc.encode(.{ .tag = .call, .enc = .m, .data = Instruction.Data.m(RegisterOrMemory.mem(.qword, .{
+        .base = .gs,
+        .disp = 0,
+    })) });
+    try expectEqualHexStrings("\x65\xFF\x14\x25\x00\x00\x00\x00", enc.code(), "call gs:0x0");
+
+    try enc.encode(.{ .tag = .call, .enc = .m, .data = Instruction.Data.m(RegisterOrMemory.mem(.qword, .{
+        .base = null,
+        .disp = 0,
+    })) });
+    try expectEqualHexStrings("\xE8\x00\x00\x00\x00", enc.code(), "call 0x0");
 }
 
 test "lower O encoding" {

@@ -39,12 +39,12 @@ pub const Instruction = struct {
         ret,
         syscall,
 
-        fn encode(tag: Tag, enc: Enc, operand_sizes: struct {
-            dst: u64,
-            src: u64,
+        fn encode(tag: Tag, enc: Enc, ctx: struct {
+            dst_bit_size: u64,
+            src_bit_size: u64,
         }, encoder: anytype) !void {
-            const dst_bit_size = operand_sizes.dst;
-            const src_bit_size = operand_sizes.src;
+            const dst_bit_size = ctx.dst_bit_size;
+            const src_bit_size = ctx.src_bit_size;
             if (enc == .np) {
                 return switch (tag) {
                     .int3 => try encoder.opcode_1byte(0xcc),
@@ -176,7 +176,6 @@ pub const Instruction = struct {
 
                 .call => switch (enc) {
                     .m => try encoder.opcode_1byte(0xff),
-                    .m_rel => try encoder.opcode_1byte(0xe8),
                     else => unreachable, // does not support this encoding
                 },
 
@@ -302,7 +301,6 @@ pub const Instruction = struct {
         o,
         i,
         m,
-        m_rel,
         fd,
         td,
         oi,
@@ -316,7 +314,6 @@ pub const Instruction = struct {
         o: O,
         i: Oi,
         m: M,
-        m_rel: MRel,
         fd: Fd,
         oi: Oi,
         mi: Mi,
@@ -339,10 +336,6 @@ pub const Instruction = struct {
 
         pub fn m(reg_or_mem: RegisterOrMemory) Data {
             return .{ .m = .{ .reg_or_mem = reg_or_mem } };
-        }
-
-        pub fn mRel(imm: u32) Data {
-            return .{ .m_rel = .{ .imm = imm } };
         }
 
         /// Destination register has to be a valid segment register.
@@ -382,10 +375,6 @@ pub const Instruction = struct {
 
     pub const M = struct {
         reg_or_mem: RegisterOrMemory,
-    };
-
-    pub const MRel = struct {
-        imm: u32,
     };
 
     pub const Fd = struct {
@@ -454,7 +443,10 @@ pub const Instruction = struct {
                 });
 
                 switch (self.enc) {
-                    .i => try self.tag.encode(self.enc, .{ .dst = reg.bitSize(), .src = reg.bitSize() }, encoder),
+                    .i => try self.tag.encode(self.enc, .{
+                        .dst_bit_size = reg.bitSize(),
+                        .src_bit_size = reg.bitSize(),
+                    }, encoder),
                     .oi => try self.tag.encodeWithReg(reg, encoder),
                     else => unreachable,
                 }
@@ -462,18 +454,37 @@ pub const Instruction = struct {
                 try encodeImm(imm, self.enc, reg.bitSize(), encoder);
             },
 
-            .m_rel => {
-                const imm = self.data.m_rel.imm;
-                try self.tag.encode(.m_rel, .{ .dst = 32, .src = 32 }, encoder);
-                try encodeImm(imm, self.enc, 32, encoder);
-            },
-
             .m => {
                 const reg_or_mem = self.data.m.reg_or_mem;
-                const modrm_ext = self.tag.modRmExt(self.enc).?;
-                if (reg_or_mem.bitSize() == 16) {
-                    try encoder.prefix16BitMode();
+
+                if (reg_or_mem.isMemory()) {
+                    const mem = reg_or_mem.mem;
+                    if (!mem.hasBase() and !mem.hasScaleIndex() and !mem.rip) {
+                        switch (self.tag) {
+                            .call => {
+                                // Special M encoding where we use only the displacement
+                                try encoder.opcode_1byte(0xe8);
+                                try encoder.disp32(reg_or_mem.mem.disp);
+                                return;
+                            },
+                            else => return error.InvalidEncoding,
+                        }
+                    }
                 }
+
+                const modrm_ext = self.tag.modRmExt(self.enc).?;
+                var prefixes = LegacyPrefixes{};
+                if (reg_or_mem.bitSize() == 16) {
+                    prefixes.set16BitOverride();
+                }
+                if (reg_or_mem.isSegment()) {
+                    const reg: Register = switch (reg_or_mem) {
+                        .reg => |r| r,
+                        .mem => |m| m.base.?,
+                    };
+                    prefixes.setSegmentOverride(reg);
+                }
+                try encoder.legacyPrefixes(prefixes);
                 switch (reg_or_mem) {
                     .reg => |reg| {
                         try encoder.rex(.{
@@ -481,8 +492,8 @@ pub const Instruction = struct {
                             .b = reg.isExtended(),
                         });
                         try self.tag.encode(self.enc, .{
-                            .dst = reg_or_mem.bitSize(),
-                            .src = reg_or_mem.bitSize(),
+                            .dst_bit_size = reg_or_mem.bitSize(),
+                            .src_bit_size = reg_or_mem.bitSize(),
                         }, encoder);
                         try encoder.modRm_direct(modrm_ext, reg.lowEnc());
                     },
@@ -493,8 +504,8 @@ pub const Instruction = struct {
                             .x = if (mem.scale_index) |si| si.index.isExtended() else false,
                         });
                         try self.tag.encode(self.enc, .{
-                            .dst = reg_or_mem.bitSize(),
-                            .src = reg_or_mem.bitSize(),
+                            .dst_bit_size = reg_or_mem.bitSize(),
+                            .src_bit_size = reg_or_mem.bitSize(),
                         }, encoder);
                         try mem.encode(modrm_ext, encoder);
                     },
@@ -519,8 +530,8 @@ pub const Instruction = struct {
                     .w = setRexWRegister(reg),
                 });
                 try self.tag.encode(self.enc, .{
-                    .dst = reg.bitSize(),
-                    .src = reg.bitSize(),
+                    .dst_bit_size = reg.bitSize(),
+                    .src_bit_size = reg.bitSize(),
                 }, encoder);
                 try encoder.imm64(imm);
             },
@@ -548,8 +559,8 @@ pub const Instruction = struct {
                             .b = src_reg.isExtended(),
                         });
                         try self.tag.encode(.rm, .{
-                            .dst = src_reg.bitSize(),
-                            .src = src_reg.bitSize(),
+                            .dst_bit_size = src_reg.bitSize(),
+                            .src_bit_size = src_reg.bitSize(),
                         }, encoder);
                         try encoder.modRm_direct(dst_reg.lowEnc(), src_reg.lowEnc());
                     },
@@ -561,8 +572,8 @@ pub const Instruction = struct {
                             .x = if (src_mem.scale_index) |si| si.index.isExtended() else false,
                         });
                         try self.tag.encode(.rm, .{
-                            .dst = src_mem.bitSize(),
-                            .src = src_mem.bitSize(),
+                            .dst_bit_size = src_mem.bitSize(),
+                            .src_bit_size = src_mem.bitSize(),
                         }, encoder);
                         try src_mem.encode(dst_reg.lowEnc(), encoder);
                     },
@@ -593,8 +604,8 @@ pub const Instruction = struct {
                             .b = dst_reg.isExtended(),
                         });
                         try self.tag.encode(.mr, .{
-                            .dst = src_reg.bitSize(),
-                            .src = src_reg.bitSize(),
+                            .dst_bit_size = src_reg.bitSize(),
+                            .src_bit_size = src_reg.bitSize(),
                         }, encoder);
                         try encoder.modRm_direct(src_reg.lowEnc(), dst_reg.lowEnc());
                     },
@@ -606,8 +617,8 @@ pub const Instruction = struct {
                             .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
                         });
                         try self.tag.encode(.mr, .{
-                            .dst = src_reg.bitSize(),
-                            .src = src_reg.bitSize(),
+                            .dst_bit_size = src_reg.bitSize(),
+                            .src_bit_size = src_reg.bitSize(),
                         }, encoder);
                         try dst_mem.encode(src_reg.lowEnc(), encoder);
                     },
@@ -637,8 +648,8 @@ pub const Instruction = struct {
                             .b = dst_reg.isExtended(),
                         });
                         try self.tag.encode(self.enc, .{
-                            .dst = reg_or_mem.bitSize(),
-                            .src = mi.imm_bit_size,
+                            .dst_bit_size = reg_or_mem.bitSize(),
+                            .src_bit_size = mi.imm_bit_size,
                         }, encoder);
                         try encoder.modRm_direct(modrm_ext, dst_reg.lowEnc());
                     },
@@ -649,8 +660,8 @@ pub const Instruction = struct {
                             .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
                         });
                         try self.tag.encode(self.enc, .{
-                            .dst = reg_or_mem.bitSize(),
-                            .src = mi.imm_bit_size,
+                            .dst_bit_size = reg_or_mem.bitSize(),
+                            .src_bit_size = mi.imm_bit_size,
                         }, encoder);
                         try dst_mem.encode(modrm_ext, encoder);
                     },
@@ -680,11 +691,6 @@ pub const Instruction = struct {
             .o => {
                 const reg = self.data.o.reg;
                 try reg.fmtPrint(writer);
-            },
-
-            .m_rel => {
-                const imm = self.data.m_rel.imm;
-                try writer.print(":0x{x}", .{imm});
             },
 
             .m => {
