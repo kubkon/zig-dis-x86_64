@@ -135,7 +135,7 @@ pub const Disassembler = struct {
                     break :data Instruction.Data.oi(reg, imm);
                 },
 
-                .mi, .mi8 => {
+                .mi => {
                     const modrm = try parseModRmByte(reader);
                     const sib = try parseSibByte(modrm, reader);
                     const disp = try parseDisplacement(modrm, sib, reader);
@@ -166,12 +166,13 @@ pub const Disassembler = struct {
                         break :data Instruction.Data.mi(
                             RegisterOrMemory.rip(PtrSize.fromBitSize(dst_bit_size), disp),
                             imm,
+                            src_bit_size.?,
                         );
                     }
 
                     if (modrm.isDirect()) {
                         const reg = Register.gpFromLowEnc(modrm.op2, rex.b, dst_bit_size);
-                        break :data Instruction.Data.mi(RegisterOrMemory.reg(reg), imm);
+                        break :data Instruction.Data.mi(RegisterOrMemory.reg(reg), imm, src_bit_size.?);
                     }
 
                     const scale_index: ?ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
@@ -183,7 +184,7 @@ pub const Disassembler = struct {
                         .scale_index = scale_index,
                         .base = base,
                         .disp = disp,
-                    }), imm);
+                    }), imm, src_bit_size.?);
                 },
 
                 .rm => {
@@ -341,7 +342,7 @@ const ParsedOpc = struct {
                 // we parse the ModRM byte.
                 0x80 => break :blk ParsedOpc.wip(.mi, true),
                 0x81 => break :blk ParsedOpc.wip(.mi, false),
-                0x83 => break :blk ParsedOpc.wip(.mi8, false),
+                0x83 => break :blk ParsedOpc.wip(.mi, false),
                 0xc6 => break :blk ParsedOpc.wip(.mi, true),
                 0xc7 => break :blk ParsedOpc.wip(.mi, false),
                 0xff => break :blk ParsedOpc.wip(.m, false),
@@ -558,8 +559,8 @@ const ParsedOpc = struct {
             },
             .movsxd => return 32,
             else => switch (self.enc) {
-                .mi8 => return 8,
                 .rm, .mr, .oi, .fd, .td, .i, .mi => {
+                    if (self.enc == .mi and self.bytes[0] == 0x83) return 8;
                     if (self.is_byte_sized) return 8;
                     if (rex.w) switch (self.enc) {
                         .i, .mi => return 32,

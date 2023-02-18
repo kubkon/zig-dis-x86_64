@@ -280,7 +280,7 @@ test "encode" {
     const inst = Instruction{
         .tag = .mov,
         .enc = .mi,
-        .data = Instruction.Data.mi(RegisterOrMemory.reg(.rbx), 0x4),
+        .data = Instruction.Data.mi(RegisterOrMemory.reg(.rbx), 0x4, 32),
     };
     try inst.encode(buf.writer());
     try testing.expectEqualSlices(u8, &.{ 0x48, 0xc7, 0xc3, 0x4, 0x0, 0x0, 0x0 }, buf.items);
@@ -299,25 +299,25 @@ test "lower I encoding" {
 test "lower MI encoding" {
     var enc = TestEncode{};
 
-    try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.reg(.rax), 0x10) });
+    try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.reg(.rax), 0x10, 32) });
     try expectEqualHexStrings("\x48\xc7\xc0\x10\x00\x00\x00", enc.code(), "mov rax, 0x10");
 
     try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.dword, .{
         .base = .r11,
         .disp = 0,
-    }), 0x10) });
+    }), 0x10, 32) });
     try expectEqualHexStrings("\x41\xc7\x03\x10\x00\x00\x00", enc.code(), "mov dword ptr [r11], 0x10");
 
     try enc.encode(.{ .tag = .add, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.dword, .{
         .base = .rdx,
         .disp = -8,
-    }), 0x10) });
+    }), 0x10, 32) });
     try expectEqualHexStrings("\x81\x42\xF8\x10\x00\x00\x00", enc.code(), "add dword ptr [rdx - 8], 0x10");
 
     try enc.encode(.{ .tag = .sub, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.dword, .{
         .base = .r11,
         .disp = 0x10000000,
-    }), 0x10) });
+    }), 0x10, 32) });
     try expectEqualHexStrings(
         "\x41\x81\xab\x00\x00\x00\x10\x10\x00\x00\x00",
         enc.code(),
@@ -327,7 +327,7 @@ test "lower MI encoding" {
     try enc.encode(.{ .tag = .@"and", .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.dword, .{
         .base = .ds,
         .disp = 0x10000000,
-    }), 0x10) });
+    }), 0x10, 32) });
     try expectEqualHexStrings(
         "\x81\x24\x25\x00\x00\x00\x10\x10\x00\x00\x00",
         enc.code(),
@@ -337,7 +337,7 @@ test "lower MI encoding" {
     try enc.encode(.{ .tag = .@"and", .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.dword, .{
         .base = .es,
         .disp = 0x10000000,
-    }), 0x10) });
+    }), 0x10, 32) });
     try expectEqualHexStrings(
         "\x26\x81\x24\x25\x00\x00\x00\x10\x10\x00\x00\x00",
         enc.code(),
@@ -347,14 +347,18 @@ test "lower MI encoding" {
     try enc.encode(.{ .tag = .@"and", .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.dword, .{
         .base = .r12,
         .disp = 0x10000000,
-    }), 0x10) });
+    }), 0x10, 32) });
     try expectEqualHexStrings(
         "\x41\x81\xA4\x24\x00\x00\x00\x10\x10\x00\x00\x00",
         enc.code(),
         "and dword ptr [r12 + 0x10000000], 0x10",
     );
 
-    try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.rip(.qword, 0x10), 0x10) });
+    try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(
+        RegisterOrMemory.rip(.qword, 0x10),
+        0x10,
+        32,
+    ) });
     try expectEqualHexStrings(
         "\x48\xC7\x05\x10\x00\x00\x00\x10\x00\x00\x00",
         enc.code(),
@@ -364,19 +368,19 @@ test "lower MI encoding" {
     try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.qword, .{
         .base = .rbp,
         .disp = -8,
-    }), 0x10) });
+    }), 0x10, 32) });
     try expectEqualHexStrings("\x48\xc7\x45\xf8\x10\x00\x00\x00", enc.code(), "mov QWORD PTR [rbp - 8], 0x10");
 
     try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.word, .{
         .base = .rbp,
         .disp = -2,
-    }), @bitCast(u32, @as(i32, -16))) });
+    }), @bitCast(u32, @as(i32, -16)), 16) });
     try expectEqualHexStrings("\x66\xC7\x45\xFE\xF0\xFF", enc.code(), "mov word ptr [rbp - 2], -16");
 
     try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.byte, .{
         .base = .rbp,
         .disp = -1,
-    }), 0x10) });
+    }), 0x10, 8) });
     try expectEqualHexStrings("\xC6\x45\xFF\x10", enc.code(), "mov BYTE PTR [rbp - 1], 0x10");
 
     try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.qword, .{
@@ -386,32 +390,32 @@ test "lower MI encoding" {
             .scale = 1,
             .index = .rcx,
         },
-    }), 0x10) });
+    }), 0x10, 32) });
     try expectEqualHexStrings(
         "\x48\xC7\x04\x4D\x00\x00\x00\x10\x10\x00\x00\x00",
         enc.code(),
         "mov QWORD PTR [rcx*2 + 0x10000000], 0x10",
     );
 
-    try enc.encode(.{ .tag = .add, .enc = .mi8, .data = Instruction.Data.mi(RegisterOrMemory.reg(.rax), 0x10) });
+    try enc.encode(.{ .tag = .add, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.reg(.rax), 0x10, 8) });
     try expectEqualHexStrings("\x48\x83\xC0\x10", enc.code(), "add rax, 0x10");
 
-    try enc.encode(.{ .tag = .add, .enc = .mi8, .data = Instruction.Data.mi(RegisterOrMemory.mem(.qword, .{
+    try enc.encode(.{ .tag = .add, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.qword, .{
         .base = .rbp,
         .disp = -0x10,
-    }), @bitCast(u32, @as(i32, -0x10))) });
+    }), @bitCast(u32, @as(i32, -0x10)), 8) });
     try expectEqualHexStrings("\x48\x83\x45\xF0\xF0", enc.code(), "add QWORD PTR [rbp - 0x10], -0x10");
 
-    try enc.encode(.{ .tag = .adc, .enc = .mi8, .data = Instruction.Data.mi(RegisterOrMemory.mem(.byte, .{
+    try enc.encode(.{ .tag = .adc, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.byte, .{
         .base = .rbp,
         .disp = -0x10,
-    }), 0x10) });
+    }), 0x10, 8) });
     try expectEqualHexStrings("\x80\x55\xF0\x10", enc.code(), "adc BYTE PTR [rbp - 0x10], 0x10");
 
     try enc.encode(.{ .tag = .adc, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.byte, .{
         .base = .rbp,
         .disp = -0x10,
-    }), 0x10) });
+    }), 0x10, 8) });
     try expectEqualHexStrings("\x80\x55\xF0\x10", enc.code(), "adc BYTE PTR [rbp - 0x10], 0x10");
 }
 
