@@ -11,7 +11,7 @@ const encoder = @import("encoder.zig");
 const Tag = encoder.Instruction.Tag;
 const Enc = encoder.Instruction.Enc;
 
-const Entry = std.meta.Tuple(&.{ Tag, Enc, u64, u64, u8, u8, u8 });
+pub const Entry = std.meta.Tuple(&.{ Tag, Enc, u64, u64, u8, u8, u8 });
 
 fn genArithInst(comptime tag: Tag, op_add: u8, modrm_ext: u8) [19]Entry {
     // zig fmt: off
@@ -41,6 +41,17 @@ fn genArithInst(comptime tag: Tag, op_add: u8, modrm_ext: u8) [19]Entry {
 
 // zig fmt: off
 pub const table = [_]Entry{
+    .{ .call,    .m,  16, 0,  0xe8, 0x00, 0x00 },
+    .{ .call,    .m,  32, 0,  0xe8, 0x00, 0x00 },
+    .{ .call,    .m,  64, 0,  0xff, 0x02, 0x00 },
+
+    .{ .lea,     .rm, 16, 32, 0x8d, 0x00, 0x00 },
+    .{ .lea,     .rm, 16, 64, 0x8d, 0x00, 0x00 },
+    .{ .lea,     .rm, 32, 32, 0x8d, 0x00, 0x00 },
+    .{ .lea,     .rm, 32, 64, 0x8d, 0x00, 0x00 },
+    .{ .lea,     .rm, 64, 32, 0x8d, 0x00, 0x00 },
+    .{ .lea,     .rm, 64, 64, 0x8d, 0x00, 0x00 },
+
     .{ .mov,     .mr, 8,  8,  0x88, 0x00, 0x00 },
     .{ .mov,     .mr, 16, 16, 0x89, 0x00, 0x00 },
     .{ .mov,     .mr, 32, 32, 0x89, 0x00, 0x00 },
@@ -70,9 +81,30 @@ pub const table = [_]Entry{
     .{ .mov,     .mi, 32, 32, 0xc7, 0x00, 0x00 },
     .{ .mov,     .mi, 64, 32, 0xc7, 0x00, 0x00 },
 
+    .{ .movsx,   .rm, 16, 8,  0x0f, 0xbe, 0x00 },
+    .{ .movsx,   .rm, 32, 8,  0x0f, 0xbe, 0x00 },
+    .{ .movsx,   .rm, 64, 8,  0x0f, 0xbe, 0x00 },
+    .{ .movsx,   .rm, 32, 16, 0x0f, 0xbf, 0x00 },
+    .{ .movsx,   .rm, 64, 16, 0x0f, 0xbf, 0x00 },
+
+    .{ .movsxd,  .rm, 64, 32, 0x63, 0x00, 0x00 },
+
     .{ .int3,    .np, 0,  0,  0xcc, 0x00, 0x00 },
 
     .{ .nop,     .np, 0,  0,  0x90, 0x00, 0x00 },
+
+    .{ .pop,     .m,  16, 0,  0x8f, 0x00, 0x00 },
+    .{ .pop,     .m,  64, 0,  0x8f, 0x00, 0x00 },
+    .{ .pop,     .o,  16, 0,  0x58, 0x00, 0x00 },
+    .{ .pop,     .o,  64, 0,  0x58, 0x00, 0x00 },
+
+    .{ .push,    .m,  16, 0,  0xff, 0x06, 0x00 },
+    .{ .push,    .m,  64, 0,  0xff, 0x06, 0x00 },
+    .{ .push,    .o,  16, 0,  0x50, 0x00, 0x00 },
+    .{ .push,    .o,  64, 0,  0x50, 0x00, 0x00 },
+    .{ .push,    .i,  8,  0,  0x6a, 0x00, 0x00 },
+    .{ .push,    .i,  16, 0,  0x68, 0x00, 0x00 },
+    .{ .push,    .i,  32, 0,  0x68, 0x00, 0x00 },
 
     .{ .ret,     .np, 0,  0,  0xc3, 0x00, 0x00 },
 
@@ -80,4 +112,5 @@ pub const table = [_]Entry{
 } 
 // zig fmt: on
 ++ genArithInst(.add, 0, 0) ++ genArithInst(.adc, 0x10, 2) ++ genArithInst(.@"and", 0x20, 4) ++
-    genArithInst(.cmp, 0x30, 7);
+    genArithInst(.cmp, 0x38, 7) ++ genArithInst(.@"or", 0x08, 1) ++ genArithInst(.sbb, 0x18, 3) ++
+    genArithInst(.sub, 0x28, 5) ++ genArithInst(.xor, 0x30, 6);

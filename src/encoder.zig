@@ -4,6 +4,7 @@ const math = std.math;
 
 const bits = @import("bits.zig");
 const sign = bits.sign;
+const Entry = @import("encodings.zig").Entry;
 const Memory = bits.Memory;
 const PtrSize = bits.PtrSize;
 const Register = bits.Register;
@@ -41,307 +42,50 @@ pub const Instruction = struct {
 
         const opcodes = @import("encodings.zig").table;
 
-        fn encode2(tag: Tag, enc: Enc, args: struct {
+        const Args = struct {
             dst_bit_size: u64 = 0,
             src_bit_size: u64 = 0,
             dst_low_enc: u3 = 0,
-        }, encoder: anytype) !void {
+        };
+
+        fn getEntry(tag: Tag, enc: Enc, args: Args) !Entry {
             inline for (opcodes) |entry| {
-                if (entry[0] == tag and
-                    entry[1] == enc and
-                    entry[2] == args.dst_bit_size and
-                    entry[3] == args.src_bit_size)
-                {
-                    switch (entry[1]) {
-                        .oi => {
-                            assert(entry[4] != 0x0f);
-                            return encoder.opcode_withReg(entry[4], args.dst_low_enc);
-                        },
-                        else => {
-                            if (entry[4] == 0x0f) {
-                                // Escape byte
-                                return encoder.opcode_2byte(entry[4], entry[5]);
-                            } else {
-                                return encoder.opcode_1byte(entry[4]);
-                            }
-                        },
-                    }
+                if (entry[0] == tag and entry[1] == enc) {
+                    const dst_bit_size_match = entry[2] == 0 or entry[2] == args.dst_bit_size;
+                    const src_bit_size_match = entry[3] == 0 or entry[3] == args.src_bit_size;
+                    if (dst_bit_size_match and src_bit_size_match) return entry;
                 }
             }
+            std.log.err("NotImplemented: {s}, {s}, {d}, {d}", .{
+                @tagName(tag),
+                @tagName(enc),
+                args.dst_bit_size,
+                args.src_bit_size,
+            });
             return error.NotImplemented;
         }
 
-        fn getModRmExt(tag: Tag) ?u3 {
-            inline for (opcodes) |entry| {
-                if (entry[0] == tag) switch (entry[1]) {
-                    .mi, .m => return if (entry[4] == 0x0f) entry[5] else entry[4],
-                    inline else => {},
-                };
-            }
-            return null;
-        }
-
-        fn encode(tag: Tag, enc: Enc, ctx: struct {
-            dst_bit_size: u64,
-            src_bit_size: u64,
-        }, encoder: anytype) !void {
-            const dst_bit_size = ctx.dst_bit_size;
-            const src_bit_size = ctx.src_bit_size;
-
-            if (encode2(tag, enc, .{
-                .dst_bit_size = dst_bit_size,
-                .src_bit_size = src_bit_size,
-            }, encoder)) {
-                return;
-            } else |err| switch (err) {
-                error.NotImplemented => {
-                    std.log.err("NotImplemented: {s}, {s}, {d}, {d}", .{
-                        @tagName(tag),
-                        @tagName(enc),
-                        ctx.dst_bit_size,
-                        ctx.src_bit_size,
-                    });
+        fn encode(entry: Entry, args: Args, encoder: anytype) !void {
+            switch (entry[1]) {
+                .o, .oi => {
+                    assert(entry[4] != 0x0f);
+                    return encoder.opcode_withReg(entry[4], args.dst_low_enc);
                 },
-                else => |e| return e,
-            }
-
-            if (src_bit_size == 8) switch (tag) {
-                .adc => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x14),
-                    .mi => try encoder.opcode_1byte(0x80),
-                    .rm => try encoder.opcode_1byte(0x12),
-                    .mr => try encoder.opcode_1byte(0x10),
-                    else => unreachable, // does not support this encoding
+                else => {
+                    if (entry[4] == 0x0f) {
+                        // Escape byte
+                        return encoder.opcode_2byte(entry[4], entry[5]);
+                    } else {
+                        return encoder.opcode_1byte(entry[4]);
+                    }
                 },
-
-                .add => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x04),
-                    .mi => try encoder.opcode_1byte(0x80),
-                    .rm => try encoder.opcode_1byte(0x02),
-                    .mr => try encoder.opcode_1byte(0x00),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .@"and" => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x24),
-                    .mi => try encoder.opcode_1byte(0x80),
-                    .rm => try encoder.opcode_1byte(0x22),
-                    .mr => try encoder.opcode_1byte(0x20),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .cmp => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x3c),
-                    .mi => try encoder.opcode_1byte(0x80),
-                    .rm => try encoder.opcode_1byte(0x3a),
-                    .mr => try encoder.opcode_1byte(0x38),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .mov => switch (enc) {
-                    .fd => try encoder.opcode_1byte(0xa0),
-                    .td => try encoder.opcode_1byte(0xa2),
-                    .oi => unreachable, // use encodeWithReg instead
-                    .mi => try encoder.opcode_1byte(0xc6),
-                    .rm => try encoder.opcode_1byte(0x8a),
-                    .mr => try encoder.opcode_1byte(0x88),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .movsx => switch (enc) {
-                    .rm => try encoder.opcode_2byte(0x0f, 0xbe),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .@"or" => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x0c),
-                    .mi => try encoder.opcode_1byte(0x80),
-                    .rm => try encoder.opcode_1byte(0x0a),
-                    .mr => try encoder.opcode_1byte(0x08),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .push => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x6a),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .sbb => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x1c),
-                    .mi => try encoder.opcode_1byte(0x80),
-                    .rm => try encoder.opcode_1byte(0x1a),
-                    .mr => try encoder.opcode_1byte(0x18),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .sub => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x2c),
-                    .mi => try encoder.opcode_1byte(0x80),
-                    .rm => try encoder.opcode_1byte(0x2a),
-                    .mr => try encoder.opcode_1byte(0x28),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .xor => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x34),
-                    .mi => try encoder.opcode_1byte(0x80),
-                    .rm => try encoder.opcode_1byte(0x32),
-                    .mr => try encoder.opcode_1byte(0x30),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .call,
-                .int3,
-                .lea,
-                .movsxd,
-                .nop,
-                .pop,
-                .ret,
-                .syscall,
-                => unreachable,
-            } else switch (tag) {
-                .adc => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x15),
-                    .mi => try encoder.opcode_1byte(if (src_bit_size == 8) 0x83 else 0x81),
-                    .rm => try encoder.opcode_1byte(0x13),
-                    .mr => try encoder.opcode_1byte(0x11),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .add => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x05),
-                    .mi => try encoder.opcode_1byte(if (src_bit_size == 8) 0x83 else 0x81),
-                    .rm => try encoder.opcode_1byte(0x03),
-                    .mr => try encoder.opcode_1byte(0x01),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .@"and" => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x25),
-                    .mi => try encoder.opcode_1byte(if (src_bit_size == 8) 0x83 else 0x81),
-                    .rm => try encoder.opcode_1byte(0x23),
-                    .mr => try encoder.opcode_1byte(0x21),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .call => switch (enc) {
-                    .m => try encoder.opcode_1byte(0xff),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .cmp => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x3d),
-                    .mi => try encoder.opcode_1byte(if (src_bit_size == 8) 0x83 else 0x81),
-                    .rm => try encoder.opcode_1byte(0x3b),
-                    .mr => try encoder.opcode_1byte(0x39),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .mov => switch (enc) {
-                    .fd => try encoder.opcode_1byte(0xa1),
-                    .td => try encoder.opcode_1byte(0xa3),
-                    .mi => try encoder.opcode_1byte(0xc7),
-                    .rm => try encoder.opcode_1byte(0x8b),
-                    .mr => try encoder.opcode_1byte(0x89),
-                    .oi => unreachable, // use encodeWithReg instead
-                    else => unreachable, // does not support this encoding
-                },
-
-                .movsx => switch (enc) {
-                    .rm => try encoder.opcode_2byte(0x0f, 0xbf),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .movsxd => switch (enc) {
-                    .rm => try encoder.opcode_1byte(0x63),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .@"or" => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x0d),
-                    .mi => try encoder.opcode_1byte(if (src_bit_size == 8) 0x83 else 0x81),
-                    .rm => try encoder.opcode_1byte(0x0b),
-                    .mr => try encoder.opcode_1byte(0x09),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .lea => switch (enc) {
-                    .rm => try encoder.opcode_1byte(0x8d),
-                    else => unreachable, // does not support different encodings
-                },
-
-                .push => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x68),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .sbb => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x1d),
-                    .mi => try encoder.opcode_1byte(if (src_bit_size == 8) 0x83 else 0x81),
-                    .rm => try encoder.opcode_1byte(0x1b),
-                    .mr => try encoder.opcode_1byte(0x19),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .sub => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x2d),
-                    .mi => try encoder.opcode_1byte(if (src_bit_size == 8) 0x83 else 0x81),
-                    .rm => try encoder.opcode_1byte(0x2b),
-                    .mr => try encoder.opcode_1byte(0x29),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .xor => switch (enc) {
-                    .i => try encoder.opcode_1byte(0x35),
-                    .mi => try encoder.opcode_1byte(if (src_bit_size == 8) 0x83 else 0x81),
-                    .rm => try encoder.opcode_1byte(0x33),
-                    .mr => try encoder.opcode_1byte(0x31),
-                    else => unreachable, // does not support this encoding
-                },
-
-                .int3,
-                .nop,
-                .pop,
-                .ret,
-                .syscall,
-                => unreachable,
             }
         }
 
-        fn modRmExt(tag: Tag, enc: Enc) ?u3 {
-            switch (enc) {
-                .mi => return switch (tag) {
-                    .add, .mov => 0,
-                    .@"or" => 1,
-                    .adc => 2,
-                    .sbb => 3,
-                    .@"and" => 4,
-                    .sub => 5,
-                    .xor => 6,
-                    .cmp => 7,
-
-                    else => unreachable, // unsupported encoding
-                },
-
-                .m => return switch (tag) {
-                    .call => 2,
-
-                    else => unreachable, // unsupported encoding
-                },
-
-                else => unreachable,
-            }
-        }
-
-        fn encodeWithReg(tag: Tag, reg: Register, encoder: anytype) !void {
-            if (reg.bitSize() == 8) switch (tag) {
-                .mov => try encoder.opcode_withReg(0xb0, reg.lowEnc()),
-                else => unreachable,
-            } else switch (tag) {
-                .mov => try encoder.opcode_withReg(0xb8, reg.lowEnc()),
-                .push => try encoder.opcode_withReg(0x50, reg.lowEnc()),
-                .pop => try encoder.opcode_withReg(0x58, reg.lowEnc()),
-                else => unreachable,
+        fn getModRmExt(entry: Entry) ?u8 {
+            switch (entry[1]) {
+                .m, .mi => return if (entry[4] == 0x0f) entry[6] else entry[5],
+                else => return null,
             }
         }
     };
@@ -460,11 +204,16 @@ pub const Instruction = struct {
         const encoder = Encoder(@TypeOf(writer)){ .writer = writer };
         switch (self.enc) {
             .np => {
-                try self.tag.encode(.np, undefined, encoder);
+                const entry = try self.tag.getEntry(.np, .{});
+                try Tag.encode(entry, .{}, encoder);
             },
 
             .o => {
                 const reg = self.data.o.reg;
+                const entry = try self.tag.getEntry(.o, .{
+                    .dst_bit_size = reg.bitSize(),
+                    .dst_low_enc = reg.lowEnc(),
+                });
                 if (reg.bitSize() == 16) {
                     try encoder.prefix16BitMode();
                 }
@@ -472,7 +221,10 @@ pub const Instruction = struct {
                     .w = false,
                     .b = reg.isExtended(),
                 });
-                try self.tag.encodeWithReg(reg, encoder);
+                try Tag.encode(entry, .{
+                    .dst_bit_size = reg.bitSize(),
+                    .dst_low_enc = reg.lowEnc(),
+                }, encoder);
             },
 
             .i => {
@@ -481,6 +233,10 @@ pub const Instruction = struct {
                 const imm = oi.imm;
                 const dst_bit_size = reg.bitSize();
                 const src_bit_size = if (dst_bit_size == 64) 32 else dst_bit_size;
+                const entry = try self.tag.getEntry(.i, .{
+                    .dst_bit_size = dst_bit_size,
+                    .src_bit_size = src_bit_size,
+                });
 
                 assert(reg.to64() == .rax);
 
@@ -491,7 +247,7 @@ pub const Instruction = struct {
                     .w = setRexWRegister(reg),
                     .b = reg.isExtended(),
                 });
-                try self.tag.encode(self.enc, .{
+                try Tag.encode(entry, .{
                     .dst_bit_size = dst_bit_size,
                     .src_bit_size = src_bit_size,
                 }, encoder);
@@ -502,6 +258,11 @@ pub const Instruction = struct {
                 const oi = self.data.oi;
                 const reg = oi.reg;
                 const imm = oi.imm;
+                const entry = try self.tag.getEntry(self.enc, .{
+                    .dst_bit_size = reg.bitSize(),
+                    .src_bit_size = reg.bitSize(),
+                    .dst_low_enc = reg.lowEnc(),
+                });
 
                 if (reg.bitSize() == 16) {
                     try encoder.prefix16BitMode();
@@ -510,7 +271,11 @@ pub const Instruction = struct {
                     .w = setRexWRegister(reg),
                     .b = reg.isExtended(),
                 });
-                try self.tag.encodeWithReg(reg, encoder);
+                try Tag.encode(entry, .{
+                    .dst_bit_size = reg.bitSize(),
+                    .src_bit_size = reg.bitSize(),
+                    .dst_low_enc = reg.lowEnc(),
+                }, encoder);
                 try encodeImm(imm, self.enc, reg.bitSize(), encoder);
             },
 
@@ -532,7 +297,11 @@ pub const Instruction = struct {
                     }
                 }
 
-                const modrm_ext = self.tag.modRmExt(self.enc).?;
+                const entry = try self.tag.getEntry(self.enc, .{
+                    .dst_bit_size = reg_or_mem.bitSize(),
+                    .src_bit_size = reg_or_mem.bitSize(),
+                });
+                const modrm_ext = @intCast(u3, Tag.getModRmExt(entry).?);
                 var prefixes = LegacyPrefixes{};
                 if (reg_or_mem.bitSize() == 16) {
                     prefixes.set16BitOverride();
@@ -551,7 +320,7 @@ pub const Instruction = struct {
                             .w = false,
                             .b = reg.isExtended(),
                         });
-                        try self.tag.encode(self.enc, .{
+                        try Tag.encode(entry, .{
                             .dst_bit_size = reg_or_mem.bitSize(),
                             .src_bit_size = reg_or_mem.bitSize(),
                         }, encoder);
@@ -563,7 +332,7 @@ pub const Instruction = struct {
                             .b = if (mem.base) |base| base.isExtended() else false,
                             .x = if (mem.scale_index) |si| si.index.isExtended() else false,
                         });
-                        try self.tag.encode(self.enc, .{
+                        try Tag.encode(entry, .{
                             .dst_bit_size = reg_or_mem.bitSize(),
                             .src_bit_size = reg_or_mem.bitSize(),
                         }, encoder);
@@ -579,6 +348,10 @@ pub const Instruction = struct {
                 const imm = fd.imm;
                 assert(reg.to64() == .rax);
                 assert(seg.isSegment());
+                const entry = try self.tag.getEntry(self.enc, .{
+                    .dst_bit_size = reg.bitSize(),
+                    .src_bit_size = reg.bitSize(),
+                });
 
                 var prefixes = LegacyPrefixes{};
                 if (reg.bitSize() == 16) {
@@ -589,7 +362,7 @@ pub const Instruction = struct {
                 try encoder.rex(.{
                     .w = setRexWRegister(reg),
                 });
-                try self.tag.encode(self.enc, .{
+                try Tag.encode(entry, .{
                     .dst_bit_size = reg.bitSize(),
                     .src_bit_size = reg.bitSize(),
                 }, encoder);
@@ -613,7 +386,11 @@ pub const Instruction = struct {
             .mi => {
                 const mi = self.data.mi;
                 const reg_or_mem = mi.reg_or_mem;
-                const modrm_ext = self.tag.modRmExt(self.enc).?;
+                const entry = try self.tag.getEntry(self.enc, .{
+                    .dst_bit_size = reg_or_mem.bitSize(),
+                    .src_bit_size = mi.imm_bit_size,
+                });
+                const modrm_ext = @intCast(u3, Tag.getModRmExt(entry).?);
                 var prefixes = LegacyPrefixes{};
                 if (reg_or_mem.bitSize() == 16) {
                     prefixes.set16BitOverride();
@@ -632,7 +409,7 @@ pub const Instruction = struct {
                             .w = setRexWRegister(dst_reg),
                             .b = dst_reg.isExtended(),
                         });
-                        try self.tag.encode(self.enc, .{
+                        try Tag.encode(entry, .{
                             .dst_bit_size = reg_or_mem.bitSize(),
                             .src_bit_size = mi.imm_bit_size,
                         }, encoder);
@@ -644,7 +421,7 @@ pub const Instruction = struct {
                             .b = if (dst_mem.base) |base| base.isExtended() else false,
                             .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
                         });
-                        try self.tag.encode(self.enc, .{
+                        try Tag.encode(entry, .{
                             .dst_bit_size = reg_or_mem.bitSize(),
                             .src_bit_size = mi.imm_bit_size,
                         }, encoder);
@@ -665,9 +442,13 @@ pub const Instruction = struct {
             .mr => true,
             else => unreachable,
         };
-        var prefixes = LegacyPrefixes{};
         const dst_bit_size = if (flipped) reg_or_mem.bitSize() else reg.bitSize();
         const src_bit_size = if (flipped) reg.bitSize() else reg_or_mem.bitSize();
+        const entry = try tag.getEntry(enc, .{
+            .dst_bit_size = dst_bit_size,
+            .src_bit_size = src_bit_size,
+        });
+        var prefixes = LegacyPrefixes{};
         if (dst_bit_size == 16) {
             prefixes.set16BitOverride();
         }
@@ -686,7 +467,7 @@ pub const Instruction = struct {
                     .r = reg.isExtended(),
                     .b = r.isExtended(),
                 });
-                try tag.encode(enc, .{
+                try Tag.encode(entry, .{
                     .dst_bit_size = dst_bit_size,
                     .src_bit_size = src_bit_size,
                 }, encoder);
@@ -699,7 +480,7 @@ pub const Instruction = struct {
                     .b = if (mem.base) |base| base.isExtended() else false,
                     .x = if (mem.scale_index) |si| si.index.isExtended() else false,
                 });
-                try tag.encode(enc, .{
+                try Tag.encode(entry, .{
                     .dst_bit_size = dst_bit_size,
                     .src_bit_size = src_bit_size,
                 }, encoder);
