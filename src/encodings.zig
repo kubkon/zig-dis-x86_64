@@ -7,6 +7,10 @@ const Entry = std.meta.Tuple(&.{ Mnemonic, OpEn, Operand, Operand, Operand, Oper
 
 // TODO move this into a .zon file when Zig is capable of importing .zon files
 const table = &[_]Entry{
+    .{ .lea, .rm, .r16, .m, .none, .none, 1, 0x8d, 0x00, 0x00, 0 },
+    .{ .lea, .rm, .r32, .m, .none, .none, 1, 0x8d, 0x00, 0x00, 0 },
+    .{ .lea, .rm, .r64, .m, .none, .none, 1, 0x8d, 0x00, 0x00, 0 },
+
     .{ .mov, .mr, .rm8, .r8, .none, .none, 1, 0x88, 0x00, 0x00, 0 },
     .{ .mov, .mr, .rm16, .r16, .none, .none, 1, 0x89, 0x00, 0x00, 0 },
     .{ .mov, .mr, .rm32, .r32, .none, .none, 1, 0x89, 0x00, 0x00, 0 },
@@ -89,64 +93,124 @@ pub const OpEn = enum {
 };
 
 pub const Operand = enum {
+    // zig fmt: off
     none,
 
-    imm8,
-    imm16,
-    imm32,
-    imm64,
+    imm8, imm16, imm32, imm64,
 
-    al,
-    ax,
-    eax,
-    rax,
+    al, ax, eax, rax,
 
-    r8,
-    r16,
-    r32,
-    r64,
+    r8, r16, r32, r64,
 
-    rm8,
-    rm16,
-    rm32,
-    rm64,
+    rm8, rm16, rm32, rm64,
+
+    m8, m16, m32, m64,
+
+    m,
 
     moffs,
 
     sreg,
+    // zig fmt: on
 
     fn bitSize(op: Operand) u64 {
         return switch (op) {
-            .none, .moffs, .sreg => 0,
-            .imm8, .al, .r8, .rm8 => 8,
-            .imm16, .ax, .r16, .rm16 => 16,
-            .imm32, .eax, .r32, .rm32 => 32,
-            .imm64, .rax, .r64, .rm64 => 64,
+            .none, .moffs, .m, .sreg => unreachable,
+            .imm8, .al, .r8, .m8, .rm8 => 8,
+            .imm16, .ax, .r16, .m16, .rm16 => 16,
+            .imm32, .eax, .r32, .m32, .rm32 => 32,
+            .imm64, .rax, .r64, .m64, .rm64 => 64,
         };
     }
 
-    fn isMatch(op: Operand, other: Operand) bool {
-        if (op == .rm8 and (other == .r8 or other == .al)) return true;
-        if (op == .rm16 and (other == .r16 or other == .ax)) return true;
-        if (op == .rm32 and (other == .r32 or other == .eax)) return true;
-        if (op == .rm64 and (other == .r64 or other == .rax)) return true;
-        if (op == .r8 and other == .al) return true;
-        if (op == .r16 and other == .ax) return true;
-        if (op == .r32 and other == .eax) return true;
-        if (op == .r64 and other == .rax) return true;
-        switch (op) {
-            .imm32 => switch (other) {
-                .imm8, .imm16, .imm32 => return true,
-                else => {},
-            },
-            .imm16 => switch (other) {
-                .imm8, .imm16 => return true,
-                else => {},
-            },
-            else => {},
-        }
-        return op == other;
+    fn isRegister(op: Operand) bool {
+        // zig fmt: off
+        return switch (op) {
+            .al, .ax, .eax, .rax,
+            .r8, .r16, .r32, .r64,
+            .rm8, .rm16, .rm32, .rm64,
+            => return true,
+            else => false,
+        };
+        // zig fmt: on
     }
+
+    fn isImmediate(op: Operand) bool {
+        return switch (op) {
+            .imm8, .imm16, .imm32, .imm64 => return true,
+            else => false,
+        };
+    }
+
+    fn isMemory(op: Operand) bool {
+        // zig fmt: off
+        return switch (op) {
+            .rm8, .rm16, .rm32, .rm64,
+            .m8, .m16, .m32, .m64,
+            .m,
+            => return true,
+            else => false,
+        };
+        // zig fmt: on
+    }
+
+    fn isSegment(op: Operand) bool {
+        return switch (op) {
+            .moffs, .sreg => return true,
+            else => false,
+        };
+    }
+
+    /// Given an operand `op` checks if `target` is a subset for the purposes
+    /// of the encoding.
+    fn isSubset(op: Operand, target: Operand) bool {
+        switch (op) {
+            .m => unreachable,
+            .none, .moffs, .sreg => return op == target,
+            else => {
+                if (op.isRegister() and target.isRegister()) return op.bitSize() == target.bitSize();
+                if (op.isMemory() and target.isMemory()) switch (target) {
+                    .m => return true,
+                    else => return op.bitSize() == target.bitSize(),
+                };
+                if (op.isImmediate() and target.isImmediate()) switch (target) {
+                    .imm32 => switch (op) {
+                        .imm8, .imm16, .imm32 => return true,
+                        else => return op == target,
+                    },
+                    .imm16 => switch (op) {
+                        .imm8, .imm16 => return true,
+                        else => return op == target,
+                    },
+                    else => return op == target,
+                };
+                return false;
+            },
+        }
+    }
+
+    // fn isMatch(op: Operand, other: Operand) bool {
+    //     if (op == .rm8 and (other == .r8 or other == .al)) return true;
+    //     if (op == .rm16 and (other == .r16 or other == .ax)) return true;
+    //     if (op == .rm32 and (other == .r32 or other == .eax)) return true;
+    //     if (op == .rm64 and (other == .r64 or other == .rax)) return true;
+    //     if (op == .r8 and other == .al) return true;
+    //     if (op == .r16 and other == .ax) return true;
+    //     if (op == .r32 and other == .eax) return true;
+    //     if (op == .r64 and other == .rax) return true;
+    //     switch (op) {
+    //         .imm32 => switch (other) {
+    //             .imm8, .imm16, .imm32 => return true,
+    //             else => {},
+    //         },
+    //         .imm16 => switch (other) {
+    //             .imm8, .imm16 => return true,
+    //             else => {},
+    //         },
+    //         else => {},
+    //     }
+    //     return op == other;
+    // }
 };
 
 pub const Encoding = struct {
@@ -167,14 +231,16 @@ pub const Encoding = struct {
         op4: Operand = .none,
     }) ?Encoding {
         // TODO we should collect all matching variants and then select the shortest one
+        var candidates: [10]Encoding = undefined;
+        var count: usize = 0;
         inline for (table) |entry| {
             if (entry[0] == mnemonic and
-                entry[2].isMatch(args.op1) and
-                entry[3].isMatch(args.op2) and
-                entry[4].isMatch(args.op3) and
-                entry[5].isMatch(args.op4))
+                args.op1.isSubset(entry[2]) and
+                args.op2.isSubset(entry[3]) and
+                args.op3.isSubset(entry[4]) and
+                args.op4.isSubset(entry[5]))
             {
-                return Encoding{
+                candidates[count] = Encoding{
                     .mnemonic = mnemonic,
                     .op_en = entry[1],
                     .op1 = entry[2],
@@ -185,10 +251,13 @@ pub const Encoding = struct {
                     .opc = .{ entry[7], entry[8], entry[9] },
                     .modrm_ext = entry[10],
                 };
+                count += 1;
             }
         }
 
-        return null;
+        if (count == 0) return null;
+
+        return candidates[0];
     }
 
     pub fn findByOpcode(opc: [3]u8) ?Encoding {

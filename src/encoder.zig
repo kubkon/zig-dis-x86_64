@@ -57,10 +57,10 @@ pub const Instruction = struct {
                 .mem => |mem| {
                     const bit_size = mem.bitSize();
                     return switch (bit_size) {
-                        8 => .rm8,
-                        16 => .rm16,
-                        32 => .rm32,
-                        64 => .rm64,
+                        8 => .m8,
+                        16 => .m16,
+                        32 => .m32,
+                        64 => .m64,
                         else => unreachable,
                     };
                 },
