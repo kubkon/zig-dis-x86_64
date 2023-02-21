@@ -158,8 +158,17 @@ pub const Instruction = struct {
                 if (encoding.op1.bitSize() == 16) {
                     try encoder.prefix16BitMode();
                 }
+                if (!encoding.op1.isImmediate()) {
+                    try encoder.rex(.{
+                        .w = inst.op1.is64BitMode() and !encoding.mnemonic.defaultsTo64Bits(),
+                    });
+                }
                 try encodeOpcode(opcode, encoder);
-                try encodeImm(inst.op1.imm, encoding.op1, encoder);
+                if (encoding.op1.isImmediate()) {
+                    try encodeImm(inst.op1.imm, encoding.op1, encoder);
+                } else {
+                    try encodeImm(inst.op2.imm, encoding.op2, encoder);
+                }
             },
 
             .m, .mi => {

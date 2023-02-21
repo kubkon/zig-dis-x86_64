@@ -7,6 +7,26 @@ const Entry = std.meta.Tuple(&.{ Mnemonic, OpEn, Operand, Operand, Operand, Oper
 
 // TODO move this into a .zon file when Zig is capable of importing .zon files
 const table = &[_]Entry{
+    .{ .adc, .i, .al, .imm8, .none, .none, 1, 0x14, 0x00, 0x00, 0 },
+    .{ .adc, .i, .ax, .imm16, .none, .none, 1, 0x15, 0x00, 0x00, 0 },
+    .{ .adc, .i, .eax, .imm32, .none, .none, 1, 0x15, 0x00, 0x00, 0 },
+    .{ .adc, .i, .rax, .imm32, .none, .none, 1, 0x15, 0x00, 0x00, 0 },
+    .{ .adc, .mi, .rm8, .imm8, .none, .none, 1, 0x80, 0x00, 0x00, 2 },
+    .{ .adc, .mi, .rm16, .imm16, .none, .none, 1, 0x81, 0x00, 0x00, 2 },
+    .{ .adc, .mi, .rm32, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 2 },
+    .{ .adc, .mi, .rm64, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 2 },
+    .{ .adc, .mi, .rm16, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 2 },
+    .{ .adc, .mi, .rm32, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 2 },
+    .{ .adc, .mi, .rm64, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 2 },
+    .{ .adc, .mr, .rm8, .r8, .none, .none, 1, 0x10, 0x00, 0x00, 0 },
+    .{ .adc, .mr, .rm16, .r16, .none, .none, 1, 0x11, 0x00, 0x00, 0 },
+    .{ .adc, .mr, .rm32, .r32, .none, .none, 1, 0x11, 0x00, 0x00, 0 },
+    .{ .adc, .mr, .rm64, .r64, .none, .none, 1, 0x11, 0x00, 0x00, 0 },
+    .{ .adc, .rm, .r8, .rm8, .none, .none, 1, 0x12, 0x00, 0x00, 0 },
+    .{ .adc, .rm, .r16, .rm16, .none, .none, 1, 0x13, 0x00, 0x00, 0 },
+    .{ .adc, .rm, .r32, .rm32, .none, .none, 1, 0x13, 0x00, 0x00, 0 },
+    .{ .adc, .rm, .r64, .rm64, .none, .none, 1, 0x13, 0x00, 0x00, 0 },
+
     .{ .call, .m, .rm64, .none, .none, .none, 1, 0xff, 0x00, 0x00, 2 },
 
     .{ .int3, .np, .none, .none, .none, .none, 1, 0xcc, 0x00, 0x00, 0 },
@@ -261,7 +281,9 @@ pub const Encoding = struct {
         }
 
         if (count == 0) return null;
+        if (count == 1) return candidates[0];
 
+        std.log.warn("candidates {d} > 1", .{count});
         return candidates[0];
     }
 
@@ -306,12 +328,15 @@ pub const Encoding = struct {
         }
 
         switch (encoding.op_en) {
-            .i => try writer.print("{s}", .{switch (encoding.op1) {
-                .imm8 => "ib ",
-                .imm16 => "iw ",
-                .imm32 => "id ",
-                else => unreachable,
-            }}),
+            .i => {
+                const op = if (encoding.op1.isImmediate()) encoding.op1 else encoding.op2;
+                try writer.print("{s}", .{switch (op) {
+                    .imm8 => "ib ",
+                    .imm16 => "iw ",
+                    .imm32 => "id ",
+                    else => unreachable,
+                }});
+            },
             .m, .mi => try writer.print("/{d} ", .{encoding.modRmExt()}),
             .o => try writer.print("{s}", .{switch (encoding.op1) {
                 .r8 => "+rb ",
@@ -334,18 +359,9 @@ pub const Encoding = struct {
 
         try writer.print("{s} ", .{@tagName(encoding.mnemonic)});
 
-        switch (encoding.op_en) {
-            .i, .m, .o => try writer.print("{s} ", .{@tagName(encoding.op1)}),
-
-            .mi,
-            .oi,
-            .fd,
-            .td,
-            .rm,
-            .mr,
-            => try writer.print("{s} {s} ", .{ @tagName(encoding.op1), @tagName(encoding.op2) }),
-
-            .np => {},
+        for (&[_]Operand{ encoding.op1, encoding.op2, encoding.op3, encoding.op4 }) |op| {
+            if (op == .none) break;
+            try writer.print("{s} ", .{@tagName(op)});
         }
 
         try writer.print("{s}", .{@tagName(encoding.op_en)});
@@ -383,71 +399,6 @@ pub const Encoding = struct {
 //     .{ .call,    .m,  16, 0,  0xe8, 0x00, 0x00 },
 //     .{ .call,    .m,  32, 0,  0xe8, 0x00, 0x00 },
 //     .{ .call,    .m,  64, 0,  0xff, 0x02, 0x00 },
-
-//     .{ .lea,     .rm, 16, 32, 0x8d, 0x00, 0x00 },
-//     .{ .lea,     .rm, 16, 64, 0x8d, 0x00, 0x00 },
-//     .{ .lea,     .rm, 32, 32, 0x8d, 0x00, 0x00 },
-//     .{ .lea,     .rm, 32, 64, 0x8d, 0x00, 0x00 },
-//     .{ .lea,     .rm, 64, 32, 0x8d, 0x00, 0x00 },
-//     .{ .lea,     .rm, 64, 64, 0x8d, 0x00, 0x00 },
-
-//     .{ .mov,     .mr, 8,  8,  0x88, 0x00, 0x00 },
-//     .{ .mov,     .mr, 16, 16, 0x89, 0x00, 0x00 },
-//     .{ .mov,     .mr, 32, 32, 0x89, 0x00, 0x00 },
-//     .{ .mov,     .mr, 64, 64, 0x89, 0x00, 0x00 },
-//     .{ .mov,     .rm, 8,  8,  0x8a, 0x00, 0x00 },
-//     .{ .mov,     .rm, 16, 16, 0x8b, 0x00, 0x00 },
-//     .{ .mov,     .rm, 32, 32, 0x8b, 0x00, 0x00 },
-//     .{ .mov,     .rm, 64, 64, 0x8b, 0x00, 0x00 },
-//     .{ .mov,     .mr, 16, 0,  0x8c, 0x00, 0x00 },
-//     .{ .mov,     .mr, 64, 0,  0x8c, 0x00, 0x00 },
-//     .{ .mov,     .rm, 0,  16, 0x8e, 0x00, 0x00 },
-//     .{ .mov,     .rm, 0,  64, 0x8e, 0x00, 0x00 },
-//     .{ .mov,     .fd, 8,  8,  0xa0, 0x00, 0x00 },
-//     .{ .mov,     .fd, 16, 16, 0xa1, 0x00, 0x00 },
-//     .{ .mov,     .fd, 32, 32, 0xa1, 0x00, 0x00 },
-//     .{ .mov,     .fd, 64, 64, 0xa1, 0x00, 0x00 },
-//     .{ .mov,     .td, 8,  8,  0xa2, 0x00, 0x00 },
-//     .{ .mov,     .td, 16, 16, 0xa3, 0x00, 0x00 },
-//     .{ .mov,     .td, 32, 32, 0xa3, 0x00, 0x00 },
-//     .{ .mov,     .td, 64, 64, 0xa3, 0x00, 0x00 },
-//     .{ .mov,     .oi, 8,  8,  0xb0, 0x00, 0x00 },
-//     .{ .mov,     .oi, 16, 16, 0xb8, 0x00, 0x00 },
-//     .{ .mov,     .oi, 32, 32, 0xb8, 0x00, 0x00 },
-//     .{ .mov,     .oi, 64, 64, 0xb8, 0x00, 0x00 },
-//     .{ .mov,     .mi, 8,  8,  0xc6, 0x00, 0x00 },
-//     .{ .mov,     .mi, 16, 16, 0xc7, 0x00, 0x00 },
-//     .{ .mov,     .mi, 32, 32, 0xc7, 0x00, 0x00 },
-//     .{ .mov,     .mi, 64, 32, 0xc7, 0x00, 0x00 },
-
-//     .{ .movsx,   .rm, 16, 8,  0x0f, 0xbe, 0x00 },
-//     .{ .movsx,   .rm, 32, 8,  0x0f, 0xbe, 0x00 },
-//     .{ .movsx,   .rm, 64, 8,  0x0f, 0xbe, 0x00 },
-//     .{ .movsx,   .rm, 32, 16, 0x0f, 0xbf, 0x00 },
-//     .{ .movsx,   .rm, 64, 16, 0x0f, 0xbf, 0x00 },
-
-//     .{ .movsxd,  .rm, 64, 32, 0x63, 0x00, 0x00 },
-
-//     .{ .int3,    .np, 0,  0,  0xcc, 0x00, 0x00 },
-
-//     .{ .nop,     .np, 0,  0,  0x90, 0x00, 0x00 },
-
-//     .{ .pop,     .m,  16, 0,  0x8f, 0x00, 0x00 },
-//     .{ .pop,     .m,  64, 0,  0x8f, 0x00, 0x00 },
-//     .{ .pop,     .o,  16, 0,  0x58, 0x00, 0x00 },
-//     .{ .pop,     .o,  64, 0,  0x58, 0x00, 0x00 },
-
-//     .{ .push,    .m,  16, 0,  0xff, 0x06, 0x00 },
-//     .{ .push,    .m,  64, 0,  0xff, 0x06, 0x00 },
-//     .{ .push,    .o,  16, 0,  0x50, 0x00, 0x00 },
-//     .{ .push,    .o,  64, 0,  0x50, 0x00, 0x00 },
-//     .{ .push,    .i,  8,  0,  0x6a, 0x00, 0x00 },
-//     .{ .push,    .i,  16, 0,  0x68, 0x00, 0x00 },
-//     .{ .push,    .i,  32, 0,  0x68, 0x00, 0x00 },
-
-//     .{ .ret,     .np, 0,  0,  0xc3, 0x00, 0x00 },
-
-//     .{ .syscall, .np, 0,  0,  0x0f, 0x05, 0x00 },
 // } 
 // // zig fmt: on
 // ++ genArithInst(.add, 0, 0) ++ genArithInst(.adc, 0x10, 2) ++ genArithInst(.@"and", 0x20, 4) ++

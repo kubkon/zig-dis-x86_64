@@ -333,6 +333,9 @@ test "lower I encoding" {
     try enc.encode(.{ .mnemonic = .push, .op1 = .{ .imm = 0x10000000 } });
     try expectEqualHexStrings("\x68\x00\x00\x00\x10", enc.code(), "push 0x10000000");
 
+    try enc.encode(.{ .mnemonic = .adc, .op1 = .{ .reg = .rax }, .op2 = .{ .imm = 0x10000000 } });
+    try expectEqualHexStrings("\x48\x15\x00\x00\x00\x10", enc.code(), "adc rax, 0x10000000");
+
     //     try enc.encode(.{ .tag = .add, .enc = .i, .data = Instruction.Data.i(.al, 0x10) });
     //     try expectEqualHexStrings("\x04\x10", enc.code(), "add al, 0x10");
 
@@ -412,6 +415,18 @@ test "lower MI encoding" {
         "mov QWORD PTR [rcx*2 + 0x10000000], 0x10",
     );
 
+    try enc.encode(.{ .mnemonic = .adc, .op1 = .{ .mem = Memory.mem(.byte, .{
+        .base = .rbp,
+        .disp = -0x10,
+    }) }, .op2 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings("\x80\x55\xF0\x10", enc.code(), "adc BYTE PTR [rbp - 0x10], 0x10");
+
+    try enc.encode(.{ .mnemonic = .adc, .op1 = .{ .mem = Memory.rip(.qword, 0) }, .op2 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings("\x48\x83\x15\x00\x00\x00\x00\x10", enc.code(), "adc QWORD PTR [rip], 0x10");
+
+    try enc.encode(.{ .mnemonic = .adc, .op1 = .{ .reg = .rax }, .op2 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings("\x48\x83\xD0\x10", enc.code(), "adc rax, 0x10");
+
     //     try enc.encode(.{ .tag = .add, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.dword, .{
     //         .base = .rdx,
     //         .disp = -8,
@@ -466,18 +481,6 @@ test "lower MI encoding" {
     //         .disp = -0x10,
     //     }), @bitCast(u32, @as(i32, -0x10)), 8) });
     //     try expectEqualHexStrings("\x48\x83\x45\xF0\xF0", enc.code(), "add QWORD PTR [rbp - 0x10], -0x10");
-
-    //     try enc.encode(.{ .tag = .adc, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.byte, .{
-    //         .base = .rbp,
-    //         .disp = -0x10,
-    //     }), 0x10, 8) });
-    //     try expectEqualHexStrings("\x80\x55\xF0\x10", enc.code(), "adc BYTE PTR [rbp - 0x10], 0x10");
-
-    //     try enc.encode(.{ .tag = .adc, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.byte, .{
-    //         .base = .rbp,
-    //         .disp = -0x10,
-    //     }), 0x10, 8) });
-    //     try expectEqualHexStrings("\x80\x55\xF0\x10", enc.code(), "adc BYTE PTR [rbp - 0x10], 0x10");
 }
 
 test "lower RM encoding" {
