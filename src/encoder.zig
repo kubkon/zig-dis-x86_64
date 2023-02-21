@@ -149,13 +149,8 @@ pub const Instruction = struct {
         const opcode = encoding.opcode();
 
         switch (encoding.op_en) {
-            .fd => {
-                try encodeFd(opcode, inst.op1.reg, inst.op2.moffs, encoder);
-            },
-
-            .td => {
-                try encodeFd(opcode, inst.op2.reg, inst.op1.moffs, encoder);
-            },
+            .fd => try encodeFd(opcode, inst.op1.reg, inst.op2.moffs, encoder),
+            .td => try encodeFd(opcode, inst.op2.reg, inst.op1.moffs, encoder),
 
             .mi => {
                 const modrm_ext = encoding.modRmExt();
@@ -210,7 +205,49 @@ pub const Instruction = struct {
                 try encodeImm(inst.op2.imm, encoding.op2, encoder);
             },
 
+            .rm => try encodeRm(opcode, inst.op1, inst.op2, encoder),
+            .mr => try encodeRm(opcode, inst.op2, inst.op1, encoder),
+
             else => return error.Todo,
+        }
+    }
+
+    fn encodeRm(opcode: []const u8, op1: Operand, op2: Operand, encoder: anytype) !void {
+        assert(op1 == .reg);
+        var prefixes = LegacyPrefixes{};
+        if (op1.bitSize() == 16) {
+            prefixes.set16BitOverride();
+        }
+        if (op2.isSegment()) {
+            const r: Register = switch (op2) {
+                .reg => |r| r,
+                .mem => |m| m.base.?,
+                else => unreachable,
+            };
+            prefixes.setSegmentOverride(r);
+        }
+        try encoder.legacyPrefixes(prefixes);
+        switch (op2) {
+            .reg => |r| {
+                try encoder.rex(.{
+                    .w = op1.is64BitMode(),
+                    .r = op1.reg.isExtended(),
+                    .b = r.isExtended(),
+                });
+                try encodeOpcode(opcode, encoder);
+                try encoder.modRm_direct(op1.reg.lowEnc(), r.lowEnc());
+            },
+            .mem => |mem| {
+                try encoder.rex(.{
+                    .w = op1.is64BitMode(),
+                    .r = op1.reg.isExtended(),
+                    .b = if (mem.base) |base| base.isExtended() else false,
+                    .x = if (mem.scale_index) |si| si.index.isExtended() else false,
+                });
+                try encodeOpcode(opcode, encoder);
+                try mem.encode(op1.reg.lowEnc(), encoder);
+            },
+            else => unreachable,
         }
     }
 

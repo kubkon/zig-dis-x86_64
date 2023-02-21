@@ -8,13 +8,13 @@ const Entry = std.meta.Tuple(&.{ Mnemonic, OpEn, Operand, Operand, Operand, Oper
 // TODO move this into a .zon file when Zig is capable of importing .zon files
 const table = &[_]Entry{
     .{ .mov, .mr, .rm8, .r8, .none, .none, 1, 0x88, 0x00, 0x00, 0 },
-    // .{ .mov,     .mr, 16, 16, 0x89, 0x00, 0x00 },
-    // .{ .mov,     .mr, 32, 32, 0x89, 0x00, 0x00 },
-    // .{ .mov,     .mr, 64, 64, 0x89, 0x00, 0x00 },
-    // .{ .mov,     .rm, 8,  8,  0x8a, 0x00, 0x00 },
-    // .{ .mov,     .rm, 16, 16, 0x8b, 0x00, 0x00 },
-    // .{ .mov,     .rm, 32, 32, 0x8b, 0x00, 0x00 },
-    // .{ .mov,     .rm, 64, 64, 0x8b, 0x00, 0x00 },
+    .{ .mov, .mr, .rm16, .r16, .none, .none, 1, 0x89, 0x00, 0x00, 0 },
+    .{ .mov, .mr, .rm32, .r32, .none, .none, 1, 0x89, 0x00, 0x00, 0 },
+    .{ .mov, .mr, .rm64, .r64, .none, .none, 1, 0x89, 0x00, 0x00, 0 },
+    .{ .mov, .rm, .r8, .rm8, .none, .none, 1, 0x8a, 0x00, 0x00, 0 },
+    .{ .mov, .rm, .r16, .rm16, .none, .none, 1, 0x8b, 0x00, 0x00, 0 },
+    .{ .mov, .rm, .r32, .rm32, .none, .none, 1, 0x8b, 0x00, 0x00, 0 },
+    .{ .mov, .rm, .r64, .rm64, .none, .none, 1, 0x8b, 0x00, 0x00, 0 },
     // .{ .mov,     .mr, 16, 0,  0x8c, 0x00, 0x00 },
     // .{ .mov,     .mr, 64, 0,  0x8c, 0x00, 0x00 },
     // .{ .mov,     .rm, 0,  16, 0x8e, 0x00, 0x00 },
@@ -224,6 +224,7 @@ pub const Encoding = struct {
                 .r64 => "+rd io ",
                 else => unreachable,
             }}),
+            .rm, .mr => try writer.writeAll("/r "),
             .fd, .td => {},
             else => {},
         }
@@ -231,7 +232,14 @@ pub const Encoding = struct {
         try writer.print("{s} ", .{@tagName(encoding.mnemonic)});
 
         switch (encoding.op_en) {
-            .mi, .oi, .fd, .td => try writer.print("{s} {s} ", .{ @tagName(encoding.op1), @tagName(encoding.op2) }),
+            .mi,
+            .oi,
+            .fd,
+            .td,
+            .rm,
+            .mr,
+            => try writer.print("{s} {s} ", .{ @tagName(encoding.op1), @tagName(encoding.op2) }),
+
             else => {},
         }
 
