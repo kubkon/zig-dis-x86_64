@@ -9,6 +9,8 @@ const Entry = std.meta.Tuple(&.{ Mnemonic, OpEn, Operand, Operand, Operand, Oper
 const table = &[_]Entry{
     .{ .call, .m, .rm64, .none, .none, .none, 1, 0xff, 0x00, 0x00, 2 },
 
+    .{ .int3, .np, .none, .none, .none, .none, 1, 0xcc, 0x00, 0x00, 0 },
+
     .{ .lea, .rm, .r16, .m, .none, .none, 1, 0x8d, 0x00, 0x00, 0 },
     .{ .lea, .rm, .r32, .m, .none, .none, 1, 0x8d, 0x00, 0x00, 0 },
     .{ .lea, .rm, .r64, .m, .none, .none, 1, 0x8d, 0x00, 0x00, 0 },
@@ -50,9 +52,20 @@ const table = &[_]Entry{
 
     .{ .movsxd, .rm, .r64, .rm32, .none, .none, 1, 0x63, 0x00, 0x00, 0 },
 
-    .{ .int3, .np, .none, .none, .none, .none, 1, 0xcc, 0x00, 0x00, 0 },
-
     .{ .nop, .np, .none, .none, .none, .none, 1, 0x90, 0x00, 0x00, 0 },
+
+    .{ .pop, .m, .rm16, .none, .none, .none, 1, 0x8f, 0x00, 0x00, 0 },
+    .{ .pop, .m, .rm64, .none, .none, .none, 1, 0x8f, 0x00, 0x00, 0 },
+    //     .{ .pop,     .o,  16, 0,  0x58, 0x00, 0x00 },
+    //     .{ .pop,     .o,  64, 0,  0x58, 0x00, 0x00 },
+
+    .{ .push, .m, .rm16, .none, .none, .none, 1, 0xff, 0x0, 0x00, 6 },
+    .{ .push, .m, .rm64, .none, .none, .none, 1, 0xff, 0x0, 0x00, 6 },
+    //     .{ .push,    .o,  16, 0,  0x50, 0x00, 0x00 },
+    //     .{ .push,    .o,  64, 0,  0x50, 0x00, 0x00 },
+    //     .{ .push,    .i,  8,  0,  0x6a, 0x00, 0x00 },
+    //     .{ .push,    .i,  16, 0,  0x68, 0x00, 0x00 },
+    //     .{ .push,    .i,  32, 0,  0x68, 0x00, 0x00 },
 
     .{ .ret, .np, .none, .none, .none, .none, 1, 0xc3, 0x00, 0x00, 0 },
 

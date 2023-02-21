@@ -733,6 +733,24 @@ test "lower M encoding" {
     //         .disp = 0,
     //     })) });
     //     try expectEqualHexStrings("\xE8\x00\x00\x00\x00", enc.code(), "call 0x0");
+
+    try enc.encode(.{ .mnemonic = .push, .op1 = .{ .mem = Memory.mem(.qword, .{
+        .base = .rbp,
+        .disp = 0,
+    }) } });
+    try expectEqualHexStrings("\xFF\x75\x00", enc.code(), "push QWORD PTR [rbp]");
+
+    try enc.encode(.{ .mnemonic = .push, .op1 = .{ .mem = Memory.mem(.word, .{
+        .base = .rbp,
+        .disp = 0,
+    }) } });
+    try expectEqualHexStrings("\x66\xFF\x75\x00", enc.code(), "push QWORD PTR [rbp]");
+
+    try enc.encode(.{ .mnemonic = .pop, .op1 = .{ .mem = Memory.rip(.qword, 0) } });
+    try expectEqualHexStrings("\x8F\x05\x00\x00\x00\x00", enc.code(), "pop QWORD PTR [rip]");
+
+    try enc.encode(.{ .mnemonic = .pop, .op1 = .{ .mem = Memory.rip(.word, 0) } });
+    try expectEqualHexStrings("\x66\x8F\x05\x00\x00\x00\x00", enc.code(), "pop WORD PTR [rbp]");
 }
 
 // test "lower O encoding" {
