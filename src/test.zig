@@ -535,6 +535,40 @@ test "lower RM encoding" {
     }) } });
     try expectEqualHexStrings("\x44\x8A\x44\x0E\xE8", enc.code(), "mov r8b, BYTE PTR [rsi + rcx*1 - 24]");
 
+    try enc.encode(.{ .mnemonic = .movsx, .op1 = .{ .reg = .eax }, .op2 = .{ .reg = .bx } });
+    try expectEqualHexStrings("\x0F\xBF\xC3", enc.code(), "movsx eax, bx");
+
+    try enc.encode(.{ .mnemonic = .movsx, .op1 = .{ .reg = .eax }, .op2 = .{ .reg = .bl } });
+    try expectEqualHexStrings("\x0F\xBE\xC3", enc.code(), "movsx eax, bl");
+
+    try enc.encode(.{ .mnemonic = .movsx, .op1 = .{ .reg = .ax }, .op2 = .{ .reg = .bl } });
+    try expectEqualHexStrings("\x66\x0F\xBE\xC3", enc.code(), "movsx ax, bl");
+
+    try enc.encode(.{ .mnemonic = .movsx, .op1 = .{ .reg = .eax }, .op2 = .{ .mem = Memory.mem(.word, .{
+        .base = .rbp,
+        .disp = 0,
+    }) } });
+    try expectEqualHexStrings("\x0F\xBF\x45\x00", enc.code(), "movsx eax, BYTE PTR [rbp]");
+
+    try enc.encode(.{ .mnemonic = .movsx, .op1 = .{ .reg = .eax }, .op2 = .{ .mem = Memory.mem(.byte, .{
+        .base = null,
+        .scale_index = .{
+            .index = .rax,
+            .scale = 1,
+        },
+        .disp = 0,
+    }) } });
+    try expectEqualHexStrings("\x0F\xBE\x04\x45\x00\x00\x00\x00", enc.code(), "movsx eax, BYTE PTR [rax * 2]");
+
+    try enc.encode(.{ .mnemonic = .movsx, .op1 = .{ .reg = .ax }, .op2 = .{ .mem = Memory.rip(.byte, 0x10) } });
+    try expectEqualHexStrings("\x66\x0F\xBE\x05\x10\x00\x00\x00", enc.code(), "movsx ax, BYTE PTR [rip + 0x10]");
+
+    try enc.encode(.{ .mnemonic = .movsx, .op1 = .{ .reg = .rax }, .op2 = .{ .reg = .bx } });
+    try expectEqualHexStrings("\x48\x0F\xBF\xC3", enc.code(), "movsx rax, bx");
+
+    try enc.encode(.{ .mnemonic = .movsxd, .op1 = .{ .reg = .rax }, .op2 = .{ .reg = .ebx } });
+    try expectEqualHexStrings("\x48\x63\xC3", enc.code(), "movsxd rax, ebx");
+
     //     try enc.encode(.{ .tag = .add, .enc = .rm, .data = Instruction.Data.rm(.r11, RegisterOrMemory.mem(.qword, .{
     //         .base = .ds,
     //         .disp = 0x10000000,
@@ -578,39 +612,6 @@ test "lower RM encoding" {
     //     })) });
     //     try expectEqualHexStrings("\x48\x8D\x74\x0D\x00", enc.code(), "lea rsi, QWORD PTR [rbp + rcx*1 + 0]");
 
-    //     try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.eax, RegisterOrMemory.reg(.bx)) });
-    //     try expectEqualHexStrings("\x0F\xBF\xC3", enc.code(), "movsx eax, bx");
-
-    //     try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.eax, RegisterOrMemory.reg(.bl)) });
-    //     try expectEqualHexStrings("\x0F\xBE\xC3", enc.code(), "movsx eax, bl");
-
-    //     try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.ax, RegisterOrMemory.reg(.bl)) });
-    //     try expectEqualHexStrings("\x66\x0F\xBE\xC3", enc.code(), "movsx ax, bl");
-
-    //     try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.eax, RegisterOrMemory.mem(.word, .{
-    //         .base = .rbp,
-    //         .disp = 0,
-    //     })) });
-    //     try expectEqualHexStrings("\x0F\xBF\x45\x00", enc.code(), "movsx eax, BYTE PTR [rbp]");
-
-    //     try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.eax, RegisterOrMemory.mem(.byte, .{
-    //         .base = null,
-    //         .scale_index = .{
-    //             .index = .rax,
-    //             .scale = 1,
-    //         },
-    //         .disp = 0,
-    //     })) });
-    //     try expectEqualHexStrings("\x0F\xBE\x04\x45\x00\x00\x00\x00", enc.code(), "movsx eax, BYTE PTR [rax * 2]");
-
-    //     try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.ax, RegisterOrMemory.rip(.byte, 0x10)) });
-    //     try expectEqualHexStrings("\x66\x0F\xBE\x05\x10\x00\x00\x00", enc.code(), "movsx ax, BYTE PTR [rip + 0x10]");
-
-    //     try enc.encode(.{ .tag = .movsx, .enc = .rm, .data = Instruction.Data.rm(.rax, RegisterOrMemory.reg(.bx)) });
-    //     try expectEqualHexStrings("\x48\x0F\xBF\xC3", enc.code(), "movsx rax, bx");
-
-    //     try enc.encode(.{ .tag = .movsxd, .enc = .rm, .data = Instruction.Data.rm(.rax, RegisterOrMemory.reg(.ebx)) });
-    //     try expectEqualHexStrings("\x48\x63\xC3", enc.code(), "movsxd rax, ebx");
 }
 
 test "lower MR encoding" {
