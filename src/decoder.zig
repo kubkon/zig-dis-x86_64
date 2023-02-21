@@ -4,13 +4,14 @@ const math = std.math;
 
 const bits = @import("bits.zig");
 const encoder = @import("encoder.zig");
+const encodings = @import("encodings.zig");
 
+const Encoding = encodings.Encoding;
 const Instruction = encoder.Instruction;
 const LegacyPrefixes = encoder.LegacyPrefixes;
 const Memory = bits.Memory;
 const PtrSize = bits.PtrSize;
 const Register = bits.Register;
-const RegisterOrMemory = bits.RegisterOrMemory;
 const Rex = encoder.Rex;
 const ScaleIndex = bits.ScaleIndex;
 
@@ -32,239 +33,60 @@ pub const Disassembler = struct {
     }
 
     pub fn next(self: *Disassembler) Error!?Instruction {
+        // TODO this should be done in a loop
         const prefixes = self.parseLegacyPrefixes() catch |err| switch (err) {
             error.EndOfStream => return null,
             else => |e| return e,
         };
+        _ = prefixes;
         const rex = self.parseRexPrefix() catch |err| switch (err) {
             error.EndOfStream => return null,
             else => |e| return e,
         };
+        _ = rex;
+
+        // TODO we should also parse VEX prefix and other escape codes
+
+        // Parse primary opcode
 
         var stream = std.io.fixedBufferStream(self.code[self.pos..]);
         var creader = std.io.countingReader(stream.reader());
         const reader = creader.reader();
-
-        var opc = try ParsedOpc.parse(reader);
-        // TODO validate inferred bit sizes vs used encoding format / opcode
-        const dst_bit_size = opc.dstBitSize(rex, prefixes);
-        const src_bit_size = opc.srcBitSize(rex, prefixes);
-
-        const data: Instruction.Data = data: {
-            switch (opc.enc) {
-                .np => break :data Instruction.Data.np(),
-
-                .o => {
-                    const reg = Register.gpFromLowEnc(opc.extra, rex.b, dst_bit_size);
-                    break :data Instruction.Data.o(reg);
-                },
-
-                .i => {
-                    const reg = Register.gpFromLowEnc(Register.rax.lowEnc(), false, dst_bit_size);
-                    const imm = try parseImm(opc.enc, src_bit_size.?, reader);
-                    break :data Instruction.Data.i(reg, @intCast(u32, imm));
-                },
-
-                .m => {
-                    if (!opc.is_wip) {
-                        switch (opc.tag) {
-                            .call => break :data Instruction.Data.m(RegisterOrMemory.mem(.qword, .{
-                                .base = null,
-                                .scale_index = null,
-                                .disp = try reader.readInt(i32, .Little),
-                            })),
-                            else => unreachable, // unhandled special relative M encoding
-                        }
-                    }
-                    const modrm = try parseModRmByte(reader);
-                    const sib = try parseSibByte(modrm, reader);
-                    const disp = try parseDisplacement(modrm, sib, reader);
-
-                    assert(opc.is_wip);
-                    assert(opc.opc_byte_count == 1);
-                    opc.tag = switch (opc.bytes[0]) {
-                        0xff => switch (modrm.op1) {
-                            2 => Instruction.Tag.call,
-                            else => unreachable, // TODO
-                        },
-                        else => unreachable, // unhandled M encoding
-                    };
-
-                    if (modrm.isRip()) {
-                        break :data Instruction.Data.m(RegisterOrMemory.rip(PtrSize.fromBitSize(dst_bit_size), disp));
-                    }
-
-                    if (modrm.isDirect()) {
-                        const reg = Register.gpFromLowEnc(modrm.op2, rex.b, dst_bit_size);
-                        break :data Instruction.Data.m(RegisterOrMemory.reg(reg));
-                    }
-
-                    const scale_index: ?ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
-                    const base: ?Register = if (sib) |info|
-                        info.baseReg(modrm, rex, prefixes)
-                    else
-                        Register.gpFromLowEnc(modrm.op2, rex.b, 64);
-                    break :data Instruction.Data.m(RegisterOrMemory.mem(PtrSize.fromBitSize(dst_bit_size), .{
-                        .scale_index = scale_index,
-                        .base = base,
-                        .disp = disp,
-                    }));
-                },
-
-                .fd, .td => {
-                    const imm = try reader.readInt(u64, .Little);
-                    const reg = switch (opc.enc) {
-                        .fd => Register.gpFromLowEnc(Register.rax.lowEnc(), false, dst_bit_size),
-                        .td => Register.gpFromLowEnc(Register.rax.lowEnc(), false, src_bit_size.?),
-                        else => unreachable,
-                    };
-                    const seg: Register = blk: {
-                        if (prefixes.prefix_2e) break :blk .cs;
-                        if (prefixes.prefix_36) break :blk .ss;
-                        if (prefixes.prefix_26) break :blk .es;
-                        if (prefixes.prefix_64) break :blk .fs;
-                        if (prefixes.prefix_65) break :blk .gs;
-                        break :blk .ds;
-                    };
-                    break :data switch (opc.enc) {
-                        .fd => Instruction.Data.fd(reg, seg, imm),
-                        .td => Instruction.Data.td(seg, reg, imm),
-                        else => unreachable,
-                    };
-                },
-
-                .oi => {
-                    if (rex.r or rex.x) return error.InvalidRexForEncoding;
-                    const reg = Register.gpFromLowEnc(opc.extra, rex.b, dst_bit_size);
-                    const imm = try parseImm(opc.enc, src_bit_size.?, reader);
-                    break :data Instruction.Data.oi(reg, imm);
-                },
-
-                .mi => {
-                    const modrm = try parseModRmByte(reader);
-                    const sib = try parseSibByte(modrm, reader);
-                    const disp = try parseDisplacement(modrm, sib, reader);
-
-                    assert(opc.is_wip);
-                    assert(opc.opc_byte_count == 1);
-                    opc.tag = switch (opc.bytes[0]) {
-                        0x80, 0x81, 0x83 => switch (modrm.op1) {
-                            0 => Instruction.Tag.add,
-                            1 => Instruction.Tag.@"or",
-                            2 => Instruction.Tag.adc,
-                            3 => Instruction.Tag.sbb,
-                            4 => Instruction.Tag.@"and",
-                            5 => Instruction.Tag.sub,
-                            6 => Instruction.Tag.xor,
-                            7 => Instruction.Tag.cmp,
-                        },
-                        0xc6, 0xc7 => switch (modrm.op1) {
-                            0 => Instruction.Tag.mov,
-                            else => unreachable, // unsupported MI encoding
-                        },
-                        else => unreachable, // unhandled MI encoding
-                    };
-
-                    const imm = @intCast(u32, try parseImm(opc.enc, src_bit_size.?, reader));
-
-                    if (modrm.isRip()) {
-                        break :data Instruction.Data.mi(
-                            RegisterOrMemory.rip(PtrSize.fromBitSize(dst_bit_size), disp),
-                            imm,
-                            src_bit_size.?,
-                        );
-                    }
-
-                    if (modrm.isDirect()) {
-                        const reg = Register.gpFromLowEnc(modrm.op2, rex.b, dst_bit_size);
-                        break :data Instruction.Data.mi(RegisterOrMemory.reg(reg), imm, src_bit_size.?);
-                    }
-
-                    const scale_index: ?ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
-                    const base: ?Register = if (sib) |info|
-                        info.baseReg(modrm, rex, prefixes)
-                    else
-                        Register.gpFromLowEnc(modrm.op2, rex.b, 64);
-                    break :data Instruction.Data.mi(RegisterOrMemory.mem(PtrSize.fromBitSize(dst_bit_size), .{
-                        .scale_index = scale_index,
-                        .base = base,
-                        .disp = disp,
-                    }), imm, src_bit_size.?);
-                },
-
-                .rm => {
-                    const modrm = try parseModRmByte(reader);
-                    const sib = try parseSibByte(modrm, reader);
-                    const disp = try parseDisplacement(modrm, sib, reader);
-
-                    if (modrm.isRip()) {
-                        const reg1 = Register.gpFromLowEnc(modrm.op1, rex.r, dst_bit_size);
-                        break :data Instruction.Data.rm(
-                            reg1,
-                            RegisterOrMemory.rip(PtrSize.fromBitSize(src_bit_size.?), disp),
-                        );
-                    }
-
-                    if (modrm.isDirect()) {
-                        const reg1 = Register.gpFromLowEnc(modrm.op1, rex.r, dst_bit_size);
-                        const reg2 = Register.gpFromLowEnc(modrm.op2, rex.b, src_bit_size.?);
-                        break :data Instruction.Data.rm(reg1, RegisterOrMemory.reg(reg2));
-                    }
-
-                    const reg = Register.gpFromLowEnc(modrm.op1, rex.r, dst_bit_size);
-                    const scale_index: ?ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
-                    const base: ?Register = if (sib) |info|
-                        info.baseReg(modrm, rex, prefixes)
-                    else
-                        Register.gpFromLowEnc(modrm.op2, rex.b, 64);
-                    break :data Instruction.Data.rm(reg, RegisterOrMemory.mem(PtrSize.fromBitSize(src_bit_size.?), .{
-                        .scale_index = scale_index,
-                        .base = base,
-                        .disp = disp,
-                    }));
-                },
-
-                .mr => {
-                    const modrm = try parseModRmByte(reader);
-                    const sib = try parseSibByte(modrm, reader);
-                    const disp = try parseDisplacement(modrm, sib, reader);
-
-                    if (modrm.isRip()) {
-                        const reg = Register.gpFromLowEnc(modrm.op1, rex.r, src_bit_size.?);
-                        break :data Instruction.Data.mr(
-                            RegisterOrMemory.rip(PtrSize.fromBitSize(dst_bit_size), disp),
-                            reg,
-                        );
-                    }
-
-                    if (modrm.isDirect()) {
-                        const reg1 = Register.gpFromLowEnc(modrm.op2, rex.b, dst_bit_size);
-                        const reg2 = Register.gpFromLowEnc(modrm.op1, rex.r, src_bit_size.?);
-                        break :data Instruction.Data.mr(RegisterOrMemory.reg(reg1), reg2);
-                    }
-
-                    const scale_index: ?ScaleIndex = if (sib) |info| info.scaleIndex(rex) else null;
-                    const base: ?Register = if (sib) |info|
-                        info.baseReg(modrm, rex, prefixes)
-                    else
-                        Register.gpFromLowEnc(modrm.op2, rex.b, 64);
-                    const reg = Register.gpFromLowEnc(modrm.op1, rex.r, src_bit_size.?);
-                    break :data Instruction.Data.mr(RegisterOrMemory.mem(PtrSize.fromBitSize(dst_bit_size), .{
-                        .scale_index = scale_index,
-                        .base = base,
-                        .disp = disp,
-                    }), reg);
-                },
-            }
-        };
+        _ = reader;
 
         self.pos += creader.bytes_read;
 
-        return Instruction{
-            .tag = opc.tag,
-            .enc = opc.enc,
-            .data = data,
-        };
+        return error.Todo;
+    }
+
+    fn parseEncoding(self: *Disassembler) !?Encoding {
+        const o_mask: u8 = 0b1111_1000;
+
+        var opcode: [3]u8 = .{ 0, 0, 0 };
+        var stream = std.io.fixedBufferStream(self.code[self.pos..]);
+        const reader = stream.reader();
+
+        comptime var opc_count = 0;
+        inline while (opc_count < 3) : (opc_count += 1) {
+            const byte = try reader.readByte();
+            if (byte == 0x0f) {
+                // Multi-byte opcode
+                opcode[opc_count] = byte;
+            } else if (opc_count > 1) {
+                // Multi-byte opcode
+                return error.Todo;
+            } else {
+                // Single-byte opcode
+                if (Encoding.findByOpcode(opcode)) |enc| {
+                    return enc;
+                } else {
+                    // Try O* encoding
+                    opcode[0] = opcode[0] & o_mask;
+                    const enc = Encoding.findByOpcode(opcode) orelse return error.InvalidEncoding;
+                    return enc;
+                }
+            }
+        }
     }
 
     fn parseImm(enc: Instruction.Enc, bit_size: u64, reader: anytype) !u64 {

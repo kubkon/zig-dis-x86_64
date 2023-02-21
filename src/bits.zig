@@ -186,6 +186,16 @@ pub const PtrSize = enum(u2) {
     }
 };
 
+pub const Moffs = struct {
+    seg: Register,
+    offset: u64,
+
+    pub fn moffs(seg: Register, offset: u64) Moffs {
+        assert(seg.isSegment());
+        return .{ .seg = seg, .offset = offset };
+    }
+};
+
 pub const Memory = struct {
     base: ?Register,
     rip: bool = false,
@@ -193,12 +203,26 @@ pub const Memory = struct {
     ptr_size: PtrSize,
     scale_index: ?ScaleIndex = null,
 
-    pub fn hasBase(self: Memory) bool {
-        return self.base != null;
+    pub fn mem(ptr_size: PtrSize, args: struct {
+        disp: i32,
+        base: ?Register = null,
+        scale_index: ?ScaleIndex = null,
+    }) Memory {
+        return .{
+            .base = args.base,
+            .disp = args.disp,
+            .ptr_size = ptr_size,
+            .scale_index = args.scale_index,
+        };
     }
 
-    pub fn hasScaleIndex(self: Memory) bool {
-        return self.scale_index != null;
+    pub fn rip(ptr_size: PtrSize, disp: i32) Memory {
+        return .{
+            .base = null,
+            .rip = true,
+            .disp = disp,
+            .ptr_size = ptr_size,
+        };
     }
 
     pub fn isSegment(self: Memory) bool {
@@ -295,7 +319,7 @@ pub const Memory = struct {
                         } else {
                             try encoder.sib_base(dst);
                         }
-                    } else if (immOpBitSize(@bitCast(u32, self.disp)) == 8) {
+                    } else if (dispBitSize(@bitCast(u32, self.disp)) == 8) {
                         try encoder.modRm_SIBDisp8(src);
                         if (self.scale_index) |si| {
                             try encoder.sib_scaleIndexBaseDisp8(si.scale, si.index.lowEnc(), dst);
@@ -315,7 +339,7 @@ pub const Memory = struct {
                 } else {
                     if (self.disp == 0 and dst != 5) {
                         try encoder.modRm_indirectDisp0(src, dst);
-                    } else if (immOpBitSize(@bitCast(u32, self.disp)) == 8) {
+                    } else if (dispBitSize(@bitCast(u32, self.disp)) == 8) {
                         try encoder.modRm_indirectDisp8(src, dst);
                         try encoder.disp8(@truncate(i8, self.disp));
                     } else {
@@ -340,67 +364,7 @@ pub const Memory = struct {
     }
 };
 
-pub const RegisterOrMemory = union(enum) {
-    reg: Register,
-    mem: Memory,
-
-    pub fn reg(register: Register) RegisterOrMemory {
-        return .{ .reg = register };
-    }
-
-    pub fn mem(ptr_size: PtrSize, args: struct {
-        disp: i32,
-        base: ?Register = null,
-        scale_index: ?ScaleIndex = null,
-    }) RegisterOrMemory {
-        return .{ .mem = .{
-            .base = args.base,
-            .disp = args.disp,
-            .ptr_size = ptr_size,
-            .scale_index = args.scale_index,
-        } };
-    }
-
-    pub fn rip(ptr_size: PtrSize, disp: i32) RegisterOrMemory {
-        return .{ .mem = .{
-            .base = null,
-            .rip = true,
-            .disp = disp,
-            .ptr_size = ptr_size,
-        } };
-    }
-
-    pub fn fmtPrint(self: RegisterOrMemory, writer: anytype) !void {
-        switch (self) {
-            .reg => |r| try r.fmtPrint(writer),
-            .mem => |m| try m.fmtPrint(writer),
-        }
-    }
-
-    pub fn bitSize(self: RegisterOrMemory) u64 {
-        return switch (self) {
-            .reg => |r| r.bitSize(),
-            .mem => |m| m.bitSize(),
-        };
-    }
-
-    pub fn isSegment(self: RegisterOrMemory) bool {
-        return switch (self) {
-            .reg => |r| r.isSegment(),
-            .mem => |m| m.isSegment(),
-        };
-    }
-
-    pub fn isRegister(self: RegisterOrMemory) bool {
-        return self == .reg;
-    }
-
-    pub fn isMemory(self: RegisterOrMemory) bool {
-        return self == .mem;
-    }
-};
-
-fn immOpBitSize(u_imm: u32) u6 {
+fn dispBitSize(u_imm: u32) u6 {
     const imm = @bitCast(i32, u_imm);
     if (math.minInt(i8) <= imm and imm <= math.maxInt(i8)) {
         return 8;

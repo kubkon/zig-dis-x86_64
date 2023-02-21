@@ -3,611 +3,248 @@ const assert = std.debug.assert;
 const math = std.math;
 
 const bits = @import("bits.zig");
+const encodings = @import("encodings.zig");
 const sign = bits.sign;
-const Entry = @import("encodings.zig").Entry;
+const Encoding = encodings.Encoding;
+const OperandKind = encodings.Operand;
 const Memory = bits.Memory;
+const Moffs = bits.Moffs;
+pub const Mnemonic = encodings.Mnemonic;
 const PtrSize = bits.PtrSize;
 const Register = bits.Register;
-const RegisterOrMemory = bits.RegisterOrMemory;
 
 pub const Instruction = struct {
-    tag: Tag,
-    enc: Enc,
-    data: Data,
+    op1: Operand = .none,
+    op2: Operand = .none,
+    op3: Operand = .none,
+    op4: Operand = .none,
+    encoding: Encoding,
 
-    pub const Tag = enum {
-        adc,
-        add,
-        @"and",
-        cmp,
-        @"or",
-        sbb,
-        sub,
-        xor,
+    pub const Operand = union(enum) {
+        none,
+        reg: Register,
+        mem: Memory,
+        moffs: Moffs,
+        imm: u64,
 
-        lea,
+        fn kind(op: Operand) OperandKind {
+            switch (op) {
+                .none => return .none,
 
-        mov,
-        movsx,
-        movsxd,
+                .reg => |reg| {
+                    if (reg.isSegment()) return .sreg;
 
-        push,
-        pop,
-
-        call,
-        int3,
-        nop,
-        ret,
-        syscall,
-
-        const opcodes = @import("encodings.zig").table;
-
-        const Args = struct {
-            dst_bit_size: u64 = 0,
-            src_bit_size: u64 = 0,
-            dst_low_enc: u3 = 0,
-        };
-
-        fn getEntry(tag: Tag, enc: Enc, args: Args) !Entry {
-            inline for (opcodes) |entry| {
-                if (entry[0] == tag and entry[1] == enc) {
-                    const dst_bit_size_match = entry[2] == 0 or entry[2] == args.dst_bit_size;
-                    const src_bit_size_match = entry[3] == 0 or entry[3] == args.src_bit_size;
-                    if (dst_bit_size_match and src_bit_size_match) return entry;
-                }
-            }
-            std.log.err("NotImplemented: {s}, {s}, {d}, {d}", .{
-                @tagName(tag),
-                @tagName(enc),
-                args.dst_bit_size,
-                args.src_bit_size,
-            });
-            return error.NotImplemented;
-        }
-
-        fn encode(entry: Entry, args: Args, encoder: anytype) !void {
-            switch (entry[1]) {
-                .o, .oi => {
-                    assert(entry[4] != 0x0f);
-                    return encoder.opcode_withReg(entry[4], args.dst_low_enc);
-                },
-                else => {
-                    if (entry[4] == 0x0f) {
-                        // Escape byte
-                        return encoder.opcode_2byte(entry[4], entry[5]);
+                    const bit_size = reg.bitSize();
+                    if (reg.to64() == .rax) {
+                        return switch (bit_size) {
+                            8 => .al,
+                            16 => .ax,
+                            32 => .eax,
+                            64 => .rax,
+                            else => unreachable,
+                        };
                     } else {
-                        return encoder.opcode_1byte(entry[4]);
+                        return switch (bit_size) {
+                            8 => .r8,
+                            16 => .r16,
+                            32 => .r32,
+                            64 => .r64,
+                            else => unreachable,
+                        };
                     }
+                },
+
+                .mem => |mem| {
+                    const bit_size = mem.bitSize();
+                    return switch (bit_size) {
+                        8 => .rm8,
+                        16 => .rm16,
+                        32 => .rm32,
+                        64 => .rm64,
+                        else => unreachable,
+                    };
+                },
+
+                .moffs => return .moffs,
+
+                .imm => |imm| {
+                    if (math.cast(u8, imm)) |_| return .imm8;
+                    if (math.cast(u16, imm)) |_| return .imm16;
+                    if (math.cast(u32, imm)) |_| return .imm32;
+                    return .imm64;
                 },
             }
         }
 
-        fn getModRmExt(entry: Entry) ?u8 {
-            switch (entry[1]) {
-                .m, .mi => return if (entry[4] == 0x0f) entry[6] else entry[5],
-                else => return null,
+        /// Returns the bitsize of the operand.
+        /// Asserts the operand is either register or memory.
+        fn bitSize(op: Operand) u64 {
+            return switch (op) {
+                .none => unreachable,
+                .reg => |reg| reg.bitSize(),
+                .mem => |mem| mem.bitSize(),
+                .moffs => unreachable,
+                .imm => unreachable,
+            };
+        }
+
+        /// Returns true if the operand is a segment register.
+        /// Asserts the operand is either register or memory.
+        fn isSegment(op: Operand) bool {
+            return switch (op) {
+                .none => unreachable,
+                .reg => |reg| reg.isSegment(),
+                .mem => |mem| mem.isSegment(),
+                .moffs => true,
+                .imm => unreachable,
+            };
+        }
+
+        /// Returns true if the operand requires 64bit mode.
+        /// Asserts the operand is either register or memory.
+        fn is64BitMode(op: Operand) bool {
+            switch (op) {
+                .none => unreachable,
+                .reg => |reg| {
+                    if (reg.bitSize() > 64) return false;
+                    if (reg.bitSize() == 64) return true;
+                    return switch (reg) {
+                        .ah, .ch, .dh, .bh => true,
+                        else => false,
+                    };
+                },
+                .mem => |mem| return mem.bitSize() == 64,
+                .moffs => unreachable,
+                .imm => unreachable,
             }
         }
     };
 
-    pub const Enc = enum {
-        np,
-        o,
-        i,
-        m,
-        fd,
-        td,
-        oi,
-        mi,
-        mr,
-        rm,
-    };
+    pub fn new(args: struct {
+        mnemonic: Mnemonic,
+        op1: Operand = .none,
+        op2: Operand = .none,
+        op3: Operand = .none,
+        op4: Operand = .none,
+    }) !Instruction {
+        const encoding = Encoding.findByMnemonic(args.mnemonic, .{
+            .op1 = args.op1.kind(),
+            .op2 = args.op2.kind(),
+            .op3 = args.op3.kind(),
+            .op4 = args.op4.kind(),
+        }) orelse return error.InvalidInstruction;
+        std.log.err("{}", .{encoding});
+        return .{
+            .op1 = args.op1,
+            .op2 = args.op2,
+            .op3 = args.op3,
+            .op4 = args.op4,
+            .encoding = encoding,
+        };
+    }
 
-    pub const Data = union {
-        np: void,
-        o: O,
-        i: Oi,
-        m: M,
-        fd: Fd,
-        oi: Oi,
-        mi: Mi,
-        mr: Mr,
-        rm: Rm,
-
-        pub fn np() Data {
-            return .{ .np = {} };
-        }
-
-        pub fn o(reg: Register) Data {
-            return .{ .o = .{ .reg = reg } };
-        }
-
-        /// Destination register has to be an alias of `.rax`.
-        pub fn i(reg: Register, imm: u32) Data {
-            assert(reg.to64() == .rax);
-            return Data.oi(reg, imm);
-        }
-
-        pub fn m(reg_or_mem: RegisterOrMemory) Data {
-            return .{ .m = .{ .reg_or_mem = reg_or_mem } };
-        }
-
-        /// Destination register has to be a valid segment register.
-        /// Source register has to be an alias of `.rax`.
-        pub fn td(seg: Register, reg: Register, imm: u64) Data {
-            return Data.fd(reg, seg, imm);
-        }
-
-        /// Destination register has to be an alias of `.rax`.
-        /// Source register has to be a valid segment register.
-        pub fn fd(reg: Register, seg: Register, imm: u64) Data {
-            assert(reg.to64() == .rax);
-            assert(seg.isSegment());
-            return .{ .fd = .{ .reg = reg, .seg = seg, .imm = imm } };
-        }
-
-        pub fn oi(reg: Register, imm: u64) Data {
-            return .{ .oi = .{ .reg = reg, .imm = imm } };
-        }
-
-        pub fn mi(reg_or_mem: RegisterOrMemory, imm: u32, imm_bit_size: u64) Data {
-            return .{ .mi = .{ .reg_or_mem = reg_or_mem, .imm = imm, .imm_bit_size = imm_bit_size } };
-        }
-
-        pub fn rm(reg: Register, reg_or_mem: RegisterOrMemory) Data {
-            return .{ .rm = .{ .reg = reg, .reg_or_mem = reg_or_mem } };
-        }
-
-        pub fn mr(reg_or_mem: RegisterOrMemory, reg: Register) Data {
-            return .{ .mr = .{ .reg_or_mem = reg_or_mem, .reg = reg } };
-        }
-    };
-
-    pub const O = struct {
-        reg: Register,
-    };
-
-    pub const M = struct {
-        reg_or_mem: RegisterOrMemory,
-    };
-
-    pub const Fd = struct {
-        /// Destination .rax aliased to bit size.
-        reg: Register,
-        /// Source segment register.
-        seg: Register,
-        imm: u64,
-    };
-
-    pub const Oi = struct {
-        reg: Register,
-        imm: u64,
-    };
-
-    pub const Mi = struct {
-        reg_or_mem: RegisterOrMemory,
-        imm: u32,
-        imm_bit_size: u64,
-    };
-
-    pub const Mr = struct {
-        reg_or_mem: RegisterOrMemory,
-        reg: Register,
-    };
-
-    pub const Rm = struct {
-        reg: Register,
-        reg_or_mem: RegisterOrMemory,
-    };
-
-    pub fn encode(self: Instruction, writer: anytype) !void {
+    pub fn encode(inst: Instruction, writer: anytype) !void {
         const encoder = Encoder(@TypeOf(writer)){ .writer = writer };
-        switch (self.enc) {
-            .np => {
-                const entry = try self.tag.getEntry(.np, .{});
-                try Tag.encode(entry, .{}, encoder);
+        const encoding = inst.encoding;
+        const opcode = encoding.opcode();
+
+        switch (encoding.op_en) {
+            .fd => {
+                try encodeFd(opcode, inst.op1.reg, inst.op2.moffs, encoder);
             },
 
-            .o => {
-                const reg = self.data.o.reg;
-                const entry = try self.tag.getEntry(.o, .{
-                    .dst_bit_size = reg.bitSize(),
-                    .dst_low_enc = reg.lowEnc(),
-                });
-                if (reg.bitSize() == 16) {
-                    try encoder.prefix16BitMode();
-                }
-                try encoder.rex(.{
-                    .w = false,
-                    .b = reg.isExtended(),
-                });
-                try Tag.encode(entry, .{
-                    .dst_bit_size = reg.bitSize(),
-                    .dst_low_enc = reg.lowEnc(),
-                }, encoder);
-            },
-
-            .i => {
-                const oi = self.data.oi;
-                const reg = oi.reg;
-                const imm = oi.imm;
-                const dst_bit_size = reg.bitSize();
-                const src_bit_size = if (dst_bit_size == 64) 32 else dst_bit_size;
-                const entry = try self.tag.getEntry(.i, .{
-                    .dst_bit_size = dst_bit_size,
-                    .src_bit_size = src_bit_size,
-                });
-
-                assert(reg.to64() == .rax);
-
-                if (dst_bit_size == 16) {
-                    try encoder.prefix16BitMode();
-                }
-                try encoder.rex(.{
-                    .w = setRexWRegister(reg),
-                    .b = reg.isExtended(),
-                });
-                try Tag.encode(entry, .{
-                    .dst_bit_size = dst_bit_size,
-                    .src_bit_size = src_bit_size,
-                }, encoder);
-                try encodeImm(imm, self.enc, src_bit_size, encoder);
-            },
-
-            .oi => {
-                const oi = self.data.oi;
-                const reg = oi.reg;
-                const imm = oi.imm;
-                const entry = try self.tag.getEntry(self.enc, .{
-                    .dst_bit_size = reg.bitSize(),
-                    .src_bit_size = reg.bitSize(),
-                    .dst_low_enc = reg.lowEnc(),
-                });
-
-                if (reg.bitSize() == 16) {
-                    try encoder.prefix16BitMode();
-                }
-                try encoder.rex(.{
-                    .w = setRexWRegister(reg),
-                    .b = reg.isExtended(),
-                });
-                try Tag.encode(entry, .{
-                    .dst_bit_size = reg.bitSize(),
-                    .src_bit_size = reg.bitSize(),
-                    .dst_low_enc = reg.lowEnc(),
-                }, encoder);
-                try encodeImm(imm, self.enc, reg.bitSize(), encoder);
-            },
-
-            .m => {
-                const reg_or_mem = self.data.m.reg_or_mem;
-
-                if (reg_or_mem.isMemory()) {
-                    const mem = reg_or_mem.mem;
-                    if (!mem.hasBase() and !mem.hasScaleIndex() and !mem.rip) {
-                        switch (self.tag) {
-                            .call => {
-                                // Special M encoding where we use only the displacement
-                                try encoder.opcode_1byte(0xe8);
-                                try encoder.disp32(reg_or_mem.mem.disp);
-                                return;
-                            },
-                            else => return error.InvalidEncoding,
-                        }
-                    }
-                }
-
-                const entry = try self.tag.getEntry(self.enc, .{
-                    .dst_bit_size = reg_or_mem.bitSize(),
-                    .src_bit_size = reg_or_mem.bitSize(),
-                });
-                const modrm_ext = @intCast(u3, Tag.getModRmExt(entry).?);
-                var prefixes = LegacyPrefixes{};
-                if (reg_or_mem.bitSize() == 16) {
-                    prefixes.set16BitOverride();
-                }
-                if (reg_or_mem.isSegment()) {
-                    const reg: Register = switch (reg_or_mem) {
-                        .reg => |r| r,
-                        .mem => |m| m.base.?,
-                    };
-                    prefixes.setSegmentOverride(reg);
-                }
-                try encoder.legacyPrefixes(prefixes);
-                switch (reg_or_mem) {
-                    .reg => |reg| {
-                        try encoder.rex(.{
-                            .w = false,
-                            .b = reg.isExtended(),
-                        });
-                        try Tag.encode(entry, .{
-                            .dst_bit_size = reg_or_mem.bitSize(),
-                            .src_bit_size = reg_or_mem.bitSize(),
-                        }, encoder);
-                        try encoder.modRm_direct(modrm_ext, reg.lowEnc());
-                    },
-                    .mem => |mem| {
-                        try encoder.rex(.{
-                            .w = false,
-                            .b = if (mem.base) |base| base.isExtended() else false,
-                            .x = if (mem.scale_index) |si| si.index.isExtended() else false,
-                        });
-                        try Tag.encode(entry, .{
-                            .dst_bit_size = reg_or_mem.bitSize(),
-                            .src_bit_size = reg_or_mem.bitSize(),
-                        }, encoder);
-                        try mem.encode(modrm_ext, encoder);
-                    },
-                }
-            },
-
-            .fd, .td => {
-                const fd = self.data.fd;
-                const reg = fd.reg;
-                const seg = fd.seg;
-                const imm = fd.imm;
-                assert(reg.to64() == .rax);
-                assert(seg.isSegment());
-                const entry = try self.tag.getEntry(self.enc, .{
-                    .dst_bit_size = reg.bitSize(),
-                    .src_bit_size = reg.bitSize(),
-                });
-
-                var prefixes = LegacyPrefixes{};
-                if (reg.bitSize() == 16) {
-                    prefixes.set16BitOverride();
-                }
-                prefixes.setSegmentOverride(seg);
-                try encoder.legacyPrefixes(prefixes);
-                try encoder.rex(.{
-                    .w = setRexWRegister(reg),
-                });
-                try Tag.encode(entry, .{
-                    .dst_bit_size = reg.bitSize(),
-                    .src_bit_size = reg.bitSize(),
-                }, encoder);
-                try encoder.imm64(imm);
-            },
-
-            .rm => {
-                const rm = self.data.rm;
-                const dst_reg = rm.reg;
-                const src_reg_or_mem = rm.reg_or_mem;
-                try encodeRmMr(self.tag, .rm, dst_reg, src_reg_or_mem, encoder);
-            },
-
-            .mr => {
-                const mr = self.data.mr;
-                const dst_reg_or_mem = mr.reg_or_mem;
-                const src_reg = mr.reg;
-                try encodeRmMr(self.tag, .mr, src_reg, dst_reg_or_mem, encoder);
+            .td => {
+                try encodeFd(opcode, inst.op2.reg, inst.op1.moffs, encoder);
             },
 
             .mi => {
-                const mi = self.data.mi;
-                const reg_or_mem = mi.reg_or_mem;
-                const entry = try self.tag.getEntry(self.enc, .{
-                    .dst_bit_size = reg_or_mem.bitSize(),
-                    .src_bit_size = mi.imm_bit_size,
-                });
-                const modrm_ext = @intCast(u3, Tag.getModRmExt(entry).?);
+                const modrm_ext = encoding.modRmExt();
+
                 var prefixes = LegacyPrefixes{};
-                if (reg_or_mem.bitSize() == 16) {
+                if (inst.op1.bitSize() == 16) {
                     prefixes.set16BitOverride();
                 }
-                if (reg_or_mem.isSegment()) {
-                    const reg: Register = switch (reg_or_mem) {
-                        .reg => |r| r,
-                        .mem => |m| m.base.?,
+                if (inst.op1.isSegment()) {
+                    const reg: Register = switch (inst.op1) {
+                        .reg => |reg| reg,
+                        .mem => |mem| mem.base.?,
+                        else => unreachable,
                     };
                     prefixes.setSegmentOverride(reg);
                 }
                 try encoder.legacyPrefixes(prefixes);
-                switch (mi.reg_or_mem) {
+
+                switch (inst.op1) {
                     .reg => |dst_reg| {
                         try encoder.rex(.{
-                            .w = setRexWRegister(dst_reg),
+                            .w = inst.op1.is64BitMode(),
                             .b = dst_reg.isExtended(),
                         });
-                        try Tag.encode(entry, .{
-                            .dst_bit_size = reg_or_mem.bitSize(),
-                            .src_bit_size = mi.imm_bit_size,
-                        }, encoder);
+                        try encodeOpcode(opcode, encoder);
                         try encoder.modRm_direct(modrm_ext, dst_reg.lowEnc());
                     },
                     .mem => |dst_mem| {
                         try encoder.rex(.{
-                            .w = dst_mem.ptr_size == .qword,
+                            .w = inst.op1.is64BitMode(),
                             .b = if (dst_mem.base) |base| base.isExtended() else false,
                             .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
                         });
-                        try Tag.encode(entry, .{
-                            .dst_bit_size = reg_or_mem.bitSize(),
-                            .src_bit_size = mi.imm_bit_size,
-                        }, encoder);
+                        try encodeOpcode(opcode, encoder);
                         try dst_mem.encode(modrm_ext, encoder);
-                    },
-                }
-                try encodeImm(mi.imm, self.enc, mi.imm_bit_size, encoder);
-            },
-        }
-    }
-
-    /// Encode RM or MR depending on the encoding.
-    /// For RM, `reg` is the destination operand, while `reg_or_mem` is the source.
-    /// For MR is the opposite.
-    fn encodeRmMr(tag: Tag, enc: Enc, reg: Register, reg_or_mem: RegisterOrMemory, encoder: anytype) !void {
-        const flipped = switch (enc) {
-            .rm => false,
-            .mr => true,
-            else => unreachable,
-        };
-        const dst_bit_size = if (flipped) reg_or_mem.bitSize() else reg.bitSize();
-        const src_bit_size = if (flipped) reg.bitSize() else reg_or_mem.bitSize();
-        const entry = try tag.getEntry(enc, .{
-            .dst_bit_size = dst_bit_size,
-            .src_bit_size = src_bit_size,
-        });
-        var prefixes = LegacyPrefixes{};
-        if (dst_bit_size == 16) {
-            prefixes.set16BitOverride();
-        }
-        if (reg_or_mem.isSegment()) {
-            const r: Register = switch (reg_or_mem) {
-                .reg => |r| r,
-                .mem => |m| m.base.?,
-            };
-            prefixes.setSegmentOverride(r);
-        }
-        try encoder.legacyPrefixes(prefixes);
-        switch (reg_or_mem) {
-            .reg => |r| {
-                try encoder.rex(.{
-                    .w = setRexWRegister(reg) or setRexWRegister(r),
-                    .r = reg.isExtended(),
-                    .b = r.isExtended(),
-                });
-                try Tag.encode(entry, .{
-                    .dst_bit_size = dst_bit_size,
-                    .src_bit_size = src_bit_size,
-                }, encoder);
-                try encoder.modRm_direct(reg.lowEnc(), r.lowEnc());
-            },
-            .mem => |mem| {
-                try encoder.rex(.{
-                    .w = (flipped and mem.ptr_size == .qword) or setRexWRegister(reg),
-                    .r = reg.isExtended(),
-                    .b = if (mem.base) |base| base.isExtended() else false,
-                    .x = if (mem.scale_index) |si| si.index.isExtended() else false,
-                });
-                try Tag.encode(entry, .{
-                    .dst_bit_size = dst_bit_size,
-                    .src_bit_size = src_bit_size,
-                }, encoder);
-                try mem.encode(reg.lowEnc(), encoder);
-            },
-        }
-    }
-
-    pub fn fmtPrint(self: Instruction, writer: anytype) !void {
-        switch (self.tag) {
-            .mov => switch (self.enc) {
-                .fd, .td => try writer.writeAll("movabs"),
-                .oi => if (self.data.oi.reg.bitSize() == 64)
-                    try writer.writeAll("movabs")
-                else
-                    try writer.writeAll("mov"),
-                else => try writer.writeAll("mov"),
-            },
-            else => try writer.print("{s}", .{@tagName(self.tag)}),
-        }
-        try writer.writeByte(' ');
-
-        switch (self.enc) {
-            .np => {},
-
-            .o => {
-                const reg = self.data.o.reg;
-                try reg.fmtPrint(writer);
-            },
-
-            .m => {
-                const reg_or_mem = self.data.m.reg_or_mem;
-                try reg_or_mem.fmtPrint(writer);
-            },
-
-            .fd, .td => {
-                const fd = self.data.fd;
-                const reg = fd.reg;
-                const seg = fd.seg;
-                const imm = fd.imm;
-                assert(reg.to64() == .rax);
-                assert(seg.isSegment());
-
-                switch (self.enc) {
-                    .fd => {
-                        try reg.fmtPrint(writer);
-                        try writer.writeAll(", ");
-                        try seg.fmtPrint(writer);
-                        try writer.print(":0x{x}", .{imm});
-                    },
-                    .td => {
-                        try seg.fmtPrint(writer);
-                        try writer.print(":0x{x}", .{imm});
-                        try writer.writeAll(", ");
-                        try reg.fmtPrint(writer);
                     },
                     else => unreachable,
                 }
+                try encodeImm(inst.op2.imm, encoding.op2, encoder);
             },
 
-            .i, .oi => {
-                const oi = self.data.oi;
-                try oi.reg.fmtPrint(writer);
-                try writer.writeAll(", ");
-
-                if (oi.reg.bitSize() == 64) {
-                    try writer.print("0x{x}", .{oi.imm});
-                } else {
-                    const imm_signed: i64 = @bitCast(i64, oi.imm);
-                    const imm_abs: u64 = @intCast(u64, try math.absInt(imm_signed));
-                    if (sign(imm_signed) < 0) {
-                        try writer.writeByte('-');
-                    }
-                    try writer.print("0x{x}", .{imm_abs});
+            .oi => {
+                assert(opcode.len == 1);
+                if (inst.op1.bitSize() == 16) {
+                    try encoder.prefix16BitMode();
                 }
+                try encoder.rex(.{
+                    .w = inst.op1.is64BitMode(),
+                    .b = inst.op1.reg.isExtended(),
+                });
+                try encoder.opcode_withReg(opcode[0], inst.op1.reg.lowEnc());
+                try encodeImm(inst.op2.imm, encoding.op2, encoder);
             },
 
-            .mi => {
-                const mi = self.data.mi;
-                try mi.reg_or_mem.fmtPrint(writer);
-                try writer.writeAll(", ");
-                const imm_signed: i32 = @bitCast(i32, mi.imm);
-                const imm_abs: u32 = @intCast(u32, try math.absInt(imm_signed));
-                if (sign(imm_signed) < 0) {
-                    try writer.writeByte('-');
-                }
-                try writer.print("0x{x}", .{imm_abs});
-            },
+            else => return error.Todo,
+        }
+    }
 
-            .rm => {
-                const rm = self.data.rm;
-                try rm.reg.fmtPrint(writer);
-                try writer.writeAll(", ");
-                try rm.reg_or_mem.fmtPrint(writer);
-            },
+    fn encodeFd(opcode: []const u8, reg: Register, moffs: Moffs, encoder: anytype) !void {
+        assert(reg.to64() == .rax);
+        var prefixes = LegacyPrefixes{};
+        if (reg.bitSize() == 16) {
+            prefixes.set16BitOverride();
+        }
+        prefixes.setSegmentOverride(moffs.seg);
+        try encoder.legacyPrefixes(prefixes);
+        try encoder.rex(.{
+            .w = reg.bitSize() == 64,
+        });
+        try encodeOpcode(opcode, encoder);
+        try encoder.imm64(moffs.offset);
+    }
 
-            .mr => {
-                const mr = self.data.mr;
-                try mr.reg_or_mem.fmtPrint(writer);
-                try writer.writeAll(", ");
-                try mr.reg.fmtPrint(writer);
-            },
+    fn encodeOpcode(opcode: []const u8, encoder: anytype) !void {
+        for (opcode) |byte| {
+            try encoder.opcode_1byte(byte);
+        }
+    }
+
+    fn encodeImm(imm: u64, kind: OperandKind, encoder: anytype) !void {
+        switch (kind) {
+            .imm8 => try encoder.imm8(@bitCast(i8, @truncate(u8, imm))),
+            .imm16 => try encoder.imm16(@bitCast(i16, @truncate(u16, imm))),
+            .imm32 => try encoder.imm32(@bitCast(i32, @truncate(u32, imm))),
+            .imm64 => try encoder.imm64(imm),
+            else => unreachable,
         }
     }
 };
-
-fn setRexWRegister(reg: Register) bool {
-    if (reg.bitSize() > 64) return false;
-    if (reg.bitSize() == 64) return true;
-    return switch (reg) {
-        .ah, .ch, .dh, .bh => true,
-        else => false,
-    };
-}
-
-fn encodeImm(imm: u64, enc: Instruction.Enc, bit_size: u64, encoder: anytype) !void {
-    switch (bit_size) {
-        8 => try encoder.imm8(@bitCast(i8, @truncate(u8, imm))),
-        16 => try encoder.imm16(@bitCast(i16, @truncate(u16, imm))),
-        32 => try encoder.imm32(@bitCast(i32, @truncate(u32, imm))),
-        64 => switch (enc) {
-            .oi, .fd, .td => try encoder.imm64(imm),
-            else => try encoder.imm32(@bitCast(i32, @truncate(u32, imm))),
-        },
-        else => unreachable,
-    }
-}
 
 pub const LegacyPrefixes = packed struct {
     /// LOCK
