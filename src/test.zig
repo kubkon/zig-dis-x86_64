@@ -690,50 +690,50 @@ test "lower MR encoding" {
 
 }
 
-// test "lower M encoding" {
-//     var enc = TestEncode{};
+test "lower M encoding" {
+    var enc = TestEncode{};
 
-//     try enc.encode(.{ .tag = .call, .enc = .m, .data = Instruction.Data.m(RegisterOrMemory.reg(.r12)) });
-//     try expectEqualHexStrings("\x41\xFF\xD4", enc.code(), "call r12");
+    try enc.encode(.{ .mnemonic = .call, .op1 = .{ .reg = .r12 } });
+    try expectEqualHexStrings("\x41\xFF\xD4", enc.code(), "call r12");
 
-//     try enc.encode(.{ .tag = .call, .enc = .m, .data = Instruction.Data.m(RegisterOrMemory.mem(.qword, .{
-//         .base = .r12,
-//         .disp = 0,
-//     })) });
-//     try expectEqualHexStrings("\x41\xFF\x14\x24", enc.code(), "call QWORD PTR [r12]");
+    try enc.encode(.{ .mnemonic = .call, .op1 = .{ .mem = Memory.mem(.qword, .{
+        .base = .r12,
+        .disp = 0,
+    }) } });
+    try expectEqualHexStrings("\x41\xFF\x14\x24", enc.code(), "call QWORD PTR [r12]");
 
-//     try enc.encode(.{ .tag = .call, .enc = .m, .data = Instruction.Data.m(RegisterOrMemory.mem(.qword, .{
-//         .base = null,
-//         .scale_index = .{
-//             .index = .r11,
-//             .scale = 1,
-//         },
-//         .disp = 0,
-//     })) });
-//     try expectEqualHexStrings("\x42\xFF\x14\x5D\x00\x00\x00\x00", enc.code(), "call QWORD PTR [r11 * 2]");
+    try enc.encode(.{ .mnemonic = .call, .op1 = .{ .mem = Memory.mem(.qword, .{
+        .base = null,
+        .scale_index = .{
+            .index = .r11,
+            .scale = 1,
+        },
+        .disp = 0,
+    }) } });
+    try expectEqualHexStrings("\x42\xFF\x14\x5D\x00\x00\x00\x00", enc.code(), "call QWORD PTR [r11 * 2]");
 
-//     try enc.encode(.{ .tag = .call, .enc = .m, .data = Instruction.Data.m(RegisterOrMemory.mem(.qword, .{
-//         .base = null,
-//         .scale_index = .{
-//             .index = .r12,
-//             .scale = 1,
-//         },
-//         .disp = 0,
-//     })) });
-//     try expectEqualHexStrings("\x42\xFF\x14\x65\x00\x00\x00\x00", enc.code(), "call QWORD PTR [r12 * 2]");
+    try enc.encode(.{ .mnemonic = .call, .op1 = .{ .mem = Memory.mem(.qword, .{
+        .base = null,
+        .scale_index = .{
+            .index = .r12,
+            .scale = 1,
+        },
+        .disp = 0,
+    }) } });
+    try expectEqualHexStrings("\x42\xFF\x14\x65\x00\x00\x00\x00", enc.code(), "call QWORD PTR [r12 * 2]");
 
-//     try enc.encode(.{ .tag = .call, .enc = .m, .data = Instruction.Data.m(RegisterOrMemory.mem(.qword, .{
-//         .base = .gs,
-//         .disp = 0,
-//     })) });
-//     try expectEqualHexStrings("\x65\xFF\x14\x25\x00\x00\x00\x00", enc.code(), "call gs:0x0");
+    try enc.encode(.{ .mnemonic = .call, .op1 = .{ .mem = Memory.mem(.qword, .{
+        .base = .gs,
+        .disp = 0,
+    }) } });
+    try expectEqualHexStrings("\x65\xFF\x14\x25\x00\x00\x00\x00", enc.code(), "call gs:0x0");
 
-//     try enc.encode(.{ .tag = .call, .enc = .m, .data = Instruction.Data.m(RegisterOrMemory.mem(.qword, .{
-//         .base = null,
-//         .disp = 0,
-//     })) });
-//     try expectEqualHexStrings("\xE8\x00\x00\x00\x00", enc.code(), "call 0x0");
-// }
+    //     try enc.encode(.{ .tag = .call, .enc = .m, .data = Instruction.Data.m(RegisterOrMemory.mem(.qword, .{
+    //         .base = null,
+    //         .disp = 0,
+    //     })) });
+    //     try expectEqualHexStrings("\xE8\x00\x00\x00\x00", enc.code(), "call 0x0");
+}
 
 // test "lower O encoding" {
 //     var enc = TestEncode{};
@@ -812,6 +812,12 @@ test "lower NP encoding" {
 }
 
 test "invalid lowering" {
+    try expectError(.{ .mnemonic = .call, .op1 = .{ .reg = .eax } });
+    try expectError(.{ .mnemonic = .call, .op1 = .{ .reg = .ax } });
+    try expectError(.{ .mnemonic = .call, .op1 = .{ .reg = .al } });
+    try expectError(.{ .mnemonic = .call, .op1 = .{ .mem = Memory.rip(.dword, 0) } });
+    try expectError(.{ .mnemonic = .call, .op1 = .{ .mem = Memory.rip(.word, 0) } });
+    try expectError(.{ .mnemonic = .call, .op1 = .{ .mem = Memory.rip(.byte, 0) } });
     try expectError(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.rip(.word, 0x10) }, .op2 = .{ .reg = .r12 } });
     try expectError(.{ .mnemonic = .lea, .op1 = .{ .reg = .rax }, .op2 = .{ .reg = .rbx } });
     try expectError(.{ .mnemonic = .lea, .op1 = .{ .reg = .al }, .op2 = .{ .mem = Memory.rip(.byte, 0) } });

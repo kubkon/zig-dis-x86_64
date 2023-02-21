@@ -154,7 +154,7 @@ pub const Instruction = struct {
             .fd => try encodeFd(opcode, inst.op1.reg, inst.op2.moffs, encoder),
             .td => try encodeFd(opcode, inst.op2.reg, inst.op1.moffs, encoder),
 
-            .mi => {
+            .m, .mi => {
                 const modrm_ext = encoding.modRmExt();
 
                 var prefixes = LegacyPrefixes{};
@@ -174,7 +174,7 @@ pub const Instruction = struct {
                 switch (inst.op1) {
                     .reg => |dst_reg| {
                         try encoder.rex(.{
-                            .w = inst.op1.is64BitMode(),
+                            .w = inst.op1.is64BitMode() and !encoding.mnemonic.defaultsTo64Bits(),
                             .b = dst_reg.isExtended(),
                         });
                         try encodeOpcode(opcode, encoder);
@@ -182,7 +182,7 @@ pub const Instruction = struct {
                     },
                     .mem => |dst_mem| {
                         try encoder.rex(.{
-                            .w = inst.op1.is64BitMode(),
+                            .w = inst.op1.is64BitMode() and !encoding.mnemonic.defaultsTo64Bits(),
                             .b = if (dst_mem.base) |base| base.isExtended() else false,
                             .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
                         });
@@ -191,7 +191,10 @@ pub const Instruction = struct {
                     },
                     else => unreachable,
                 }
-                try encodeImm(inst.op2.imm, encoding.op2, encoder);
+
+                if (encoding.op_en == .mi) {
+                    try encodeImm(inst.op2.imm, encoding.op2, encoder);
+                }
             },
 
             .oi => {
@@ -200,7 +203,7 @@ pub const Instruction = struct {
                     try encoder.prefix16BitMode();
                 }
                 try encoder.rex(.{
-                    .w = inst.op1.is64BitMode(),
+                    .w = inst.op1.is64BitMode() and !encoding.mnemonic.defaultsTo64Bits(),
                     .b = inst.op1.reg.isExtended(),
                 });
                 try encoder.opcode_withReg(opcode[0], inst.op1.reg.lowEnc());

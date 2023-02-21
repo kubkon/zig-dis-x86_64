@@ -7,6 +7,8 @@ const Entry = std.meta.Tuple(&.{ Mnemonic, OpEn, Operand, Operand, Operand, Oper
 
 // TODO move this into a .zon file when Zig is capable of importing .zon files
 const table = &[_]Entry{
+    .{ .call, .m, .rm64, .none, .none, .none, 1, 0xff, 0x00, 0x00, 2 },
+
     .{ .lea, .rm, .r16, .m, .none, .none, 1, 0x8d, 0x00, 0x00, 0 },
     .{ .lea, .rm, .r32, .m, .none, .none, 1, 0x8d, 0x00, 0x00, 0 },
     .{ .lea, .rm, .r64, .m, .none, .none, 1, 0x8d, 0x00, 0x00, 0 },
@@ -58,39 +60,29 @@ const table = &[_]Entry{
 };
 
 pub const Mnemonic = enum {
-    adc,
-    add,
-    @"and",
-    cmp,
-    @"or",
-    sbb,
-    sub,
-    xor,
-    lea,
-    mov,
-    movsx,
-    movsxd,
-    push,
-    pop,
-    call,
+    // zig fmt: off
+    adc, add, @"and",
+    call, cmp,
     int3,
+    lea,
+    mov, movsx, movsxd,
     nop,
+    @"or",
+    pop, push,
     ret,
-    syscall,
+    sbb, sub, syscall,
+    xor,
+    // zig fmt: on
+
+    pub fn defaultsTo64Bits(mnemonic: Mnemonic) bool {
+        return switch (mnemonic) {
+            .call, .push, .pop, .ret => true,
+            else => false,
+        };
+    }
 };
 
-pub const OpEn = enum {
-    np,
-    o,
-    i,
-    m,
-    fd,
-    td,
-    oi,
-    mi,
-    mr,
-    rm,
-};
+pub const OpEn = enum { np, o, i, m, fd, td, oi, mi, mr, rm };
 
 pub const Operand = enum {
     // zig fmt: off
@@ -301,7 +293,7 @@ pub const Encoding = struct {
         }
 
         switch (encoding.op_en) {
-            .mi => try writer.print("/{d} ", .{encoding.modRmExt()}),
+            .m, .mi => try writer.print("/{d} ", .{encoding.modRmExt()}),
             .oi => try writer.print("{s}", .{switch (encoding.op1) {
                 .r8 => "+rb ib ",
                 .r16 => "+rw iw ",
@@ -318,6 +310,8 @@ pub const Encoding = struct {
         try writer.print("{s} ", .{@tagName(encoding.mnemonic)});
 
         switch (encoding.op_en) {
+            .m => try writer.print("{s} ", .{@tagName(encoding.op1)}),
+
             .mi,
             .oi,
             .fd,
