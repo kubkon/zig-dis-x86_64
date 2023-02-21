@@ -43,6 +43,14 @@ const table = &[_]Entry{
     .{ .movsx, .rm, .r64, .rm16, .none, .none, 2, 0x0f, 0xbf, 0x00, 0 },
 
     .{ .movsxd, .rm, .r64, .rm32, .none, .none, 1, 0x63, 0x00, 0x00, 0 },
+
+    .{ .int3, .np, .none, .none, .none, .none, 1, 0xcc, 0x00, 0x00, 0 },
+
+    .{ .nop, .np, .none, .none, .none, .none, 1, 0x90, 0x00, 0x00, 0 },
+
+    .{ .ret, .np, .none, .none, .none, .none, 1, 0xc3, 0x00, 0x00, 0 },
+
+    .{ .syscall, .np, .none, .none, .none, .none, 2, 0x0f, 0x05, 0x00, 0 },
 };
 
 pub const Mnemonic = enum {
@@ -234,6 +242,7 @@ pub const Encoding = struct {
             }}),
             .rm, .mr => try writer.writeAll("/r "),
             .fd, .td => {},
+            .np => {},
             else => {},
         }
 
@@ -247,6 +256,8 @@ pub const Encoding = struct {
             .rm,
             .mr,
             => try writer.print("{s} {s} ", .{ @tagName(encoding.op1), @tagName(encoding.op2) }),
+
+            .np => {},
 
             else => {},
         }

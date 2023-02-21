@@ -149,6 +149,8 @@ pub const Instruction = struct {
         const opcode = encoding.opcode();
 
         switch (encoding.op_en) {
+            .np => try encodeOpcode(opcode, encoder),
+
             .fd => try encodeFd(opcode, inst.op1.reg, inst.op2.moffs, encoder),
             .td => try encodeFd(opcode, inst.op2.reg, inst.op1.moffs, encoder),
 

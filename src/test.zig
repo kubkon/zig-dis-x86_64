@@ -783,21 +783,21 @@ test "lower FD/TD encoding" {
     try expectEqualHexStrings("\xA2\x10\x00\x00\x00\x00\x00\x00\x00", enc.code(), "movabs ds:0x10, al");
 }
 
-// test "lower NP encoding" {
-//     var enc = TestEncode{};
+test "lower NP encoding" {
+    var enc = TestEncode{};
 
-//     try enc.encode(.{ .tag = .int3, .enc = .np, .data = Instruction.Data.np() });
-//     try expectEqualHexStrings("\xCC", enc.code(), "int3");
+    try enc.encode(.{ .mnemonic = .int3 });
+    try expectEqualHexStrings("\xCC", enc.code(), "int3");
 
-//     try enc.encode(.{ .tag = .nop, .enc = .np, .data = Instruction.Data.np() });
-//     try expectEqualHexStrings("\x90", enc.code(), "nop");
+    try enc.encode(.{ .mnemonic = .nop });
+    try expectEqualHexStrings("\x90", enc.code(), "nop");
 
-//     try enc.encode(.{ .tag = .ret, .enc = .np, .data = Instruction.Data.np() });
-//     try expectEqualHexStrings("\xC3", enc.code(), "ret");
+    try enc.encode(.{ .mnemonic = .ret });
+    try expectEqualHexStrings("\xC3", enc.code(), "ret");
 
-//     try enc.encode(.{ .tag = .syscall, .enc = .np, .data = Instruction.Data.np() });
-//     try expectEqualHexStrings("\x0f\x05", enc.code(), "syscall");
-// }
+    try enc.encode(.{ .mnemonic = .syscall });
+    try expectEqualHexStrings("\x0f\x05", enc.code(), "syscall");
+}
 
 test "invalid lowering" {
     try expectError(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.rip(.word, 0x10) }, .op2 = .{ .reg = .r12 } });
