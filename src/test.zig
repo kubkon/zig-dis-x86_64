@@ -321,21 +321,30 @@ test "encode" {
     try testing.expectEqualSlices(u8, &.{ 0x48, 0xc7, 0xc3, 0x4, 0x0, 0x0, 0x0 }, buf.items);
 }
 
-// test "lower I encoding" {
-//     var enc = TestEncode{};
+test "lower I encoding" {
+    var enc = TestEncode{};
 
-//     try enc.encode(.{ .tag = .add, .enc = .i, .data = Instruction.Data.i(.al, 0x10) });
-//     try expectEqualHexStrings("\x04\x10", enc.code(), "add al, 0x10");
+    try enc.encode(.{ .mnemonic = .push, .op1 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings("\x6A\x10", enc.code(), "push 0x10");
 
-//     try enc.encode(.{ .tag = .add, .enc = .i, .data = Instruction.Data.i(.rax, 0x10) });
-//     try expectEqualHexStrings("\x48\x05\x10\x00\x00\x00", enc.code(), "add rax, 0x10");
+    try enc.encode(.{ .mnemonic = .push, .op1 = .{ .imm = 0x1000 } });
+    try expectEqualHexStrings("\x66\x68\x00\x10", enc.code(), "push 0x1000");
 
-//     try enc.encode(.{ .tag = .xor, .enc = .i, .data = Instruction.Data.i(.al, 0x10) });
-//     try expectEqualHexStrings("\x34\x10", enc.code(), "xor al, 0x10");
+    try enc.encode(.{ .mnemonic = .push, .op1 = .{ .imm = 0x10000000 } });
+    try expectEqualHexStrings("\x68\x00\x00\x00\x10", enc.code(), "push 0x10000000");
 
-//     try enc.encode(.{ .tag = .sbb, .enc = .i, .data = Instruction.Data.i(.ax, 0x10) });
-//     try expectEqualHexStrings("\x66\x1D\x10\x00", enc.code(), "sbb ax, 0x10");
-// }
+    //     try enc.encode(.{ .tag = .add, .enc = .i, .data = Instruction.Data.i(.al, 0x10) });
+    //     try expectEqualHexStrings("\x04\x10", enc.code(), "add al, 0x10");
+
+    //     try enc.encode(.{ .tag = .add, .enc = .i, .data = Instruction.Data.i(.rax, 0x10) });
+    //     try expectEqualHexStrings("\x48\x05\x10\x00\x00\x00", enc.code(), "add rax, 0x10");
+
+    //     try enc.encode(.{ .tag = .xor, .enc = .i, .data = Instruction.Data.i(.al, 0x10) });
+    //     try expectEqualHexStrings("\x34\x10", enc.code(), "xor al, 0x10");
+
+    //     try enc.encode(.{ .tag = .sbb, .enc = .i, .data = Instruction.Data.i(.ax, 0x10) });
+    //     try expectEqualHexStrings("\x66\x1D\x10\x00", enc.code(), "sbb ax, 0x10");
+}
 
 test "lower MI encoding" {
     var enc = TestEncode{};
@@ -349,19 +358,59 @@ test "lower MI encoding" {
     }) }, .op2 = .{ .imm = 0x10 } });
     try expectEqualHexStrings("\x41\xC6\x04\x24\x10", enc.code(), "mov BYTE PTR [r12], 0x10");
 
-    // try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .reg = .r12 }, .op2 = .{ .imm = 0x1000 } });
-    // try expectEqualHexStrings("\x49\xC7\xC4\x00\x10\x00\x00", enc.code(), "mov r12, 0x1000");
-    // try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .reg = .r12 }, .op2 = .{ .imm = 0x1000 } });
-    // try expectEqualHexStrings("\x49\xC7\xC4\x00\x10\x00\x00", enc.code(), "mov r12, 0x1000");
+    try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .reg = .r12 }, .op2 = .{ .imm = 0x1000 } });
+    try expectEqualHexStrings("\x49\xC7\xC4\x00\x10\x00\x00", enc.code(), "mov r12, 0x1000");
 
-    //     try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.reg(.rax), 0x10, 32) });
-    //     try expectEqualHexStrings("\x48\xc7\xc0\x10\x00\x00\x00", enc.code(), "mov rax, 0x10");
+    try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .reg = .r12 }, .op2 = .{ .imm = 0x1000 } });
+    try expectEqualHexStrings("\x49\xC7\xC4\x00\x10\x00\x00", enc.code(), "mov r12, 0x1000");
 
-    //     try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.dword, .{
-    //         .base = .r11,
-    //         .disp = 0,
-    //     }), 0x10, 32) });
-    //     try expectEqualHexStrings("\x41\xc7\x03\x10\x00\x00\x00", enc.code(), "mov dword ptr [r11], 0x10");
+    try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .reg = .rax }, .op2 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings("\x48\xc7\xc0\x10\x00\x00\x00", enc.code(), "mov rax, 0x10");
+
+    try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.mem(.dword, .{
+        .base = .r11,
+        .disp = 0,
+    }) }, .op2 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings("\x41\xc7\x03\x10\x00\x00\x00", enc.code(), "mov DWORD PTR [r11], 0x10");
+
+    try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.rip(.qword, 0x10) }, .op2 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings(
+        "\x48\xC7\x05\x10\x00\x00\x00\x10\x00\x00\x00",
+        enc.code(),
+        "mov QWORD PTR [rip + 0x10], 0x10",
+    );
+
+    try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.mem(.qword, .{
+        .base = .rbp,
+        .disp = -8,
+    }) }, .op2 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings("\x48\xc7\x45\xf8\x10\x00\x00\x00", enc.code(), "mov QWORD PTR [rbp - 8], 0x10");
+
+    try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.mem(.word, .{
+        .base = .rbp,
+        .disp = -2,
+    }) }, .op2 = .{ .imm = @bitCast(u16, @as(i16, -16)) } });
+    try expectEqualHexStrings("\x66\xC7\x45\xFE\xF0\xFF", enc.code(), "mov WORD PTR [rbp - 2], -16");
+
+    try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.mem(.byte, .{
+        .base = .rbp,
+        .disp = -1,
+    }) }, .op2 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings("\xC6\x45\xFF\x10", enc.code(), "mov BYTE PTR [rbp - 1], 0x10");
+
+    try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.mem(.qword, .{
+        .base = .ds,
+        .disp = 0x10000000,
+        .scale_index = .{
+            .scale = 1,
+            .index = .rcx,
+        },
+    }) }, .op2 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings(
+        "\x48\xC7\x04\x4D\x00\x00\x00\x10\x10\x00\x00\x00",
+        enc.code(),
+        "mov QWORD PTR [rcx*2 + 0x10000000], 0x10",
+    );
 
     //     try enc.encode(.{ .tag = .add, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.dword, .{
     //         .base = .rdx,
@@ -407,49 +456,6 @@ test "lower MI encoding" {
     //         "\x41\x81\xA4\x24\x00\x00\x00\x10\x10\x00\x00\x00",
     //         enc.code(),
     //         "and dword ptr [r12 + 0x10000000], 0x10",
-    //     );
-
-    //     try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(
-    //         RegisterOrMemory.rip(.qword, 0x10),
-    //         0x10,
-    //         32,
-    //     ) });
-    //     try expectEqualHexStrings(
-    //         "\x48\xC7\x05\x10\x00\x00\x00\x10\x00\x00\x00",
-    //         enc.code(),
-    //         "mov QWORD PTR [rip + 0x10], 0x10",
-    //     );
-
-    //     try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.qword, .{
-    //         .base = .rbp,
-    //         .disp = -8,
-    //     }), 0x10, 32) });
-    //     try expectEqualHexStrings("\x48\xc7\x45\xf8\x10\x00\x00\x00", enc.code(), "mov QWORD PTR [rbp - 8], 0x10");
-
-    //     try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.word, .{
-    //         .base = .rbp,
-    //         .disp = -2,
-    //     }), @bitCast(u32, @as(i32, -16)), 16) });
-    //     try expectEqualHexStrings("\x66\xC7\x45\xFE\xF0\xFF", enc.code(), "mov word ptr [rbp - 2], -16");
-
-    //     try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.byte, .{
-    //         .base = .rbp,
-    //         .disp = -1,
-    //     }), 0x10, 8) });
-    //     try expectEqualHexStrings("\xC6\x45\xFF\x10", enc.code(), "mov BYTE PTR [rbp - 1], 0x10");
-
-    //     try enc.encode(.{ .tag = .mov, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.qword, .{
-    //         .base = .ds,
-    //         .disp = 0x10000000,
-    //         .scale_index = .{
-    //             .scale = 1,
-    //             .index = .rcx,
-    //         },
-    //     }), 0x10, 32) });
-    //     try expectEqualHexStrings(
-    //         "\x48\xC7\x04\x4D\x00\x00\x00\x10\x10\x00\x00\x00",
-    //         enc.code(),
-    //         "mov QWORD PTR [rcx*2 + 0x10000000], 0x10",
     //     );
 
     //     try enc.encode(.{ .tag = .add, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.reg(.rax), 0x10, 8) });
@@ -584,15 +590,15 @@ test "lower RM encoding" {
     try enc.encode(.{ .mnemonic = .lea, .op1 = .{ .reg = .ax }, .op2 = .{ .mem = Memory.rip(.byte, 0x10) } });
     try expectEqualHexStrings("\x66\x8D\x05\x10\x00\x00\x00", enc.code(), "lea ax, BYTE PTR [rip + 0x10]");
 
-    //     try enc.encode(.{ .tag = .lea, .enc = .rm, .data = Instruction.Data.rm(.rsi, RegisterOrMemory.mem(.qword, .{
-    //         .base = .rbp,
-    //         .scale_index = .{
-    //             .scale = 0,
-    //             .index = .rcx,
-    //         },
-    //         .disp = 0,
-    //     })) });
-    //     try expectEqualHexStrings("\x48\x8D\x74\x0D\x00", enc.code(), "lea rsi, QWORD PTR [rbp + rcx*1 + 0]");
+    try enc.encode(.{ .mnemonic = .lea, .op1 = .{ .reg = .rsi }, .op2 = .{ .mem = Memory.mem(.qword, .{
+        .base = .rbp,
+        .scale_index = .{
+            .scale = 0,
+            .index = .rcx,
+        },
+        .disp = 0,
+    }) } });
+    try expectEqualHexStrings("\x48\x8D\x74\x0D\x00", enc.code(), "lea rsi, QWORD PTR [rbp + rcx*1 + 0]");
 
     //     try enc.encode(.{ .tag = .add, .enc = .rm, .data = Instruction.Data.rm(.r11, RegisterOrMemory.mem(.qword, .{
     //         .base = .ds,
@@ -753,18 +759,18 @@ test "lower M encoding" {
     try expectEqualHexStrings("\x66\x8F\x05\x00\x00\x00\x00", enc.code(), "pop WORD PTR [rbp]");
 }
 
-// test "lower O encoding" {
-//     var enc = TestEncode{};
+test "lower O encoding" {
+    var enc = TestEncode{};
 
-//     try enc.encode(.{ .tag = .push, .enc = .o, .data = Instruction.Data.o(.rax) });
-//     try expectEqualHexStrings("\x50", enc.code(), "push rax");
+    try enc.encode(.{ .mnemonic = .push, .op1 = .{ .reg = .rax } });
+    try expectEqualHexStrings("\x50", enc.code(), "push rax");
 
-//     try enc.encode(.{ .tag = .push, .enc = .o, .data = Instruction.Data.o(.r12w) });
-//     try expectEqualHexStrings("\x66\x41\x54", enc.code(), "push r12w");
+    try enc.encode(.{ .mnemonic = .push, .op1 = .{ .reg = .r12w } });
+    try expectEqualHexStrings("\x66\x41\x54", enc.code(), "push r12w");
 
-//     try enc.encode(.{ .tag = .pop, .enc = .o, .data = Instruction.Data.o(.r12) });
-//     try expectEqualHexStrings("\x41\x5c", enc.code(), "pop r12");
-// }
+    try enc.encode(.{ .mnemonic = .pop, .op1 = .{ .reg = .r12 } });
+    try expectEqualHexStrings("\x41\x5c", enc.code(), "pop r12");
+}
 
 test "lower OI encoding" {
     var enc = TestEncode{};
@@ -839,4 +845,9 @@ test "invalid lowering" {
     try expectError(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.rip(.word, 0x10) }, .op2 = .{ .reg = .r12 } });
     try expectError(.{ .mnemonic = .lea, .op1 = .{ .reg = .rax }, .op2 = .{ .reg = .rbx } });
     try expectError(.{ .mnemonic = .lea, .op1 = .{ .reg = .al }, .op2 = .{ .mem = Memory.rip(.byte, 0) } });
+    try expectError(.{ .mnemonic = .pop, .op1 = .{ .reg = .r12b } });
+    try expectError(.{ .mnemonic = .pop, .op1 = .{ .reg = .r12d } });
+    try expectError(.{ .mnemonic = .push, .op1 = .{ .reg = .r12b } });
+    try expectError(.{ .mnemonic = .push, .op1 = .{ .reg = .r12d } });
+    try expectError(.{ .mnemonic = .push, .op1 = .{ .imm = 0x1000000000000000 } });
 }

@@ -54,18 +54,18 @@ const table = &[_]Entry{
 
     .{ .nop, .np, .none, .none, .none, .none, 1, 0x90, 0x00, 0x00, 0 },
 
+    .{ .pop, .o, .r16, .none, .none, .none, 1, 0x58, 0x00, 0x00, 0 },
+    .{ .pop, .o, .r64, .none, .none, .none, 1, 0x58, 0x00, 0x00, 0 },
     .{ .pop, .m, .rm16, .none, .none, .none, 1, 0x8f, 0x00, 0x00, 0 },
     .{ .pop, .m, .rm64, .none, .none, .none, 1, 0x8f, 0x00, 0x00, 0 },
-    //     .{ .pop,     .o,  16, 0,  0x58, 0x00, 0x00 },
-    //     .{ .pop,     .o,  64, 0,  0x58, 0x00, 0x00 },
 
+    .{ .push, .o, .r16, .none, .none, .none, 1, 0x50, 0x00, 0x00, 0 },
+    .{ .push, .o, .r64, .none, .none, .none, 1, 0x50, 0x00, 0x00, 0 },
     .{ .push, .m, .rm16, .none, .none, .none, 1, 0xff, 0x0, 0x00, 6 },
     .{ .push, .m, .rm64, .none, .none, .none, 1, 0xff, 0x0, 0x00, 6 },
-    //     .{ .push,    .o,  16, 0,  0x50, 0x00, 0x00 },
-    //     .{ .push,    .o,  64, 0,  0x50, 0x00, 0x00 },
-    //     .{ .push,    .i,  8,  0,  0x6a, 0x00, 0x00 },
-    //     .{ .push,    .i,  16, 0,  0x68, 0x00, 0x00 },
-    //     .{ .push,    .i,  32, 0,  0x68, 0x00, 0x00 },
+    .{ .push, .i, .imm8, .none, .none, .none, 1, 0x6a, 0x00, 0x00, 0 },
+    .{ .push, .i, .imm16, .none, .none, .none, 1, 0x68, 0x00, 0x00, 0 },
+    .{ .push, .i, .imm32, .none, .none, .none, 1, 0x68, 0x00, 0x00, 0 },
 
     .{ .ret, .np, .none, .none, .none, .none, 1, 0xc3, 0x00, 0x00, 0 },
 
@@ -118,7 +118,7 @@ pub const Operand = enum {
     sreg,
     // zig fmt: on
 
-    fn bitSize(op: Operand) u64 {
+    pub fn bitSize(op: Operand) u64 {
         return switch (op) {
             .none, .moffs, .m, .sreg => unreachable,
             .imm8, .al, .r8, .m8, .rm8 => 8,
@@ -128,7 +128,7 @@ pub const Operand = enum {
         };
     }
 
-    fn isRegister(op: Operand) bool {
+    pub fn isRegister(op: Operand) bool {
         // zig fmt: off
         return switch (op) {
             .al, .ax, .eax, .rax,
@@ -140,14 +140,14 @@ pub const Operand = enum {
         // zig fmt: on
     }
 
-    fn isImmediate(op: Operand) bool {
+    pub fn isImmediate(op: Operand) bool {
         return switch (op) {
             .imm8, .imm16, .imm32, .imm64 => return true,
             else => false,
         };
     }
 
-    fn isMemory(op: Operand) bool {
+    pub fn isMemory(op: Operand) bool {
         // zig fmt: off
         return switch (op) {
             .rm8, .rm16, .rm32, .rm64,
@@ -159,7 +159,7 @@ pub const Operand = enum {
         // zig fmt: on
     }
 
-    fn isSegment(op: Operand) bool {
+    pub fn isSegment(op: Operand) bool {
         return switch (op) {
             .moffs, .sreg => return true,
             else => false,
@@ -168,7 +168,7 @@ pub const Operand = enum {
 
     /// Given an operand `op` checks if `target` is a subset for the purposes
     /// of the encoding.
-    fn isSubset(op: Operand, target: Operand) bool {
+    pub fn isSubset(op: Operand, target: Operand) bool {
         switch (op) {
             .m => unreachable,
             .none, .moffs, .sreg => return op == target,
@@ -306,7 +306,20 @@ pub const Encoding = struct {
         }
 
         switch (encoding.op_en) {
+            .i => try writer.print("{s}", .{switch (encoding.op1) {
+                .imm8 => "ib ",
+                .imm16 => "iw ",
+                .imm32 => "id ",
+                else => unreachable,
+            }}),
             .m, .mi => try writer.print("/{d} ", .{encoding.modRmExt()}),
+            .o => try writer.print("{s}", .{switch (encoding.op1) {
+                .r8 => "+rb ",
+                .r16 => "+rw ",
+                .r32 => "+rd ",
+                .r64 => "+rd ",
+                else => unreachable,
+            }}),
             .oi => try writer.print("{s}", .{switch (encoding.op1) {
                 .r8 => "+rb ib ",
                 .r16 => "+rw iw ",
@@ -317,13 +330,12 @@ pub const Encoding = struct {
             .rm, .mr => try writer.writeAll("/r "),
             .fd, .td => {},
             .np => {},
-            else => {},
         }
 
         try writer.print("{s} ", .{@tagName(encoding.mnemonic)});
 
         switch (encoding.op_en) {
-            .m => try writer.print("{s} ", .{@tagName(encoding.op1)}),
+            .i, .m, .o => try writer.print("{s} ", .{@tagName(encoding.op1)}),
 
             .mi,
             .oi,
@@ -334,8 +346,6 @@ pub const Encoding = struct {
             => try writer.print("{s} {s} ", .{ @tagName(encoding.op1), @tagName(encoding.op2) }),
 
             .np => {},
-
-            else => {},
         }
 
         try writer.print("{s}", .{@tagName(encoding.op_en)});

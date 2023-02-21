@@ -154,6 +154,14 @@ pub const Instruction = struct {
             .fd => try encodeFd(opcode, inst.op1.reg, inst.op2.moffs, encoder),
             .td => try encodeFd(opcode, inst.op2.reg, inst.op1.moffs, encoder),
 
+            .i => {
+                if (encoding.op1.bitSize() == 16) {
+                    try encoder.prefix16BitMode();
+                }
+                try encodeOpcode(opcode, encoder);
+                try encodeImm(inst.op1.imm, encoding.op1, encoder);
+            },
+
             .m, .mi => {
                 const modrm_ext = encoding.modRmExt();
 
@@ -197,7 +205,7 @@ pub const Instruction = struct {
                 }
             },
 
-            .oi => {
+            .o, .oi => {
                 assert(opcode.len == 1);
                 if (inst.op1.bitSize() == 16) {
                     try encoder.prefix16BitMode();
@@ -207,13 +215,14 @@ pub const Instruction = struct {
                     .b = inst.op1.reg.isExtended(),
                 });
                 try encoder.opcode_withReg(opcode[0], inst.op1.reg.lowEnc());
-                try encodeImm(inst.op2.imm, encoding.op2, encoder);
+
+                if (encoding.op_en == .oi) {
+                    try encodeImm(inst.op2.imm, encoding.op2, encoder);
+                }
             },
 
             .rm => try encodeRm(opcode, inst.op1, inst.op2, encoder),
             .mr => try encodeRm(opcode, inst.op2, inst.op1, encoder),
-
-            else => return error.Todo,
         }
     }
 
