@@ -313,6 +313,25 @@ test "lower RM encoding" {
     }) } });
     try expectEqualHexStrings("\x44\x8A\x44\x0E\xE8", enc.code(), "mov r8b, BYTE PTR [rsi + rcx*1 - 24]");
 
+    // TODO this mnemonic needs cleanup as some prefixes are obsolete.
+    try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .reg = .rax }, .op2 = .{ .reg = .cs } });
+    try expectEqualHexStrings("\x48\x8C\xC8", enc.code(), "mov rax, cs");
+
+    try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.mem(.qword, .{
+        .base = .rbp,
+        .disp = -16,
+    }) }, .op2 = .{ .reg = .fs } });
+    try expectEqualHexStrings("\x48\x8C\x65\xF0", enc.code(), "mov QWORD PTR [rbp - 16], fs");
+
+    try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .reg = .r12w }, .op2 = .{ .reg = .cs } });
+    try expectEqualHexStrings("\x66\x41\x8C\xCC", enc.code(), "mov r12w, cs");
+
+    try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.mem(.word, .{
+        .base = .rbp,
+        .disp = -16,
+    }) }, .op2 = .{ .reg = .fs } });
+    try expectEqualHexStrings("\x66\x8C\x65\xF0", enc.code(), "mov WORD PTR [rbp - 16], fs");
+
     try enc.encode(.{ .mnemonic = .movsx, .op1 = .{ .reg = .eax }, .op2 = .{ .reg = .bx } });
     try expectEqualHexStrings("\x0F\xBF\xC3", enc.code(), "movsx eax, bx");
 
