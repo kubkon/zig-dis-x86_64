@@ -27,58 +27,9 @@ pub const Instruction = struct {
         moffs: Moffs,
         imm: u64,
 
-        fn kind(op: Operand) OperandKind {
-            switch (op) {
-                .none => return .none,
-
-                .reg => |reg| {
-                    if (reg.isSegment()) return .sreg;
-
-                    const bit_size = reg.bitSize();
-                    if (reg.to64() == .rax) {
-                        return switch (bit_size) {
-                            8 => .al,
-                            16 => .ax,
-                            32 => .eax,
-                            64 => .rax,
-                            else => unreachable,
-                        };
-                    } else {
-                        return switch (bit_size) {
-                            8 => .r8,
-                            16 => .r16,
-                            32 => .r32,
-                            64 => .r64,
-                            else => unreachable,
-                        };
-                    }
-                },
-
-                .mem => |mem| {
-                    const bit_size = mem.bitSize();
-                    return switch (bit_size) {
-                        8 => .m8,
-                        16 => .m16,
-                        32 => .m32,
-                        64 => .m64,
-                        else => unreachable,
-                    };
-                },
-
-                .moffs => return .moffs,
-
-                .imm => |imm| {
-                    if (math.cast(u8, imm)) |_| return .imm8;
-                    if (math.cast(u16, imm)) |_| return .imm16;
-                    if (math.cast(u32, imm)) |_| return .imm32;
-                    return .imm64;
-                },
-            }
-        }
-
         /// Returns the bitsize of the operand.
         /// Asserts the operand is either register or memory.
-        fn bitSize(op: Operand) u64 {
+        pub fn bitSize(op: Operand) u64 {
             return switch (op) {
                 .none => unreachable,
                 .reg => |reg| reg.bitSize(),
@@ -90,7 +41,7 @@ pub const Instruction = struct {
 
         /// Returns true if the operand is a segment register.
         /// Asserts the operand is either register or memory.
-        fn isSegment(op: Operand) bool {
+        pub fn isSegment(op: Operand) bool {
             return switch (op) {
                 .none => unreachable,
                 .reg => |reg| reg.isSegment(),
@@ -102,7 +53,7 @@ pub const Instruction = struct {
 
         /// Returns true if the operand requires 64bit mode.
         /// Asserts the operand is either register or memory.
-        fn is64BitMode(op: Operand) bool {
+        pub fn is64BitMode(op: Operand) bool {
             switch (op) {
                 .none => unreachable,
                 .reg => |reg| {
@@ -128,10 +79,10 @@ pub const Instruction = struct {
         op4: Operand = .none,
     }) !Instruction {
         const encoding = Encoding.findByMnemonic(args.mnemonic, .{
-            .op1 = args.op1.kind(),
-            .op2 = args.op2.kind(),
-            .op3 = args.op3.kind(),
-            .op4 = args.op4.kind(),
+            .op1 = args.op1,
+            .op2 = args.op2,
+            .op3 = args.op3,
+            .op4 = args.op4,
         }) orelse return error.InvalidInstruction;
         std.log.err("{}", .{encoding});
         return .{

@@ -1,7 +1,11 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const Rex = @import("encoder.zig").Rex;
-const LegacyPrefixes = @import("encoder.zig").LegacyPrefixes;
+const math = std.math;
+
+const encoder = @import("encoder.zig");
+const Instruction = encoder.Instruction;
+const Rex = encoder.Rex;
+const LegacyPrefixes = encoder.LegacyPrefixes;
 
 const Entry = std.meta.Tuple(&.{ Mnemonic, OpEn, Operand, Operand, Operand, Operand, u2, u8, u8, u8, u3 });
 
@@ -117,6 +121,8 @@ pub const Mnemonic = enum {
 
 pub const OpEn = enum { np, o, i, m, fd, td, oi, mi, mr, rm };
 
+/// TODO rename to something like Op or OperandClass to disambiguate from
+/// Intruction.Operand storing actual input operands.
 pub const Operand = enum {
     // zig fmt: off
     none,
@@ -137,6 +143,55 @@ pub const Operand = enum {
 
     sreg,
     // zig fmt: on
+
+    pub fn fromOperand(operand: Instruction.Operand) Operand {
+        switch (operand) {
+            .none => return .none,
+
+            .reg => |reg| {
+                if (reg.isSegment()) return .sreg;
+
+                const bit_size = reg.bitSize();
+                if (reg.to64() == .rax) {
+                    return switch (bit_size) {
+                        8 => .al,
+                        16 => .ax,
+                        32 => .eax,
+                        64 => .rax,
+                        else => unreachable,
+                    };
+                } else {
+                    return switch (bit_size) {
+                        8 => .r8,
+                        16 => .r16,
+                        32 => .r32,
+                        64 => .r64,
+                        else => unreachable,
+                    };
+                }
+            },
+
+            .mem => |mem| {
+                const bit_size = mem.bitSize();
+                return switch (bit_size) {
+                    8 => .m8,
+                    16 => .m16,
+                    32 => .m32,
+                    64 => .m64,
+                    else => unreachable,
+                };
+            },
+
+            .moffs => return .moffs,
+
+            .imm => |imm| {
+                if (math.cast(u8, imm)) |_| return .imm8;
+                if (math.cast(u16, imm)) |_| return .imm16;
+                if (math.cast(u32, imm)) |_| return .imm32;
+                return .imm64;
+            },
+        }
+    }
 
     pub fn bitSize(op: Operand) u64 {
         return switch (op) {
@@ -213,29 +268,6 @@ pub const Operand = enum {
             },
         }
     }
-
-    // fn isMatch(op: Operand, other: Operand) bool {
-    //     if (op == .rm8 and (other == .r8 or other == .al)) return true;
-    //     if (op == .rm16 and (other == .r16 or other == .ax)) return true;
-    //     if (op == .rm32 and (other == .r32 or other == .eax)) return true;
-    //     if (op == .rm64 and (other == .r64 or other == .rax)) return true;
-    //     if (op == .r8 and other == .al) return true;
-    //     if (op == .r16 and other == .ax) return true;
-    //     if (op == .r32 and other == .eax) return true;
-    //     if (op == .r64 and other == .rax) return true;
-    //     switch (op) {
-    //         .imm32 => switch (other) {
-    //             .imm8, .imm16, .imm32 => return true,
-    //             else => {},
-    //         },
-    //         .imm16 => switch (other) {
-    //             .imm8, .imm16 => return true,
-    //             else => {},
-    //         },
-    //         else => {},
-    //     }
-    //     return op == other;
-    // }
 };
 
 pub const Encoding = struct {
@@ -250,20 +282,25 @@ pub const Encoding = struct {
     modrm_ext: u3,
 
     pub fn findByMnemonic(mnemonic: Mnemonic, args: struct {
-        op1: Operand = .none,
-        op2: Operand = .none,
-        op3: Operand = .none,
-        op4: Operand = .none,
+        op1: Instruction.Operand,
+        op2: Instruction.Operand,
+        op3: Instruction.Operand,
+        op4: Instruction.Operand,
     }) ?Encoding {
-        // TODO we should collect all matching variants and then select the shortest one
+        const input_op1 = Operand.fromOperand(args.op1);
+        const input_op2 = Operand.fromOperand(args.op2);
+        const input_op3 = Operand.fromOperand(args.op3);
+        const input_op4 = Operand.fromOperand(args.op4);
+
+        // TODO work out what is the maximum number of variants we can actually find in one swoop.
         var candidates: [10]Encoding = undefined;
         var count: usize = 0;
         inline for (table) |entry| {
             if (entry[0] == mnemonic and
-                args.op1.isSubset(entry[2]) and
-                args.op2.isSubset(entry[3]) and
-                args.op3.isSubset(entry[4]) and
-                args.op4.isSubset(entry[5]))
+                input_op1.isSubset(entry[2]) and
+                input_op2.isSubset(entry[3]) and
+                input_op3.isSubset(entry[4]) and
+                input_op4.isSubset(entry[5]))
             {
                 candidates[count] = Encoding{
                     .mnemonic = mnemonic,
@@ -283,8 +320,48 @@ pub const Encoding = struct {
         if (count == 0) return null;
         if (count == 1) return candidates[0];
 
-        std.log.warn("candidates {d} > 1", .{count});
-        return candidates[0];
+        const EncodingLength = struct {
+            fn estimate(encoding: Encoding, params: struct {
+                op1: Instruction.Operand,
+                op2: Instruction.Operand,
+                op3: Instruction.Operand,
+                op4: Instruction.Operand,
+            }) usize {
+                var inst = Instruction{
+                    .op1 = params.op1,
+                    .op2 = params.op2,
+                    .op3 = params.op3,
+                    .op4 = params.op4,
+                    .encoding = encoding,
+                };
+                var cwriter = std.io.countingWriter(std.io.null_writer);
+                inst.encode(cwriter.writer()) catch unreachable;
+                return cwriter.bytes_written;
+            }
+        };
+
+        var shortest_encoding: ?struct {
+            index: usize,
+            len: usize,
+        } = null;
+        var i: usize = 0;
+        while (i < count) : (i += 1) {
+            const len = EncodingLength.estimate(candidates[i], .{
+                .op1 = args.op1,
+                .op2 = args.op2,
+                .op3 = args.op3,
+                .op4 = args.op4,
+            });
+            const current = shortest_encoding orelse {
+                shortest_encoding = .{ .index = i, .len = len };
+                continue;
+            };
+            if (len < current.len) {
+                shortest_encoding = .{ .index = i, .len = len };
+            }
+        }
+
+        return candidates[shortest_encoding.?.index];
     }
 
     pub fn findByOpcode(opc: [3]u8) ?Encoding {
