@@ -211,6 +211,36 @@ test "lower MI encoding" {
     }) }, .op2 = .{ .imm = @bitCast(u8, @as(i8, -0x10)) } });
     try expectEqualHexStrings("\x48\x83\x45\xF0\xF0", enc.code(), "add QWORD PTR [rbp - 0x10], -0x10");
 
+    try enc.encode(.{ .mnemonic = .@"and", .op1 = .{ .mem = Memory.mem(.dword, .{
+        .base = .ds,
+        .disp = 0x10000000,
+    }) }, .op2 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings(
+        "\x83\x24\x25\x00\x00\x00\x10\x10",
+        enc.code(),
+        "and DWORD PTR ds:0x10000000, 0x10",
+    );
+
+    try enc.encode(.{ .mnemonic = .@"and", .op1 = .{ .mem = Memory.mem(.dword, .{
+        .base = .es,
+        .disp = 0x10000000,
+    }) }, .op2 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings(
+        "\x26\x83\x24\x25\x00\x00\x00\x10\x10",
+        enc.code(),
+        "and DWORD PTR es:0x10000000, 0x10",
+    );
+
+    try enc.encode(.{ .mnemonic = .@"and", .op1 = .{ .mem = Memory.mem(.dword, .{
+        .base = .r12,
+        .disp = 0x10000000,
+    }) }, .op2 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings(
+        "\x41\x83\xA4\x24\x00\x00\x00\x10\x10",
+        enc.code(),
+        "and DWORD PTR [r12 + 0x10000000], 0x10",
+    );
+
     //     try enc.encode(.{ .tag = .sub, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.dword, .{
     //         .base = .r11,
     //         .disp = 0x10000000,
@@ -221,35 +251,6 @@ test "lower MI encoding" {
     //         "sub dword ptr [r11 + 0x10000000], 0x10",
     //     );
 
-    //     try enc.encode(.{ .tag = .@"and", .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.dword, .{
-    //         .base = .ds,
-    //         .disp = 0x10000000,
-    //     }), 0x10, 32) });
-    //     try expectEqualHexStrings(
-    //         "\x81\x24\x25\x00\x00\x00\x10\x10\x00\x00\x00",
-    //         enc.code(),
-    //         "and dword ptr [ds:0x10000000], 0x10",
-    //     );
-
-    //     try enc.encode(.{ .tag = .@"and", .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.dword, .{
-    //         .base = .es,
-    //         .disp = 0x10000000,
-    //     }), 0x10, 32) });
-    //     try expectEqualHexStrings(
-    //         "\x26\x81\x24\x25\x00\x00\x00\x10\x10\x00\x00\x00",
-    //         enc.code(),
-    //         "and dword ptr [ds:0x10000000], 0x10",
-    //     );
-
-    //     try enc.encode(.{ .tag = .@"and", .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.dword, .{
-    //         .base = .r12,
-    //         .disp = 0x10000000,
-    //     }), 0x10, 32) });
-    //     try expectEqualHexStrings(
-    //         "\x41\x81\xA4\x24\x00\x00\x00\x10\x10\x00\x00\x00",
-    //         enc.code(),
-    //         "and dword ptr [r12 + 0x10000000], 0x10",
-    //     );
 }
 
 test "lower RM encoding" {
