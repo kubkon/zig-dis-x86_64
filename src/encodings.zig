@@ -552,45 +552,54 @@ pub const Encoding = struct {
             try writer.print("{x:0>2} ", .{byte});
         }
 
+        const ops = &[_]Op{ encoding.op1, encoding.op2, encoding.op3, encoding.op4 };
+
         switch (encoding.op_en) {
-            .i => {
-                const op = if (encoding.op1.isImmediate()) encoding.op1 else encoding.op2;
-                try writer.print("{s}", .{switch (op) {
-                    .imm8 => "ib ",
-                    .imm16 => "iw ",
-                    .imm32 => "id ",
-                    else => unreachable,
-                }});
+            .np, .fd, .td => {},
+            else => {
+                const op_en = @tagName(encoding.op_en);
+                var buf: [2]u8 = undefined;
+                var i: usize = 0;
+                while (i < op_en.len) : (i += 1) {
+                    const ch = op_en[i];
+                    const tag: []const u8 = switch (ch) {
+                        'i' => tag: {
+                            const op = blk: {
+                                if (encoding.op_en == .i) {
+                                    break :blk if (ops[0].isImmediate()) ops[0] else ops[1];
+                                }
+                                break :blk ops[i];
+                            };
+                            break :tag switch (op) {
+                                .imm8 => "ib",
+                                .imm16 => "iw",
+                                .imm32 => "id",
+                                .imm64 => "io",
+                                else => unreachable,
+                            };
+                        },
+                        'o' => switch (ops[i]) {
+                            .r8 => "+rb",
+                            .r16 => "+rw",
+                            .r32 => "+rd",
+                            .r64 => "+rd",
+                            else => unreachable,
+                        },
+                        'm' => switch (encoding.op_en) {
+                            .m, .mi => std.fmt.bufPrint(&buf, "/{d}", .{encoding.modRmExt()}) catch unreachable,
+                            else => continue,
+                        },
+                        'r' => "/r",
+                        else => continue,
+                    };
+                    try writer.print("{s} ", .{tag});
+                }
             },
-            .m, .mi => try writer.print("/{d} ", .{encoding.modRmExt()}),
-            .o => try writer.print("{s}", .{switch (encoding.op1) {
-                .r8 => "+rb ",
-                .r16 => "+rw ",
-                .r32 => "+rd ",
-                .r64 => "+rd ",
-                else => unreachable,
-            }}),
-            .oi => try writer.print("{s}", .{switch (encoding.op1) {
-                .r8 => "+rb ib ",
-                .r16 => "+rw iw ",
-                .r32 => "+rd id ",
-                .r64 => "+rd io ",
-                else => unreachable,
-            }}),
-            .rm, .mr => try writer.writeAll("/r "),
-            .rmi => try writer.print("/r {s} ", .{switch (encoding.op3) {
-                .imm8 => "ib",
-                .imm16 => "iw",
-                .imm32 => "id",
-                else => unreachable,
-            }}),
-            .fd, .td => {},
-            .np => {},
         }
 
         try writer.print("{s} ", .{@tagName(encoding.mnemonic)});
 
-        for (&[_]Op{ encoding.op1, encoding.op2, encoding.op3, encoding.op4 }) |op| {
+        for (ops) |op| {
             if (op == .none) break;
             try writer.print("{s} ", .{@tagName(op)});
         }

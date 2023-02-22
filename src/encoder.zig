@@ -123,8 +123,6 @@ pub const Instruction = struct {
             },
 
             .m, .mi => {
-                const modrm_ext = encoding.modRmExt();
-
                 var prefixes = LegacyPrefixes{};
                 if (inst.op1.bitSize() == 16) {
                     prefixes.set16BitOverride();
@@ -146,7 +144,7 @@ pub const Instruction = struct {
                             .b = reg.isExtended(),
                         });
                         try encodeOpcode(opcode, encoder);
-                        try encoder.modRm_direct(modrm_ext, reg.lowEnc());
+                        try encoder.modRm_direct(encoding.modRmExt(), reg.lowEnc());
                     },
                     .mem => |mem| {
                         try encoder.rex(.{
@@ -155,7 +153,7 @@ pub const Instruction = struct {
                             .x = if (mem.scale_index) |si| si.index.isExtended() else false,
                         });
                         try encodeOpcode(opcode, encoder);
-                        try mem.encode(modrm_ext, encoder);
+                        try encodeMemory(encoding, mem, .none, encoder);
                     },
                     else => unreachable,
                 }
@@ -227,7 +225,7 @@ pub const Instruction = struct {
                     .x = if (mem.scale_index) |si| si.index.isExtended() else false,
                 });
                 try encodeOpcode(opcode, encoder);
-                try mem.encode(op1.reg.lowEnc(), encoder);
+                try encodeMemory(encoding, mem, op1, encoder);
             },
             else => unreachable,
         }
@@ -257,6 +255,79 @@ pub const Instruction = struct {
     fn encodeOpcode(opcode: []const u8, encoder: anytype) !void {
         for (opcode) |byte| {
             try encoder.opcode_1byte(byte);
+        }
+    }
+
+    fn encodeMemory(encoding: Encoding, mem: Memory, operand: Operand, encoder: anytype) !void {
+        const operand_enc = switch (operand) {
+            .reg => |reg| reg.lowEnc(),
+            .none => encoding.modRmExt(),
+            else => unreachable,
+        };
+
+        if (mem.base) |base| {
+            if (base.class() == .seg) {
+                // TODO audit this wrt SIB
+                try encoder.modRm_SIBDisp0(operand_enc);
+                if (mem.scale_index) |si| {
+                    try encoder.sib_scaleIndexDisp32(si.scale, si.index.lowEnc());
+                } else {
+                    try encoder.sib_disp32();
+                }
+                try encoder.disp32(mem.disp);
+            } else {
+                assert(base.class() == .gp);
+                const dst = base.lowEnc();
+                const src = operand_enc;
+                if (dst == 4 or mem.scale_index != null) {
+                    if (mem.disp == 0 and dst != 5) {
+                        try encoder.modRm_SIBDisp0(src);
+                        if (mem.scale_index) |si| {
+                            try encoder.sib_scaleIndexBase(si.scale, si.index.lowEnc(), dst);
+                        } else {
+                            try encoder.sib_base(dst);
+                        }
+                    } else if (math.cast(i8, mem.disp)) |_| {
+                        try encoder.modRm_SIBDisp8(src);
+                        if (mem.scale_index) |si| {
+                            try encoder.sib_scaleIndexBaseDisp8(si.scale, si.index.lowEnc(), dst);
+                        } else {
+                            try encoder.sib_baseDisp8(dst);
+                        }
+                        try encoder.disp8(@truncate(i8, mem.disp));
+                    } else {
+                        try encoder.modRm_SIBDisp32(src);
+                        if (mem.scale_index) |si| {
+                            try encoder.sib_scaleIndexBaseDisp32(si.scale, si.index.lowEnc(), dst);
+                        } else {
+                            try encoder.sib_baseDisp32(dst);
+                        }
+                        try encoder.disp32(mem.disp);
+                    }
+                } else {
+                    if (mem.disp == 0 and dst != 5) {
+                        try encoder.modRm_indirectDisp0(src, dst);
+                    } else if (math.cast(i8, mem.disp)) |_| {
+                        try encoder.modRm_indirectDisp8(src, dst);
+                        try encoder.disp8(@truncate(i8, mem.disp));
+                    } else {
+                        try encoder.modRm_indirectDisp32(src, dst);
+                        try encoder.disp32(mem.disp);
+                    }
+                }
+            }
+        } else {
+            if (mem.rip) {
+                try encoder.modRm_RIPDisp32(operand_enc);
+            } else {
+                try encoder.modRm_SIBDisp0(operand_enc);
+                if (mem.scale_index) |si| {
+                    try encoder.sib_scaleIndexDisp32(si.scale, si.index.lowEnc());
+                } else {
+                    try encoder.sib_disp32();
+                }
+            }
+            try encoder.disp32(mem.disp);
         }
     }
 
