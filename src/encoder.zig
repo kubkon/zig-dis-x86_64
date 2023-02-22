@@ -140,22 +140,22 @@ pub const Instruction = struct {
                 try encoder.legacyPrefixes(prefixes);
 
                 switch (inst.op1) {
-                    .reg => |dst_reg| {
+                    .reg => |reg| {
                         try encoder.rex(.{
                             .w = inst.op1.is64BitMode() and !encoding.mnemonic.defaultsTo64Bits(),
-                            .b = dst_reg.isExtended(),
+                            .b = reg.isExtended(),
                         });
                         try encodeOpcode(opcode, encoder);
-                        try encoder.modRm_direct(modrm_ext, dst_reg.lowEnc());
+                        try encoder.modRm_direct(modrm_ext, reg.lowEnc());
                     },
-                    .mem => |dst_mem| {
+                    .mem => |mem| {
                         try encoder.rex(.{
                             .w = inst.op1.is64BitMode() and !encoding.mnemonic.defaultsTo64Bits(),
-                            .b = if (dst_mem.base) |base| base.isExtended() else false,
-                            .x = if (dst_mem.scale_index) |si| si.index.isExtended() else false,
+                            .b = if (mem.base) |base| base.isExtended() else false,
+                            .x = if (mem.scale_index) |si| si.index.isExtended() else false,
                         });
                         try encodeOpcode(opcode, encoder);
-                        try dst_mem.encode(modrm_ext, encoder);
+                        try mem.encode(modrm_ext, encoder);
                     },
                     else => unreachable,
                 }
@@ -181,12 +181,20 @@ pub const Instruction = struct {
                 }
             },
 
-            .rm => try encodeRm(opcode, inst.op1, inst.op2, encoder),
-            .mr => try encodeRm(opcode, inst.op2, inst.op1, encoder),
+            .rm => try encodeRmi(encoding, opcode, inst.op1, inst.op2, .none, encoder),
+            .mr => try encodeRmi(encoding, opcode, inst.op2, inst.op1, .none, encoder),
+            .rmi => try encodeRmi(encoding, opcode, inst.op1, inst.op2, inst.op3, encoder),
         }
     }
 
-    fn encodeRm(opcode: []const u8, op1: Operand, op2: Operand, encoder: anytype) !void {
+    fn encodeRmi(
+        encoding: Encoding,
+        opcode: []const u8,
+        op1: Operand,
+        op2: Operand,
+        op3: Operand,
+        encoder: anytype,
+    ) !void {
         assert(op1 == .reg);
         var prefixes = LegacyPrefixes{};
         if (op1.bitSize() == 16) {
@@ -221,6 +229,12 @@ pub const Instruction = struct {
                 try encodeOpcode(opcode, encoder);
                 try mem.encode(op1.reg.lowEnc(), encoder);
             },
+            else => unreachable,
+        }
+
+        switch (op3) {
+            .none => {},
+            .imm => |imm| try encodeImm(imm, encoding.op3, encoder),
             else => unreachable,
         }
     }

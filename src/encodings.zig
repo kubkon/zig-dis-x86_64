@@ -93,6 +93,16 @@ const table = &[_]Entry{
     .{ .cmp, .rm, .r32, .rm32, .none, .none, 1, 0x3b, 0x00, 0x00, 0 },
     .{ .cmp, .rm, .r64, .rm64, .none, .none, 1, 0x3b, 0x00, 0x00, 0 },
 
+    .{ .imul, .rm, .r16, .rm16, .none, .none, 2, 0x0f, 0xaf, 0x00, 0 },
+    .{ .imul, .rm, .r32, .rm32, .none, .none, 2, 0x0f, 0xaf, 0x00, 0 },
+    .{ .imul, .rm, .r64, .rm64, .none, .none, 2, 0x0f, 0xaf, 0x00, 0 },
+    .{ .imul, .rmi, .r16, .rm16, .imm8, .none, 1, 0x6b, 0x00, 0x00, 0 },
+    .{ .imul, .rmi, .r32, .rm32, .imm8, .none, 1, 0x6b, 0x00, 0x00, 0 },
+    .{ .imul, .rmi, .r64, .rm64, .imm8, .none, 1, 0x6b, 0x00, 0x00, 0 },
+    .{ .imul, .rmi, .r16, .rm16, .imm16, .none, 1, 0x69, 0x00, 0x00, 0 },
+    .{ .imul, .rmi, .r32, .rm32, .imm32, .none, 1, 0x69, 0x00, 0x00, 0 },
+    .{ .imul, .rmi, .r64, .rm64, .imm32, .none, 1, 0x69, 0x00, 0x00, 0 },
+
     .{ .int3, .np, .none, .none, .none, .none, 1, 0xcc, 0x00, 0x00, 0 },
 
     .{ .lea, .rm, .r16, .m, .none, .none, 1, 0x8d, 0x00, 0x00, 0 },
@@ -240,7 +250,7 @@ pub const Mnemonic = enum {
     // zig fmt: off
     adc, add, @"and",
     call, cmp,
-    int3,
+    imul, int3,
     lea,
     mov, movsx, movsxd,
     nop,
@@ -259,7 +269,7 @@ pub const Mnemonic = enum {
     }
 };
 
-pub const OpEn = enum { np, o, i, m, fd, td, oi, mi, mr, rm };
+pub const OpEn = enum { np, o, i, m, fd, td, oi, mi, mr, rm, rmi };
 
 pub const Op = enum {
     // zig fmt: off
@@ -568,6 +578,12 @@ pub const Encoding = struct {
                 else => unreachable,
             }}),
             .rm, .mr => try writer.writeAll("/r "),
+            .rmi => try writer.print("/r {s} ", .{switch (encoding.op3) {
+                .imm8 => "ib",
+                .imm16 => "iw",
+                .imm32 => "id",
+                else => unreachable,
+            }}),
             .fd, .td => {},
             .np => {},
         }

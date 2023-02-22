@@ -401,6 +401,43 @@ test "lower RM encoding" {
         .disp = 0x10000000,
     }) } });
     try expectEqualHexStrings("\x4D\x2B\x9C\x24\x00\x00\x00\x10", enc.code(), "sub r11, QWORD PTR [r12 + 0x10000000]");
+
+    try enc.encode(.{ .mnemonic = .imul, .op1 = .{ .reg = .r11 }, .op2 = .{ .reg = .r12 } });
+    try expectEqualHexStrings("\x4D\x0F\xAF\xDC", enc.code(), "mov r11, r12");
+}
+
+test "lower RMI encoding" {
+    var enc = TestEncode{};
+
+    try enc.encode(.{ .mnemonic = .imul, .op1 = .{ .reg = .r11 }, .op2 = .{ .reg = .r12 }, .op3 = .{ .imm = -2 } });
+    try expectEqualHexStrings("\x4D\x6B\xDC\xFE", enc.code(), "imul r11, r12, -2");
+
+    try enc.encode(.{
+        .mnemonic = .imul,
+        .op1 = .{ .reg = .r11 },
+        .op2 = .{ .mem = Memory.rip(.qword, -16) },
+        .op3 = .{ .imm = -1024 },
+    });
+    try expectEqualHexStrings(
+        "\x4C\x69\x1D\xF0\xFF\xFF\xFF\x00\xFC\xFF\xFF",
+        enc.code(),
+        "imul r11, QWORD PTR [rip - 16], -1024",
+    );
+
+    try enc.encode(.{
+        .mnemonic = .imul,
+        .op1 = .{ .reg = .bx },
+        .op2 = .{ .mem = Memory.mem(.word, .{
+            .base = .rbp,
+            .disp = -16,
+        }) },
+        .op3 = .{ .imm = -1024 },
+    });
+    try expectEqualHexStrings(
+        "\x66\x69\x5D\xF0\x00\xFC",
+        enc.code(),
+        "imul bx, WORD PTR [rbp - 16], -1024",
+    );
 }
 
 test "lower MR encoding" {
