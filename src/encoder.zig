@@ -9,7 +9,6 @@ const Encoding = encodings.Encoding;
 const OperandKind = encodings.Operand;
 const Memory = bits.Memory;
 const Moffs = bits.Moffs;
-pub const Mnemonic = encodings.Mnemonic;
 const PtrSize = bits.PtrSize;
 const Register = bits.Register;
 
@@ -19,6 +18,8 @@ pub const Instruction = struct {
     op3: Operand = .none,
     op4: Operand = .none,
     encoding: Encoding,
+
+    pub const Mnemonic = encodings.Mnemonic;
 
     pub const Operand = union(enum) {
         none,
