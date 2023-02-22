@@ -73,6 +73,26 @@ const table = &[_]Entry{
 
     .{ .call, .m, .rm64, .none, .none, .none, 1, 0xff, 0x00, 0x00, 2 },
 
+    .{ .cmp, .i, .al, .imm8, .none, .none, 1, 0x3c, 0x00, 0x00, 0 },
+    .{ .cmp, .i, .ax, .imm16, .none, .none, 1, 0x3d, 0x00, 0x00, 0 },
+    .{ .cmp, .i, .eax, .imm32, .none, .none, 1, 0x3d, 0x00, 0x00, 0 },
+    .{ .cmp, .i, .rax, .imm32, .none, .none, 1, 0x3d, 0x00, 0x00, 0 },
+    .{ .cmp, .mi, .rm8, .imm8, .none, .none, 1, 0x80, 0x00, 0x00, 7 },
+    .{ .cmp, .mi, .rm16, .imm16, .none, .none, 1, 0x81, 0x00, 0x00, 7 },
+    .{ .cmp, .mi, .rm32, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 7 },
+    .{ .cmp, .mi, .rm64, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 7 },
+    .{ .cmp, .mi, .rm16, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 7 },
+    .{ .cmp, .mi, .rm32, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 7 },
+    .{ .cmp, .mi, .rm64, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 7 },
+    .{ .cmp, .mr, .rm8, .r8, .none, .none, 1, 0x38, 0x00, 0x00, 0 },
+    .{ .cmp, .mr, .rm16, .r16, .none, .none, 1, 0x39, 0x00, 0x00, 0 },
+    .{ .cmp, .mr, .rm32, .r32, .none, .none, 1, 0x39, 0x00, 0x00, 0 },
+    .{ .cmp, .mr, .rm64, .r64, .none, .none, 1, 0x39, 0x00, 0x00, 0 },
+    .{ .cmp, .rm, .r8, .rm8, .none, .none, 1, 0x3a, 0x00, 0x00, 0 },
+    .{ .cmp, .rm, .r16, .rm16, .none, .none, 1, 0x3b, 0x00, 0x00, 0 },
+    .{ .cmp, .rm, .r32, .rm32, .none, .none, 1, 0x3b, 0x00, 0x00, 0 },
+    .{ .cmp, .rm, .r64, .rm64, .none, .none, 1, 0x3b, 0x00, 0x00, 0 },
+
     .{ .int3, .np, .none, .none, .none, .none, 1, 0xcc, 0x00, 0x00, 0 },
 
     .{ .lea, .rm, .r16, .m, .none, .none, 1, 0x8d, 0x00, 0x00, 0 },
@@ -118,6 +138,26 @@ const table = &[_]Entry{
 
     .{ .nop, .np, .none, .none, .none, .none, 1, 0x90, 0x00, 0x00, 0 },
 
+    .{ .@"or", .i, .al, .imm8, .none, .none, 1, 0x0c, 0x00, 0x00, 0 },
+    .{ .@"or", .i, .ax, .imm16, .none, .none, 1, 0x0d, 0x00, 0x00, 0 },
+    .{ .@"or", .i, .eax, .imm32, .none, .none, 1, 0x0d, 0x00, 0x00, 0 },
+    .{ .@"or", .i, .rax, .imm32, .none, .none, 1, 0x0d, 0x00, 0x00, 0 },
+    .{ .@"or", .mi, .rm8, .imm8, .none, .none, 1, 0x80, 0x00, 0x00, 1 },
+    .{ .@"or", .mi, .rm16, .imm16, .none, .none, 1, 0x81, 0x00, 0x00, 1 },
+    .{ .@"or", .mi, .rm32, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 1 },
+    .{ .@"or", .mi, .rm64, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 1 },
+    .{ .@"or", .mi, .rm16, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 1 },
+    .{ .@"or", .mi, .rm32, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 1 },
+    .{ .@"or", .mi, .rm64, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 1 },
+    .{ .@"or", .mr, .rm8, .r8, .none, .none, 1, 0x08, 0x00, 0x00, 0 },
+    .{ .@"or", .mr, .rm16, .r16, .none, .none, 1, 0x09, 0x00, 0x00, 0 },
+    .{ .@"or", .mr, .rm32, .r32, .none, .none, 1, 0x09, 0x00, 0x00, 0 },
+    .{ .@"or", .mr, .rm64, .r64, .none, .none, 1, 0x09, 0x00, 0x00, 0 },
+    .{ .@"or", .rm, .r8, .rm8, .none, .none, 1, 0x0a, 0x00, 0x00, 0 },
+    .{ .@"or", .rm, .r16, .rm16, .none, .none, 1, 0x0b, 0x00, 0x00, 0 },
+    .{ .@"or", .rm, .r32, .rm32, .none, .none, 1, 0x0b, 0x00, 0x00, 0 },
+    .{ .@"or", .rm, .r64, .rm64, .none, .none, 1, 0x0b, 0x00, 0x00, 0 },
+
     .{ .pop, .o, .r16, .none, .none, .none, 1, 0x58, 0x00, 0x00, 0 },
     .{ .pop, .o, .r64, .none, .none, .none, 1, 0x58, 0x00, 0x00, 0 },
     .{ .pop, .m, .rm16, .none, .none, .none, 1, 0x8f, 0x00, 0x00, 0 },
@@ -133,7 +173,67 @@ const table = &[_]Entry{
 
     .{ .ret, .np, .none, .none, .none, .none, 1, 0xc3, 0x00, 0x00, 0 },
 
+    .{ .sbb, .i, .al, .imm8, .none, .none, 1, 0x1c, 0x00, 0x00, 0 },
+    .{ .sbb, .i, .ax, .imm16, .none, .none, 1, 0x1d, 0x00, 0x00, 0 },
+    .{ .sbb, .i, .eax, .imm32, .none, .none, 1, 0x1d, 0x00, 0x00, 0 },
+    .{ .sbb, .i, .rax, .imm32, .none, .none, 1, 0x1d, 0x00, 0x00, 0 },
+    .{ .sbb, .mi, .rm8, .imm8, .none, .none, 1, 0x80, 0x00, 0x00, 3 },
+    .{ .sbb, .mi, .rm16, .imm16, .none, .none, 1, 0x81, 0x00, 0x00, 3 },
+    .{ .sbb, .mi, .rm32, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 3 },
+    .{ .sbb, .mi, .rm64, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 3 },
+    .{ .sbb, .mi, .rm16, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 3 },
+    .{ .sbb, .mi, .rm32, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 3 },
+    .{ .sbb, .mi, .rm64, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 3 },
+    .{ .sbb, .mr, .rm8, .r8, .none, .none, 1, 0x18, 0x00, 0x00, 0 },
+    .{ .sbb, .mr, .rm16, .r16, .none, .none, 1, 0x19, 0x00, 0x00, 0 },
+    .{ .sbb, .mr, .rm32, .r32, .none, .none, 1, 0x19, 0x00, 0x00, 0 },
+    .{ .sbb, .mr, .rm64, .r64, .none, .none, 1, 0x19, 0x00, 0x00, 0 },
+    .{ .sbb, .rm, .r8, .rm8, .none, .none, 1, 0x1a, 0x00, 0x00, 0 },
+    .{ .sbb, .rm, .r16, .rm16, .none, .none, 1, 0x1b, 0x00, 0x00, 0 },
+    .{ .sbb, .rm, .r32, .rm32, .none, .none, 1, 0x1b, 0x00, 0x00, 0 },
+    .{ .sbb, .rm, .r64, .rm64, .none, .none, 1, 0x1b, 0x00, 0x00, 0 },
+
+    .{ .sub, .i, .al, .imm8, .none, .none, 1, 0x2c, 0x00, 0x00, 0 },
+    .{ .sub, .i, .ax, .imm16, .none, .none, 1, 0x2d, 0x00, 0x00, 0 },
+    .{ .sub, .i, .eax, .imm32, .none, .none, 1, 0x2d, 0x00, 0x00, 0 },
+    .{ .sub, .i, .rax, .imm32, .none, .none, 1, 0x2d, 0x00, 0x00, 0 },
+    .{ .sub, .mi, .rm8, .imm8, .none, .none, 1, 0x80, 0x00, 0x00, 5 },
+    .{ .sub, .mi, .rm16, .imm16, .none, .none, 1, 0x81, 0x00, 0x00, 5 },
+    .{ .sub, .mi, .rm32, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 5 },
+    .{ .sub, .mi, .rm64, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 5 },
+    .{ .sub, .mi, .rm16, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 5 },
+    .{ .sub, .mi, .rm32, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 5 },
+    .{ .sub, .mi, .rm64, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 5 },
+    .{ .sub, .mr, .rm8, .r8, .none, .none, 1, 0x28, 0x00, 0x00, 0 },
+    .{ .sub, .mr, .rm16, .r16, .none, .none, 1, 0x29, 0x00, 0x00, 0 },
+    .{ .sub, .mr, .rm32, .r32, .none, .none, 1, 0x29, 0x00, 0x00, 0 },
+    .{ .sub, .mr, .rm64, .r64, .none, .none, 1, 0x29, 0x00, 0x00, 0 },
+    .{ .sub, .rm, .r8, .rm8, .none, .none, 1, 0x2a, 0x00, 0x00, 0 },
+    .{ .sub, .rm, .r16, .rm16, .none, .none, 1, 0x2b, 0x00, 0x00, 0 },
+    .{ .sub, .rm, .r32, .rm32, .none, .none, 1, 0x2b, 0x00, 0x00, 0 },
+    .{ .sub, .rm, .r64, .rm64, .none, .none, 1, 0x2b, 0x00, 0x00, 0 },
+
     .{ .syscall, .np, .none, .none, .none, .none, 2, 0x0f, 0x05, 0x00, 0 },
+
+    .{ .xor, .i, .al, .imm8, .none, .none, 1, 0x34, 0x00, 0x00, 0 },
+    .{ .xor, .i, .ax, .imm16, .none, .none, 1, 0x35, 0x00, 0x00, 0 },
+    .{ .xor, .i, .eax, .imm32, .none, .none, 1, 0x35, 0x00, 0x00, 0 },
+    .{ .xor, .i, .rax, .imm32, .none, .none, 1, 0x35, 0x00, 0x00, 0 },
+    .{ .xor, .mi, .rm8, .imm8, .none, .none, 1, 0x80, 0x00, 0x00, 6 },
+    .{ .xor, .mi, .rm16, .imm16, .none, .none, 1, 0x81, 0x00, 0x00, 6 },
+    .{ .xor, .mi, .rm32, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 6 },
+    .{ .xor, .mi, .rm64, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 6 },
+    .{ .xor, .mi, .rm16, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 6 },
+    .{ .xor, .mi, .rm32, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 6 },
+    .{ .xor, .mi, .rm64, .imm8, .none, .none, 1, 0x83, 0x00, 0x00, 6 },
+    .{ .xor, .mr, .rm8, .r8, .none, .none, 1, 0x30, 0x00, 0x00, 0 },
+    .{ .xor, .mr, .rm16, .r16, .none, .none, 1, 0x31, 0x00, 0x00, 0 },
+    .{ .xor, .mr, .rm32, .r32, .none, .none, 1, 0x31, 0x00, 0x00, 0 },
+    .{ .xor, .mr, .rm64, .r64, .none, .none, 1, 0x31, 0x00, 0x00, 0 },
+    .{ .xor, .rm, .r8, .rm8, .none, .none, 1, 0x32, 0x00, 0x00, 0 },
+    .{ .xor, .rm, .r16, .rm16, .none, .none, 1, 0x33, 0x00, 0x00, 0 },
+    .{ .xor, .rm, .r32, .rm32, .none, .none, 1, 0x33, 0x00, 0x00, 0 },
+    .{ .xor, .rm, .r64, .rm64, .none, .none, 1, 0x33, 0x00, 0x00, 0 },
 };
 
 pub const Mnemonic = enum {
@@ -484,40 +584,3 @@ pub const Encoding = struct {
         try writer.print("{s}", .{@tagName(encoding.op_en)});
     }
 };
-
-// fn genArithInst(comptime tag: Tag, op_add: u8, modrm_ext: u8) [19]Entry {
-//     // zig fmt: off
-//     return [_]Entry{
-//         .{ tag, .i,  8,  8,  op_add + 0x04, 0x00,      0x00 },
-//         .{ tag, .i,  16, 16, op_add + 0x05, 0x00,      0x00 },
-//         .{ tag, .i,  32, 32, op_add + 0x05, 0x00,      0x00 },
-//         .{ tag, .i,  64, 32, op_add + 0x05, 0x00,      0x00 },
-//         .{ tag, .mi, 8,  8,           0x80, modrm_ext, 0x00 },
-//         .{ tag, .mi, 16, 16,          0x81, modrm_ext, 0x00 },
-//         .{ tag, .mi, 32, 32,          0x81, modrm_ext, 0x00 },
-//         .{ tag, .mi, 64, 32,          0x81, modrm_ext, 0x00 },
-//         .{ tag, .mi, 16, 8,           0x83, modrm_ext, 0x00 },
-//         .{ tag, .mi, 32, 8,           0x83, modrm_ext, 0x00 },
-//         .{ tag, .mi, 64, 8,           0x83, modrm_ext, 0x00 },
-//         .{ tag, .mr, 8,  8,  op_add + 0x00, 0x00,      0x00 },
-//         .{ tag, .mr, 16, 16, op_add + 0x01, 0x00,      0x00 },
-//         .{ tag, .mr, 32, 32, op_add + 0x01, 0x00,      0x00 },
-//         .{ tag, .mr, 64, 64, op_add + 0x01, 0x00,      0x00 },
-//         .{ tag, .rm, 8,  8,  op_add + 0x02, 0x00,      0x00 },
-//         .{ tag, .rm, 16, 16, op_add + 0x03, 0x00,      0x00 },
-//         .{ tag, .rm, 32, 32, op_add + 0x03, 0x00,      0x00 },
-//         .{ tag, .rm, 64, 64, op_add + 0x03, 0x00,      0x00 },
-//     };
-//     // zig fmt: on
-// }
-
-// zig fmt: off
-// pub const table = [_]Entry{
-//     .{ .call,    .m,  16, 0,  0xe8, 0x00, 0x00 },
-//     .{ .call,    .m,  32, 0,  0xe8, 0x00, 0x00 },
-//     .{ .call,    .m,  64, 0,  0xff, 0x02, 0x00 },
-// } 
-// // zig fmt: on
-// ++ genArithInst(.add, 0, 0) ++ genArithInst(.adc, 0x10, 2) ++ genArithInst(.@"and", 0x20, 4) ++
-//     genArithInst(.cmp, 0x38, 7) ++ genArithInst(.@"or", 0x08, 1) ++ genArithInst(.sbb, 0x18, 3) ++
-//     genArithInst(.sub, 0x28, 5) ++ genArithInst(.xor, 0x30, 6);

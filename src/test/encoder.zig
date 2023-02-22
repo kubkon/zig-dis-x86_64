@@ -111,11 +111,11 @@ test "lower I encoding" {
     try enc.encode(.{ .mnemonic = .add, .op1 = .{ .reg = .rax }, .op2 = .{ .imm = 0x10 } });
     try expectEqualHexStrings("\x48\x83\xC0\x10", enc.code(), "add rax, 0x10");
 
-    //     try enc.encode(.{ .tag = .xor, .enc = .i, .data = Instruction.Data.i(.al, 0x10) });
-    //     try expectEqualHexStrings("\x34\x10", enc.code(), "xor al, 0x10");
+    try enc.encode(.{ .mnemonic = .sbb, .op1 = .{ .reg = .ax }, .op2 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings("\x66\x1D\x10\x00", enc.code(), "sbb ax, 0x10");
 
-    //     try enc.encode(.{ .tag = .sbb, .enc = .i, .data = Instruction.Data.i(.ax, 0x10) });
-    //     try expectEqualHexStrings("\x66\x1D\x10\x00", enc.code(), "sbb ax, 0x10");
+    try enc.encode(.{ .mnemonic = .xor, .op1 = .{ .reg = .al }, .op2 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings("\x34\x10", enc.code(), "xor al, 0x10");
 }
 
 test "lower MI encoding" {
@@ -241,16 +241,15 @@ test "lower MI encoding" {
         "and DWORD PTR [r12 + 0x10000000], 0x10",
     );
 
-    //     try enc.encode(.{ .tag = .sub, .enc = .mi, .data = Instruction.Data.mi(RegisterOrMemory.mem(.dword, .{
-    //         .base = .r11,
-    //         .disp = 0x10000000,
-    //     }), 0x10, 32) });
-    //     try expectEqualHexStrings(
-    //         "\x41\x81\xab\x00\x00\x00\x10\x10\x00\x00\x00",
-    //         enc.code(),
-    //         "sub dword ptr [r11 + 0x10000000], 0x10",
-    //     );
-
+    try enc.encode(.{ .mnemonic = .sub, .op1 = .{ .mem = Memory.mem(.dword, .{
+        .base = .r11,
+        .disp = 0x10000000,
+    }) }, .op2 = .{ .imm = 0x10 } });
+    try expectEqualHexStrings(
+        "\x41\x83\xAB\x00\x00\x00\x10\x10",
+        enc.code(),
+        "sub DWORD PTR [r11 + 0x10000000], 0x10",
+    );
 }
 
 test "lower RM encoding" {
@@ -391,18 +390,17 @@ test "lower RM encoding" {
     }) } });
     try expectEqualHexStrings("\x64\x44\x02\x24\x25\x00\x00\x00\x10", enc.code(), "add r11b, BYTE PTR fs:0x10000000");
 
-    //     try enc.encode(.{ .tag = .sub, .enc = .rm, .data = Instruction.Data.rm(.r11, RegisterOrMemory.mem(.qword, .{
-    //         .base = .r13,
-    //         .disp = 0x10000000,
-    //     })) });
-    //     try expectEqualHexStrings("\x4D\x2B\x9D\x00\x00\x00\x10", enc.code(), "sub r11, QWORD PTR [r13 + 0x10000000]");
+    try enc.encode(.{ .mnemonic = .sub, .op1 = .{ .reg = .r11 }, .op2 = .{ .mem = Memory.mem(.qword, .{
+        .base = .r13,
+        .disp = 0x10000000,
+    }) } });
+    try expectEqualHexStrings("\x4D\x2B\x9D\x00\x00\x00\x10", enc.code(), "sub r11, QWORD PTR [r13 + 0x10000000]");
 
-    //     try enc.encode(.{ .tag = .sub, .enc = .rm, .data = Instruction.Data.rm(.r11, RegisterOrMemory.mem(.qword, .{
-    //         .base = .r12,
-    //         .disp = 0x10000000,
-    //     })) });
-    //     try expectEqualHexStrings("\x4D\x2B\x9C\x24\x00\x00\x00\x10", enc.code(), "sub r11, QWORD PTR [r12 + 0x10000000]");
-
+    try enc.encode(.{ .mnemonic = .sub, .op1 = .{ .reg = .r11 }, .op2 = .{ .mem = Memory.mem(.qword, .{
+        .base = .r12,
+        .disp = 0x10000000,
+    }) } });
+    try expectEqualHexStrings("\x4D\x2B\x9C\x24\x00\x00\x00\x10", enc.code(), "sub r11, QWORD PTR [r12 + 0x10000000]");
 }
 
 test "lower MR encoding" {
@@ -461,12 +459,11 @@ test "lower MR encoding" {
     }) }, .op2 = .{ .reg = .r12d } });
     try expectEqualHexStrings("\x65\x44\x01\x24\x25\x00\x00\x00\x10", enc.code(), "add DWORD PTR [gs:0x10000000], r12d");
 
-    //     try enc.encode(.{ .tag = .sub, .enc = .mr, .data = Instruction.Data.mr(RegisterOrMemory.mem(.qword, .{
-    //         .base = .r11,
-    //         .disp = 0x10000000,
-    //     }), .r12) });
-    //     try expectEqualHexStrings("\x4D\x29\xA3\x00\x00\x00\x10", enc.code(), "sub QWORD PTR [r11 + 0x10000000], r12");
-
+    try enc.encode(.{ .mnemonic = .sub, .op1 = .{ .mem = Memory.mem(.qword, .{
+        .base = .r11,
+        .disp = 0x10000000,
+    }) }, .op2 = .{ .reg = .r12 } });
+    try expectEqualHexStrings("\x4D\x29\xA3\x00\x00\x00\x10", enc.code(), "sub QWORD PTR [r11 + 0x10000000], r12");
 }
 
 test "lower M encoding" {
