@@ -541,11 +541,8 @@ test "lower M encoding" {
     }) } });
     try expectEqualHexStrings("\x65\xFF\x14\x25\x00\x00\x00\x00", enc.code(), "call gs:0x0");
 
-    //     try enc.encode(.{ .tag = .call, .enc = .m, .data = Instruction.Data.m(RegisterOrMemory.mem(.qword, .{
-    //         .base = null,
-    //         .disp = 0,
-    //     })) });
-    //     try expectEqualHexStrings("\xE8\x00\x00\x00\x00", enc.code(), "call 0x0");
+    try enc.encode(.{ .mnemonic = .call, .op1 = .{ .imm = 0 } });
+    try expectEqualHexStrings("\xE8\x00\x00\x00\x00", enc.code(), "call 0x0");
 
     try enc.encode(.{ .mnemonic = .push, .op1 = .{ .mem = Memory.mem(.qword, .{
         .base = .rbp,

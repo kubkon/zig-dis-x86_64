@@ -327,8 +327,8 @@ pub const Instruction = struct {
     fn encodeImm(imm: i64, kind: encodings.Op, encoder: anytype) !void {
         switch (kind) {
             .imm8 => try encoder.imm8(@truncate(i8, imm)),
-            .imm16 => try encoder.imm16(@truncate(i16, imm)),
-            .imm32 => try encoder.imm32(@truncate(i32, imm)),
+            .imm16, .rel16 => try encoder.imm16(@truncate(i16, imm)),
+            .imm32, .rel32 => try encoder.imm32(@truncate(i32, imm)),
             .imm64 => try encoder.imm64(@bitCast(u64, imm)),
             else => unreachable,
         }

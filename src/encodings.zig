@@ -71,6 +71,8 @@ const table = &[_]Entry{
     .{ .@"and", .rm, .r32, .rm32, .none, .none, 1, 0x23, 0x00, 0x00, 0 },
     .{ .@"and", .rm, .r64, .rm64, .none, .none, 1, 0x23, 0x00, 0x00, 0 },
 
+    // This is M encoding according to Intel, but I makes more sense here.
+    .{ .call, .i, .rel32, .none, .none, .none, 1, 0xe8, 0x00, 0x00, 0 },
     .{ .call, .m, .rm64, .none, .none, .none, 1, 0xff, 0x00, 0x00, 2 },
 
     .{ .cmp, .zi, .al, .imm8, .none, .none, 1, 0x3c, 0x00, 0x00, 0 },
@@ -292,6 +294,7 @@ pub const Op = enum {
     r8, r16, r32, r64,
     rm8, rm16, rm32, rm64,
     m8, m16, m32, m64,
+    rel16, rel32,
     m,
     moffs,
     sreg,
@@ -350,8 +353,8 @@ pub const Op = enum {
         return switch (op) {
             .none, .moffs, .m, .sreg => unreachable,
             .imm8, .al, .r8, .m8, .rm8 => 8,
-            .imm16, .ax, .r16, .m16, .rm16 => 16,
-            .imm32, .eax, .r32, .m32, .rm32 => 32,
+            .imm16, .ax, .r16, .m16, .rm16, .rel16 => 16,
+            .imm32, .eax, .r32, .m32, .rm32, .rel32 => 32,
             .imm64, .rax, .r64, .m64, .rm64 => 64,
         };
     }
@@ -370,7 +373,7 @@ pub const Op = enum {
 
     pub fn isImmediate(op: Op) bool {
         return switch (op) {
-            .imm8, .imm16, .imm32, .imm64 => return true,
+            .imm8, .imm16, .imm32, .imm64, .rel16, .rel32 => return true,
             else => false,
         };
     }
@@ -416,6 +419,10 @@ pub const Op = enum {
                     },
                     .imm16 => switch (op) {
                         .imm8, .imm16 => return true,
+                        else => return op == target,
+                    },
+                    .rel32 => switch (op) {
+                        .imm8, .imm16, .imm32 => return true,
                         else => return op == target,
                     },
                     else => return op == target,
@@ -562,53 +569,47 @@ pub const Encoding = struct {
             try writer.print("{x:0>2} ", .{byte});
         }
 
-        const ops = &[_]Op{ encoding.op1, encoding.op2, encoding.op3, encoding.op4 };
+        switch (encoding.op_en) {
+            .np, .fd, .td, .i, .zi => {},
+            .o, .oi => {
+                const tag = switch (encoding.op1) {
+                    .r8 => "rb",
+                    .r16 => "rw",
+                    .r32 => "rd",
+                    .r64 => "rd",
+                    else => unreachable,
+                };
+                try writer.print("+{s} ", .{tag});
+            },
+            .m, .mi => try writer.print("/{d} ", .{encoding.modRmExt()}),
+            .mr, .rm, .rmi => try writer.writeAll("/r "),
+        }
 
         switch (encoding.op_en) {
-            .np, .fd, .td => {},
-            else => {
-                const op_en = @tagName(encoding.op_en);
-                var buf: [2]u8 = undefined;
-                var i: usize = 0;
-                while (i < op_en.len) : (i += 1) {
-                    const ch = op_en[i];
-                    const tag: []const u8 = switch (ch) {
-                        'i' => tag: {
-                            const op = blk: {
-                                if (encoding.op_en == .i) {
-                                    break :blk if (ops[0].isImmediate()) ops[0] else ops[1];
-                                }
-                                break :blk ops[i];
-                            };
-                            break :tag switch (op) {
-                                .imm8 => "ib",
-                                .imm16 => "iw",
-                                .imm32 => "id",
-                                .imm64 => "io",
-                                else => unreachable,
-                            };
-                        },
-                        'o' => switch (ops[i]) {
-                            .r8 => "+rb",
-                            .r16 => "+rw",
-                            .r32 => "+rd",
-                            .r64 => "+rd",
-                            else => unreachable,
-                        },
-                        'm' => switch (encoding.op_en) {
-                            .m, .mi => std.fmt.bufPrint(&buf, "/{d}", .{encoding.modRmExt()}) catch unreachable,
-                            else => continue,
-                        },
-                        'r' => "/r",
-                        else => continue,
-                    };
-                    try writer.print("{s} ", .{tag});
-                }
+            .i, .zi, .oi, .mi, .rmi => {
+                const op = switch (encoding.op_en) {
+                    .i => encoding.op1,
+                    .zi, .oi, .mi => encoding.op2,
+                    .rmi => encoding.op3,
+                    else => unreachable,
+                };
+                const tag = switch (op) {
+                    .imm8 => "ib",
+                    .imm16 => "iw",
+                    .imm32 => "id",
+                    .imm64 => "io",
+                    .rel16 => "cw ",
+                    .rel32 => "cd ",
+                    else => unreachable,
+                };
+                try writer.print("{s} ", .{tag});
             },
+            .np, .fd, .td, .o, .m, .mr, .rm => {},
         }
 
         try writer.print("{s} ", .{@tagName(encoding.mnemonic)});
 
+        const ops = &[_]Op{ encoding.op1, encoding.op2, encoding.op3, encoding.op4 };
         for (ops) |op| {
             if (op == .none) break;
             try writer.print("{s} ", .{@tagName(op)});
