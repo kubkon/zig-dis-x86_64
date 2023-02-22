@@ -104,15 +104,11 @@ pub const Instruction = struct {
 
         switch (encoding.op_en) {
             .np, .o => {},
-            .i => if (encoding.op1.isImmediate()) {
-                try encodeImm(inst.op1.imm, encoding.op1, encoder);
-            } else {
-                try encodeImm(inst.op2.imm, encoding.op2, encoder);
-            },
-            .oi => try encodeImm(inst.op2.imm, encoding.op2, encoder),
+            .i => try encodeImm(inst.op1.imm, encoding.op1, encoder),
+            .zi, .oi => try encodeImm(inst.op2.imm, encoding.op2, encoder),
             .fd => try encoder.imm64(inst.op2.moffs.offset),
             .td => try encoder.imm64(inst.op1.moffs.offset),
-            .m, .mi, .mr, .rm, .rmi => {
+            else => {
                 const mem_op = switch (encoding.op_en) {
                     .m, .mi, .mr => inst.op1,
                     .rm, .rmi => inst.op2,
@@ -168,7 +164,7 @@ pub const Instruction = struct {
         var legacy = LegacyPrefixes{};
 
         const prefix_66_op = switch (op_en) {
-            .td => inst.encoding.op2,
+            .zi, .td => inst.encoding.op2,
             else => inst.encoding.op1,
         };
         if (prefix_66_op.bitSize() == 16) {
@@ -176,7 +172,7 @@ pub const Instruction = struct {
         }
 
         const segment_override: ?Register = switch (op_en) {
-            .i, .o, .oi => null,
+            .i, .zi, .o, .oi => null,
             .fd => inst.op2.moffs.seg,
             .td => inst.op1.moffs.seg,
             .rm, .rmi => if (inst.op2.isSegment()) blk: {
@@ -210,7 +206,7 @@ pub const Instruction = struct {
         var rex = Rex{};
 
         const rex_op: ?Operand = switch (op_en) {
-            .i => if (inst.encoding.op1.isImmediate()) null else inst.op1,
+            .i => null,
             .td => inst.op2,
             else => inst.op1,
         };
@@ -219,7 +215,7 @@ pub const Instruction = struct {
         }
 
         switch (op_en) {
-            .i, .fd, .td => {},
+            .i, .zi, .fd, .td => {},
             .o, .oi => {
                 rex.b = inst.op1.reg.isExtended();
             },

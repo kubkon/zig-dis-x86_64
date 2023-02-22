@@ -564,6 +564,12 @@ test "lower M encoding" {
 
     try enc.encode(.{ .mnemonic = .pop, .op1 = .{ .mem = Memory.rip(.word, 0) } });
     try expectEqualHexStrings("\x66\x8F\x05\x00\x00\x00\x00", enc.code(), "pop WORD PTR [rbp]");
+
+    try enc.encode(.{ .mnemonic = .imul, .op1 = .{ .reg = .rax } });
+    try expectEqualHexStrings("\x48\xF7\xE8", enc.code(), "imul rax");
+
+    try enc.encode(.{ .mnemonic = .imul, .op1 = .{ .reg = .r12 } });
+    try expectEqualHexStrings("\x49\xF7\xEC", enc.code(), "imul r12");
 }
 
 test "lower O encoding" {

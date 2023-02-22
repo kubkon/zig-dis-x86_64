@@ -11,10 +11,10 @@ const Entry = std.meta.Tuple(&.{ Mnemonic, OpEn, Op, Op, Op, Op, u2, u8, u8, u8,
 
 // TODO move this into a .zon file when Zig is capable of importing .zon files
 const table = &[_]Entry{
-    .{ .adc, .i, .al, .imm8, .none, .none, 1, 0x14, 0x00, 0x00, 0 },
-    .{ .adc, .i, .ax, .imm16, .none, .none, 1, 0x15, 0x00, 0x00, 0 },
-    .{ .adc, .i, .eax, .imm32, .none, .none, 1, 0x15, 0x00, 0x00, 0 },
-    .{ .adc, .i, .rax, .imm32, .none, .none, 1, 0x15, 0x00, 0x00, 0 },
+    .{ .adc, .zi, .al, .imm8, .none, .none, 1, 0x14, 0x00, 0x00, 0 },
+    .{ .adc, .zi, .ax, .imm16, .none, .none, 1, 0x15, 0x00, 0x00, 0 },
+    .{ .adc, .zi, .eax, .imm32, .none, .none, 1, 0x15, 0x00, 0x00, 0 },
+    .{ .adc, .zi, .rax, .imm32, .none, .none, 1, 0x15, 0x00, 0x00, 0 },
     .{ .adc, .mi, .rm8, .imm8, .none, .none, 1, 0x80, 0x00, 0x00, 2 },
     .{ .adc, .mi, .rm16, .imm16, .none, .none, 1, 0x81, 0x00, 0x00, 2 },
     .{ .adc, .mi, .rm32, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 2 },
@@ -31,10 +31,10 @@ const table = &[_]Entry{
     .{ .adc, .rm, .r32, .rm32, .none, .none, 1, 0x13, 0x00, 0x00, 0 },
     .{ .adc, .rm, .r64, .rm64, .none, .none, 1, 0x13, 0x00, 0x00, 0 },
 
-    .{ .add, .i, .al, .imm8, .none, .none, 1, 0x04, 0x00, 0x00, 0 },
-    .{ .add, .i, .ax, .imm16, .none, .none, 1, 0x05, 0x00, 0x00, 0 },
-    .{ .add, .i, .eax, .imm32, .none, .none, 1, 0x05, 0x00, 0x00, 0 },
-    .{ .add, .i, .rax, .imm32, .none, .none, 1, 0x05, 0x00, 0x00, 0 },
+    .{ .add, .zi, .al, .imm8, .none, .none, 1, 0x04, 0x00, 0x00, 0 },
+    .{ .add, .zi, .ax, .imm16, .none, .none, 1, 0x05, 0x00, 0x00, 0 },
+    .{ .add, .zi, .eax, .imm32, .none, .none, 1, 0x05, 0x00, 0x00, 0 },
+    .{ .add, .zi, .rax, .imm32, .none, .none, 1, 0x05, 0x00, 0x00, 0 },
     .{ .add, .mi, .rm8, .imm8, .none, .none, 1, 0x80, 0x00, 0x00, 0 },
     .{ .add, .mi, .rm16, .imm16, .none, .none, 1, 0x81, 0x00, 0x00, 0 },
     .{ .add, .mi, .rm32, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 0 },
@@ -51,10 +51,10 @@ const table = &[_]Entry{
     .{ .add, .rm, .r32, .rm32, .none, .none, 1, 0x03, 0x00, 0x00, 0 },
     .{ .add, .rm, .r64, .rm64, .none, .none, 1, 0x03, 0x00, 0x00, 0 },
 
-    .{ .@"and", .i, .al, .imm8, .none, .none, 1, 0x24, 0x00, 0x00, 0 },
-    .{ .@"and", .i, .ax, .imm16, .none, .none, 1, 0x25, 0x00, 0x00, 0 },
-    .{ .@"and", .i, .eax, .imm32, .none, .none, 1, 0x25, 0x00, 0x00, 0 },
-    .{ .@"and", .i, .rax, .imm32, .none, .none, 1, 0x25, 0x00, 0x00, 0 },
+    .{ .@"and", .zi, .al, .imm8, .none, .none, 1, 0x24, 0x00, 0x00, 0 },
+    .{ .@"and", .zi, .ax, .imm16, .none, .none, 1, 0x25, 0x00, 0x00, 0 },
+    .{ .@"and", .zi, .eax, .imm32, .none, .none, 1, 0x25, 0x00, 0x00, 0 },
+    .{ .@"and", .zi, .rax, .imm32, .none, .none, 1, 0x25, 0x00, 0x00, 0 },
     .{ .@"and", .mi, .rm8, .imm8, .none, .none, 1, 0x80, 0x00, 0x00, 4 },
     .{ .@"and", .mi, .rm16, .imm16, .none, .none, 1, 0x81, 0x00, 0x00, 4 },
     .{ .@"and", .mi, .rm32, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 4 },
@@ -73,10 +73,10 @@ const table = &[_]Entry{
 
     .{ .call, .m, .rm64, .none, .none, .none, 1, 0xff, 0x00, 0x00, 2 },
 
-    .{ .cmp, .i, .al, .imm8, .none, .none, 1, 0x3c, 0x00, 0x00, 0 },
-    .{ .cmp, .i, .ax, .imm16, .none, .none, 1, 0x3d, 0x00, 0x00, 0 },
-    .{ .cmp, .i, .eax, .imm32, .none, .none, 1, 0x3d, 0x00, 0x00, 0 },
-    .{ .cmp, .i, .rax, .imm32, .none, .none, 1, 0x3d, 0x00, 0x00, 0 },
+    .{ .cmp, .zi, .al, .imm8, .none, .none, 1, 0x3c, 0x00, 0x00, 0 },
+    .{ .cmp, .zi, .ax, .imm16, .none, .none, 1, 0x3d, 0x00, 0x00, 0 },
+    .{ .cmp, .zi, .eax, .imm32, .none, .none, 1, 0x3d, 0x00, 0x00, 0 },
+    .{ .cmp, .zi, .rax, .imm32, .none, .none, 1, 0x3d, 0x00, 0x00, 0 },
     .{ .cmp, .mi, .rm8, .imm8, .none, .none, 1, 0x80, 0x00, 0x00, 7 },
     .{ .cmp, .mi, .rm16, .imm16, .none, .none, 1, 0x81, 0x00, 0x00, 7 },
     .{ .cmp, .mi, .rm32, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 7 },
@@ -93,6 +93,10 @@ const table = &[_]Entry{
     .{ .cmp, .rm, .r32, .rm32, .none, .none, 1, 0x3b, 0x00, 0x00, 0 },
     .{ .cmp, .rm, .r64, .rm64, .none, .none, 1, 0x3b, 0x00, 0x00, 0 },
 
+    .{ .imul, .m, .rm8, .none, .none, .none, 1, 0xf6, 0x00, 0x00, 5 },
+    .{ .imul, .m, .rm16, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 5 },
+    .{ .imul, .m, .rm32, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 5 },
+    .{ .imul, .m, .rm64, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 5 },
     .{ .imul, .rm, .r16, .rm16, .none, .none, 2, 0x0f, 0xaf, 0x00, 0 },
     .{ .imul, .rm, .r32, .rm32, .none, .none, 2, 0x0f, 0xaf, 0x00, 0 },
     .{ .imul, .rm, .r64, .rm64, .none, .none, 2, 0x0f, 0xaf, 0x00, 0 },
@@ -148,10 +152,10 @@ const table = &[_]Entry{
 
     .{ .nop, .np, .none, .none, .none, .none, 1, 0x90, 0x00, 0x00, 0 },
 
-    .{ .@"or", .i, .al, .imm8, .none, .none, 1, 0x0c, 0x00, 0x00, 0 },
-    .{ .@"or", .i, .ax, .imm16, .none, .none, 1, 0x0d, 0x00, 0x00, 0 },
-    .{ .@"or", .i, .eax, .imm32, .none, .none, 1, 0x0d, 0x00, 0x00, 0 },
-    .{ .@"or", .i, .rax, .imm32, .none, .none, 1, 0x0d, 0x00, 0x00, 0 },
+    .{ .@"or", .zi, .al, .imm8, .none, .none, 1, 0x0c, 0x00, 0x00, 0 },
+    .{ .@"or", .zi, .ax, .imm16, .none, .none, 1, 0x0d, 0x00, 0x00, 0 },
+    .{ .@"or", .zi, .eax, .imm32, .none, .none, 1, 0x0d, 0x00, 0x00, 0 },
+    .{ .@"or", .zi, .rax, .imm32, .none, .none, 1, 0x0d, 0x00, 0x00, 0 },
     .{ .@"or", .mi, .rm8, .imm8, .none, .none, 1, 0x80, 0x00, 0x00, 1 },
     .{ .@"or", .mi, .rm16, .imm16, .none, .none, 1, 0x81, 0x00, 0x00, 1 },
     .{ .@"or", .mi, .rm32, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 1 },
@@ -183,10 +187,10 @@ const table = &[_]Entry{
 
     .{ .ret, .np, .none, .none, .none, .none, 1, 0xc3, 0x00, 0x00, 0 },
 
-    .{ .sbb, .i, .al, .imm8, .none, .none, 1, 0x1c, 0x00, 0x00, 0 },
-    .{ .sbb, .i, .ax, .imm16, .none, .none, 1, 0x1d, 0x00, 0x00, 0 },
-    .{ .sbb, .i, .eax, .imm32, .none, .none, 1, 0x1d, 0x00, 0x00, 0 },
-    .{ .sbb, .i, .rax, .imm32, .none, .none, 1, 0x1d, 0x00, 0x00, 0 },
+    .{ .sbb, .zi, .al, .imm8, .none, .none, 1, 0x1c, 0x00, 0x00, 0 },
+    .{ .sbb, .zi, .ax, .imm16, .none, .none, 1, 0x1d, 0x00, 0x00, 0 },
+    .{ .sbb, .zi, .eax, .imm32, .none, .none, 1, 0x1d, 0x00, 0x00, 0 },
+    .{ .sbb, .zi, .rax, .imm32, .none, .none, 1, 0x1d, 0x00, 0x00, 0 },
     .{ .sbb, .mi, .rm8, .imm8, .none, .none, 1, 0x80, 0x00, 0x00, 3 },
     .{ .sbb, .mi, .rm16, .imm16, .none, .none, 1, 0x81, 0x00, 0x00, 3 },
     .{ .sbb, .mi, .rm32, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 3 },
@@ -203,10 +207,10 @@ const table = &[_]Entry{
     .{ .sbb, .rm, .r32, .rm32, .none, .none, 1, 0x1b, 0x00, 0x00, 0 },
     .{ .sbb, .rm, .r64, .rm64, .none, .none, 1, 0x1b, 0x00, 0x00, 0 },
 
-    .{ .sub, .i, .al, .imm8, .none, .none, 1, 0x2c, 0x00, 0x00, 0 },
-    .{ .sub, .i, .ax, .imm16, .none, .none, 1, 0x2d, 0x00, 0x00, 0 },
-    .{ .sub, .i, .eax, .imm32, .none, .none, 1, 0x2d, 0x00, 0x00, 0 },
-    .{ .sub, .i, .rax, .imm32, .none, .none, 1, 0x2d, 0x00, 0x00, 0 },
+    .{ .sub, .zi, .al, .imm8, .none, .none, 1, 0x2c, 0x00, 0x00, 0 },
+    .{ .sub, .zi, .ax, .imm16, .none, .none, 1, 0x2d, 0x00, 0x00, 0 },
+    .{ .sub, .zi, .eax, .imm32, .none, .none, 1, 0x2d, 0x00, 0x00, 0 },
+    .{ .sub, .zi, .rax, .imm32, .none, .none, 1, 0x2d, 0x00, 0x00, 0 },
     .{ .sub, .mi, .rm8, .imm8, .none, .none, 1, 0x80, 0x00, 0x00, 5 },
     .{ .sub, .mi, .rm16, .imm16, .none, .none, 1, 0x81, 0x00, 0x00, 5 },
     .{ .sub, .mi, .rm32, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 5 },
@@ -225,10 +229,10 @@ const table = &[_]Entry{
 
     .{ .syscall, .np, .none, .none, .none, .none, 2, 0x0f, 0x05, 0x00, 0 },
 
-    .{ .xor, .i, .al, .imm8, .none, .none, 1, 0x34, 0x00, 0x00, 0 },
-    .{ .xor, .i, .ax, .imm16, .none, .none, 1, 0x35, 0x00, 0x00, 0 },
-    .{ .xor, .i, .eax, .imm32, .none, .none, 1, 0x35, 0x00, 0x00, 0 },
-    .{ .xor, .i, .rax, .imm32, .none, .none, 1, 0x35, 0x00, 0x00, 0 },
+    .{ .xor, .zi, .al, .imm8, .none, .none, 1, 0x34, 0x00, 0x00, 0 },
+    .{ .xor, .zi, .ax, .imm16, .none, .none, 1, 0x35, 0x00, 0x00, 0 },
+    .{ .xor, .zi, .eax, .imm32, .none, .none, 1, 0x35, 0x00, 0x00, 0 },
+    .{ .xor, .zi, .rax, .imm32, .none, .none, 1, 0x35, 0x00, 0x00, 0 },
     .{ .xor, .mi, .rm8, .imm8, .none, .none, 1, 0x80, 0x00, 0x00, 6 },
     .{ .xor, .mi, .rm16, .imm16, .none, .none, 1, 0x81, 0x00, 0x00, 6 },
     .{ .xor, .mi, .rm32, .imm32, .none, .none, 1, 0x81, 0x00, 0x00, 6 },
@@ -269,26 +273,27 @@ pub const Mnemonic = enum {
     }
 };
 
-pub const OpEn = enum { np, o, i, m, fd, td, oi, mi, mr, rm, rmi };
+pub const OpEn = enum {
+    // zig fmt: off
+    np,
+    o, oi,
+    i, zi,
+    m,
+    fd, td,
+    mi, mr, rm, rmi,
+    // zig fmt: on
+};
 
 pub const Op = enum {
     // zig fmt: off
     none,
-
     imm8, imm16, imm32, imm64,
-
     al, ax, eax, rax,
-
     r8, r16, r32, r64,
-
     rm8, rm16, rm32, rm64,
-
     m8, m16, m32, m64,
-
     m,
-
     moffs,
-
     sreg,
     // zig fmt: on
 
@@ -396,7 +401,10 @@ pub const Op = enum {
             .m => unreachable,
             .none, .moffs, .sreg => return op == target,
             else => {
-                if (op.isRegister() and target.isRegister()) return op.bitSize() == target.bitSize();
+                if (op.isRegister() and target.isRegister()) switch (target) {
+                    .al, .ax, .eax, .rax => return op == target,
+                    else => return op.bitSize() == target.bitSize(),
+                };
                 if (op.isMemory() and target.isMemory()) switch (target) {
                     .m => return true,
                     else => return op.bitSize() == target.bitSize(),
@@ -536,8 +544,10 @@ pub const Encoding = struct {
     }
 
     pub fn modRmExt(encoding: Encoding) u3 {
-        assert(encoding.op_en == .m or encoding.op_en == .mi);
-        return encoding.modrm_ext;
+        return switch (encoding.op_en) {
+            .m, .mi => encoding.modrm_ext,
+            else => unreachable,
+        };
     }
 
     pub fn format(
@@ -604,6 +614,10 @@ pub const Encoding = struct {
             try writer.print("{s} ", .{@tagName(op)});
         }
 
-        try writer.print("{s}", .{@tagName(encoding.op_en)});
+        const op_en = switch (encoding.op_en) {
+            .zi => .i,
+            else => |op_en| op_en,
+        };
+        try writer.print("{s}", .{@tagName(op_en)});
     }
 };
