@@ -325,9 +325,9 @@ pub const Operand = enum {
             .moffs => return .moffs,
 
             .imm => |imm| {
-                if (math.cast(u8, imm)) |_| return .imm8;
-                if (math.cast(u16, imm)) |_| return .imm16;
-                if (math.cast(u32, imm)) |_| return .imm32;
+                if (math.cast(i8, imm)) |_| return .imm8;
+                if (math.cast(i16, imm)) |_| return .imm16;
+                if (math.cast(i32, imm)) |_| return .imm32;
                 return .imm64;
             },
         }

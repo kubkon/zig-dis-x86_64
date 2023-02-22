@@ -161,7 +161,7 @@ test "lower MI encoding" {
     try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.mem(.word, .{
         .base = .rbp,
         .disp = -2,
-    }) }, .op2 = .{ .imm = @bitCast(u16, @as(i16, -16)) } });
+    }) }, .op2 = .{ .imm = -16 } });
     try expectEqualHexStrings("\x66\xC7\x45\xFE\xF0\xFF", enc.code(), "mov WORD PTR [rbp - 2], -16");
 
     try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.mem(.byte, .{
@@ -208,7 +208,7 @@ test "lower MI encoding" {
     try enc.encode(.{ .mnemonic = .add, .op1 = .{ .mem = Memory.mem(.qword, .{
         .base = .rbp,
         .disp = -0x10,
-    }) }, .op2 = .{ .imm = @bitCast(u8, @as(i8, -0x10)) } });
+    }) }, .op2 = .{ .imm = -0x10 } });
     try expectEqualHexStrings("\x48\x83\x45\xF0\xF0", enc.code(), "add QWORD PTR [rbp - 0x10], -0x10");
 
     try enc.encode(.{ .mnemonic = .@"and", .op1 = .{ .mem = Memory.mem(.dword, .{

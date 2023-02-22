@@ -26,7 +26,7 @@ pub const Instruction = struct {
         reg: Register,
         mem: Memory,
         moffs: Moffs,
-        imm: u64,
+        imm: i64,
 
         /// Returns the bitsize of the operand.
         /// Asserts the operand is either register or memory.
@@ -247,12 +247,12 @@ pub const Instruction = struct {
         }
     }
 
-    fn encodeImm(imm: u64, kind: OperandKind, encoder: anytype) !void {
+    fn encodeImm(imm: i64, kind: OperandKind, encoder: anytype) !void {
         switch (kind) {
-            .imm8 => try encoder.imm8(@bitCast(i8, @truncate(u8, imm))),
-            .imm16 => try encoder.imm16(@bitCast(i16, @truncate(u16, imm))),
-            .imm32 => try encoder.imm32(@bitCast(i32, @truncate(u32, imm))),
-            .imm64 => try encoder.imm64(imm),
+            .imm8 => try encoder.imm8(@truncate(i8, imm)),
+            .imm16 => try encoder.imm16(@truncate(i16, imm)),
+            .imm32 => try encoder.imm32(@truncate(i32, imm)),
+            .imm64 => try encoder.imm64(@bitCast(u64, imm)),
             else => unreachable,
         }
     }
