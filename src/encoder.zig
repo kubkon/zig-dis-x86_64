@@ -97,165 +97,162 @@ pub const Instruction = struct {
     pub fn encode(inst: Instruction, writer: anytype) !void {
         const encoder = Encoder(@TypeOf(writer)){ .writer = writer };
         const encoding = inst.encoding;
-        const opcode = encoding.opcode();
+
+        try inst.encodeLegacyPrefixes(encoder);
+        try inst.encodeRexPrefix(encoder);
+        try inst.encodeOpcode(encoder);
 
         switch (encoding.op_en) {
-            .np => try encodeOpcode(opcode, encoder),
-
-            .fd => try encodeFd(opcode, inst.op1.reg, inst.op2.moffs, encoder),
-            .td => try encodeFd(opcode, inst.op2.reg, inst.op1.moffs, encoder),
-
-            .i => {
-                if (encoding.op1.bitSize() == 16) {
-                    try encoder.prefix16BitMode();
-                }
-                if (!encoding.op1.isImmediate()) {
-                    try encoder.rex(.{
-                        .w = inst.op1.is64BitMode() and !encoding.mnemonic.defaultsTo64Bits(),
-                    });
-                }
-                try encodeOpcode(opcode, encoder);
-                if (encoding.op1.isImmediate()) {
-                    try encodeImm(inst.op1.imm, encoding.op1, encoder);
-                } else {
-                    try encodeImm(inst.op2.imm, encoding.op2, encoder);
-                }
+            .np, .o => {},
+            .i => if (encoding.op1.isImmediate()) {
+                try encodeImm(inst.op1.imm, encoding.op1, encoder);
+            } else {
+                try encodeImm(inst.op2.imm, encoding.op2, encoder);
             },
-
-            .m, .mi => {
-                var prefixes = LegacyPrefixes{};
-                if (inst.op1.bitSize() == 16) {
-                    prefixes.set16BitOverride();
-                }
-                if (inst.op1.isSegment()) {
-                    const reg: Register = switch (inst.op1) {
-                        .reg => |reg| reg,
-                        .mem => |mem| mem.base.?,
-                        else => unreachable,
-                    };
-                    prefixes.setSegmentOverride(reg);
-                }
-                try encoder.legacyPrefixes(prefixes);
-
-                switch (inst.op1) {
+            .oi => try encodeImm(inst.op2.imm, encoding.op2, encoder),
+            .fd => try encoder.imm64(inst.op2.moffs.offset),
+            .td => try encoder.imm64(inst.op1.moffs.offset),
+            .m, .mi, .mr, .rm, .rmi => {
+                const mem_op = switch (encoding.op_en) {
+                    .m, .mi, .mr => inst.op1,
+                    .rm, .rmi => inst.op2,
+                    else => unreachable,
+                };
+                switch (mem_op) {
                     .reg => |reg| {
-                        try encoder.rex(.{
-                            .w = inst.op1.is64BitMode() and !encoding.mnemonic.defaultsTo64Bits(),
-                            .b = reg.isExtended(),
-                        });
-                        try encodeOpcode(opcode, encoder);
-                        try encoder.modRm_direct(encoding.modRmExt(), reg.lowEnc());
+                        const rm = switch (encoding.op_en) {
+                            .m, .mi => encoding.modRmExt(),
+                            .mr => inst.op2.reg.lowEnc(),
+                            .rm, .rmi => inst.op1.reg.lowEnc(),
+                            else => unreachable,
+                        };
+                        try encoder.modRm_direct(rm, reg.lowEnc());
                     },
                     .mem => |mem| {
-                        try encoder.rex(.{
-                            .w = inst.op1.is64BitMode() and !encoding.mnemonic.defaultsTo64Bits(),
-                            .b = if (mem.base) |base| base.isExtended() else false,
-                            .x = if (mem.scale_index) |si| si.index.isExtended() else false,
-                        });
-                        try encodeOpcode(opcode, encoder);
-                        try encodeMemory(encoding, mem, .none, encoder);
+                        const op = switch (encoding.op_en) {
+                            .m, .mi => .none,
+                            .mr => inst.op2,
+                            .rm, .rmi => inst.op1,
+                            else => unreachable,
+                        };
+                        try encodeMemory(encoding, mem, op, encoder);
                     },
                     else => unreachable,
                 }
 
-                if (encoding.op_en == .mi) {
-                    try encodeImm(inst.op2.imm, encoding.op2, encoder);
+                switch (encoding.op_en) {
+                    .mi => try encodeImm(inst.op2.imm, encoding.op2, encoder),
+                    .rmi => try encodeImm(inst.op3.imm, encoding.op3, encoder),
+                    else => {},
                 }
             },
+        }
+    }
 
+    fn encodeOpcode(inst: Instruction, encoder: anytype) !void {
+        const opcode = inst.encoding.opcode();
+        switch (inst.encoding.op_en) {
+            .o, .oi => try encoder.opcode_withReg(opcode[0], inst.op1.reg.lowEnc()),
+            else => {
+                for (opcode) |byte| {
+                    try encoder.opcode_1byte(byte);
+                }
+            },
+        }
+    }
+
+    fn encodeLegacyPrefixes(inst: Instruction, encoder: anytype) !void {
+        const op_en = inst.encoding.op_en;
+        if (op_en == .np) return;
+
+        var legacy = LegacyPrefixes{};
+
+        const prefix_66_op = switch (op_en) {
+            .td => inst.encoding.op2,
+            else => inst.encoding.op1,
+        };
+        if (prefix_66_op.bitSize() == 16) {
+            legacy.set16BitOverride();
+        }
+
+        const segment_override: ?Register = switch (op_en) {
+            .i, .o, .oi => null,
+            .fd => inst.op2.moffs.seg,
+            .td => inst.op1.moffs.seg,
+            .rm, .rmi => if (inst.op2.isSegment()) blk: {
+                break :blk switch (inst.op2) {
+                    .reg => |r| r,
+                    .mem => |m| m.base.?,
+                    else => unreachable,
+                };
+            } else null,
+            .m, .mi, .mr => if (inst.op1.isSegment()) blk: {
+                break :blk switch (inst.op1) {
+                    .reg => |r| r,
+                    .mem => |m| m.base.?,
+                    else => unreachable,
+                };
+            } else null,
+            .np => unreachable,
+        };
+        if (segment_override) |seg| {
+            legacy.setSegmentOverride(seg);
+        }
+
+        try encoder.legacyPrefixes(legacy);
+    }
+
+    fn encodeRexPrefix(inst: Instruction, encoder: anytype) !void {
+        const op_en = inst.encoding.op_en;
+        if (op_en == .np) return;
+
+        const mnemonic = inst.encoding.mnemonic;
+        var rex = Rex{};
+
+        const rex_op: ?Operand = switch (op_en) {
+            .i => if (inst.encoding.op1.isImmediate()) null else inst.op1,
+            .td => inst.op2,
+            else => inst.op1,
+        };
+        if (rex_op) |op| {
+            rex.w = op.is64BitMode() and !mnemonic.defaultsTo64Bits();
+        }
+
+        switch (op_en) {
+            .i, .fd, .td => {},
             .o, .oi => {
-                assert(opcode.len == 1);
-                if (inst.op1.bitSize() == 16) {
-                    try encoder.prefix16BitMode();
+                rex.b = inst.op1.reg.isExtended();
+            },
+            .m, .mi, .mr, .rm, .rmi => {
+                const r_op = switch (op_en) {
+                    .rm, .rmi => inst.op1,
+                    .mr => inst.op2,
+                    else => null,
+                };
+                if (r_op) |op| {
+                    rex.r = op.reg.isExtended();
                 }
-                try encoder.rex(.{
-                    .w = inst.op1.is64BitMode() and !encoding.mnemonic.defaultsTo64Bits(),
-                    .b = inst.op1.reg.isExtended(),
-                });
-                try encoder.opcode_withReg(opcode[0], inst.op1.reg.lowEnc());
 
-                if (encoding.op_en == .oi) {
-                    try encodeImm(inst.op2.imm, encoding.op2, encoder);
+                const b_x_op = switch (op_en) {
+                    .rm, .rmi => inst.op2,
+                    .m, .mi, .mr => inst.op1,
+                    else => unreachable,
+                };
+                switch (b_x_op) {
+                    .reg => |r| {
+                        rex.b = r.isExtended();
+                    },
+                    .mem => |mem| {
+                        rex.b = if (mem.base) |base| base.isExtended() else false;
+                        rex.x = if (mem.scale_index) |si| si.index.isExtended() else false;
+                    },
+                    else => unreachable,
                 }
             },
-
-            .rm => try encodeRmi(encoding, opcode, inst.op1, inst.op2, .none, encoder),
-            .mr => try encodeRmi(encoding, opcode, inst.op2, inst.op1, .none, encoder),
-            .rmi => try encodeRmi(encoding, opcode, inst.op1, inst.op2, inst.op3, encoder),
-        }
-    }
-
-    fn encodeRmi(
-        encoding: Encoding,
-        opcode: []const u8,
-        op1: Operand,
-        op2: Operand,
-        op3: Operand,
-        encoder: anytype,
-    ) !void {
-        assert(op1 == .reg);
-        var prefixes = LegacyPrefixes{};
-        if (op1.bitSize() == 16) {
-            prefixes.set16BitOverride();
-        }
-        if (op2.isSegment()) {
-            const r: Register = switch (op2) {
-                .reg => |r| r,
-                .mem => |m| m.base.?,
-                else => unreachable,
-            };
-            prefixes.setSegmentOverride(r);
-        }
-        try encoder.legacyPrefixes(prefixes);
-        switch (op2) {
-            .reg => |r| {
-                try encoder.rex(.{
-                    .w = op1.is64BitMode(),
-                    .r = op1.reg.isExtended(),
-                    .b = r.isExtended(),
-                });
-                try encodeOpcode(opcode, encoder);
-                try encoder.modRm_direct(op1.reg.lowEnc(), r.lowEnc());
-            },
-            .mem => |mem| {
-                try encoder.rex(.{
-                    .w = op1.is64BitMode(),
-                    .r = op1.reg.isExtended(),
-                    .b = if (mem.base) |base| base.isExtended() else false,
-                    .x = if (mem.scale_index) |si| si.index.isExtended() else false,
-                });
-                try encodeOpcode(opcode, encoder);
-                try encodeMemory(encoding, mem, op1, encoder);
-            },
-            else => unreachable,
+            .np => unreachable,
         }
 
-        switch (op3) {
-            .none => {},
-            .imm => |imm| try encodeImm(imm, encoding.op3, encoder),
-            else => unreachable,
-        }
-    }
-
-    fn encodeFd(opcode: []const u8, reg: Register, moffs: Moffs, encoder: anytype) !void {
-        assert(reg.to64() == .rax);
-        var prefixes = LegacyPrefixes{};
-        if (reg.bitSize() == 16) {
-            prefixes.set16BitOverride();
-        }
-        prefixes.setSegmentOverride(moffs.seg);
-        try encoder.legacyPrefixes(prefixes);
-        try encoder.rex(.{
-            .w = reg.bitSize() == 64,
-        });
-        try encodeOpcode(opcode, encoder);
-        try encoder.imm64(moffs.offset);
-    }
-
-    fn encodeOpcode(opcode: []const u8, encoder: anytype) !void {
-        for (opcode) |byte| {
-            try encoder.opcode_1byte(byte);
-        }
+        try encoder.rex(rex);
     }
 
     fn encodeMemory(encoding: Encoding, mem: Memory, operand: Operand, encoder: anytype) !void {
