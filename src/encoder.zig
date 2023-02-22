@@ -6,7 +6,6 @@ const bits = @import("bits.zig");
 const encodings = @import("encodings.zig");
 const sign = bits.sign;
 const Encoding = encodings.Encoding;
-const OperandKind = encodings.Operand;
 const Memory = bits.Memory;
 const Moffs = bits.Moffs;
 const PtrSize = bits.PtrSize;
@@ -247,7 +246,7 @@ pub const Instruction = struct {
         }
     }
 
-    fn encodeImm(imm: i64, kind: OperandKind, encoder: anytype) !void {
+    fn encodeImm(imm: i64, kind: encodings.Op, encoder: anytype) !void {
         switch (kind) {
             .imm8 => try encoder.imm8(@truncate(i8, imm)),
             .imm16 => try encoder.imm16(@truncate(i16, imm)),

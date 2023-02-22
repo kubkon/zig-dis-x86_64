@@ -7,7 +7,7 @@ const Instruction = encoder.Instruction;
 const Rex = encoder.Rex;
 const LegacyPrefixes = encoder.LegacyPrefixes;
 
-const Entry = std.meta.Tuple(&.{ Mnemonic, OpEn, Operand, Operand, Operand, Operand, u2, u8, u8, u8, u3 });
+const Entry = std.meta.Tuple(&.{ Mnemonic, OpEn, Op, Op, Op, Op, u2, u8, u8, u8, u3 });
 
 // TODO move this into a .zon file when Zig is capable of importing .zon files
 const table = &[_]Entry{
@@ -261,9 +261,7 @@ pub const Mnemonic = enum {
 
 pub const OpEn = enum { np, o, i, m, fd, td, oi, mi, mr, rm };
 
-/// TODO rename to something like Op or OperandClass to disambiguate from
-/// Intruction.Operand storing actual input operands.
-pub const Operand = enum {
+pub const Op = enum {
     // zig fmt: off
     none,
 
@@ -284,7 +282,7 @@ pub const Operand = enum {
     sreg,
     // zig fmt: on
 
-    pub fn fromOperand(operand: Instruction.Operand) Operand {
+    pub fn fromOperand(operand: Instruction.Operand) Op {
         switch (operand) {
             .none => return .none,
 
@@ -333,7 +331,7 @@ pub const Operand = enum {
         }
     }
 
-    pub fn bitSize(op: Operand) u64 {
+    pub fn bitSize(op: Op) u64 {
         return switch (op) {
             .none, .moffs, .m, .sreg => unreachable,
             .imm8, .al, .r8, .m8, .rm8 => 8,
@@ -343,7 +341,7 @@ pub const Operand = enum {
         };
     }
 
-    pub fn isRegister(op: Operand) bool {
+    pub fn isRegister(op: Op) bool {
         // zig fmt: off
         return switch (op) {
             .al, .ax, .eax, .rax,
@@ -355,14 +353,14 @@ pub const Operand = enum {
         // zig fmt: on
     }
 
-    pub fn isImmediate(op: Operand) bool {
+    pub fn isImmediate(op: Op) bool {
         return switch (op) {
             .imm8, .imm16, .imm32, .imm64 => return true,
             else => false,
         };
     }
 
-    pub fn isMemory(op: Operand) bool {
+    pub fn isMemory(op: Op) bool {
         // zig fmt: off
         return switch (op) {
             .rm8, .rm16, .rm32, .rm64,
@@ -374,7 +372,7 @@ pub const Operand = enum {
         // zig fmt: on
     }
 
-    pub fn isSegment(op: Operand) bool {
+    pub fn isSegment(op: Op) bool {
         return switch (op) {
             .moffs, .sreg => return true,
             else => false,
@@ -383,7 +381,7 @@ pub const Operand = enum {
 
     /// Given an operand `op` checks if `target` is a subset for the purposes
     /// of the encoding.
-    pub fn isSubset(op: Operand, target: Operand) bool {
+    pub fn isSubset(op: Op, target: Op) bool {
         switch (op) {
             .m => unreachable,
             .none, .moffs, .sreg => return op == target,
@@ -413,10 +411,10 @@ pub const Operand = enum {
 pub const Encoding = struct {
     mnemonic: Mnemonic,
     op_en: OpEn,
-    op1: Operand,
-    op2: Operand,
-    op3: Operand,
-    op4: Operand,
+    op1: Op,
+    op2: Op,
+    op3: Op,
+    op4: Op,
     opc_len: u2,
     opc: [3]u8,
     modrm_ext: u3,
@@ -427,10 +425,10 @@ pub const Encoding = struct {
         op3: Instruction.Operand,
         op4: Instruction.Operand,
     }) ?Encoding {
-        const input_op1 = Operand.fromOperand(args.op1);
-        const input_op2 = Operand.fromOperand(args.op2);
-        const input_op3 = Operand.fromOperand(args.op3);
-        const input_op4 = Operand.fromOperand(args.op4);
+        const input_op1 = Op.fromOperand(args.op1);
+        const input_op2 = Op.fromOperand(args.op2);
+        const input_op3 = Op.fromOperand(args.op3);
+        const input_op4 = Op.fromOperand(args.op4);
 
         // TODO work out what is the maximum number of variants we can actually find in one swoop.
         var candidates: [10]Encoding = undefined;
@@ -576,7 +574,7 @@ pub const Encoding = struct {
 
         try writer.print("{s} ", .{@tagName(encoding.mnemonic)});
 
-        for (&[_]Operand{ encoding.op1, encoding.op2, encoding.op3, encoding.op4 }) |op| {
+        for (&[_]Op{ encoding.op1, encoding.op2, encoding.op3, encoding.op4 }) |op| {
             if (op == .none) break;
             try writer.print("{s} ", .{@tagName(op)});
         }
