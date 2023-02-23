@@ -10,6 +10,7 @@ const Memory = bits.Memory;
 const Mnemonic = Instruction.Mnemonic;
 const Moffs = bits.Moffs;
 const Operand = Instruction.Operand;
+const Register = bits.Register;
 
 fn expectEqualHexStrings(expected: []const u8, given: []const u8, assembly: []const u8) !void {
     assert(expected.len > 0);
@@ -679,4 +680,93 @@ test "invalid lowering" {
     try expectError(.{ .mnemonic = .push, .op1 = .{ .reg = .r12b } });
     try expectError(.{ .mnemonic = .push, .op1 = .{ .reg = .r12d } });
     try expectError(.{ .mnemonic = .push, .op1 = .{ .imm = 0x1000000000000000 } });
+}
+
+const Assembler = struct {
+    input: []const u8,
+    lines: mem.TokenIterator(u8),
+
+    fn init(input: []const u8) Assembler {
+        return .{
+            .input = input,
+            .lines = mem.tokenize(u8, input, "\n"),
+        };
+    }
+
+    fn next(as: *Assembler) !?struct {
+        mnemonic: Mnemonic,
+        ops: [4]Operand,
+    } {
+        const line = as.lines.next() orelse return null;
+        var tokens = mem.tokenize(u8, line, ", ");
+        // TODO parse any prefixes such as data16, REX.W, etc.
+        const mnemonic = try parseMnemonic(tokens.next().?);
+        var ops: [4]Operand = .{ .none, .none, .none, .none };
+        var i: usize = 0;
+        while (tokens.next()) |token| {
+            if (i > 4) return error.TooManyOperands;
+            ops[i] = try parseOperand(token);
+            i += 1;
+        }
+        return .{
+            .mnemonic = mnemonic,
+            .ops = ops,
+        };
+    }
+
+    fn assemble(as: *Assembler, writer: anytype) !void {
+        while (try as.next()) |parsed_inst| {
+            const inst = try Instruction.new(.{
+                .mnemonic = parsed_inst.mnemonic,
+                .op1 = parsed_inst.ops[0],
+                .op2 = parsed_inst.ops[1],
+                .op3 = parsed_inst.ops[2],
+                .op4 = parsed_inst.ops[3],
+            });
+            try inst.encode(writer);
+        }
+    }
+
+    fn parseMnemonic(raw: []const u8) !Mnemonic {
+        const ti = @typeInfo(Mnemonic).Enum;
+        inline for (ti.fields) |field| {
+            if (mem.eql(u8, raw, field.name)) {
+                return @field(Mnemonic, field.name);
+            }
+        }
+        return error.InvalidMnemonic;
+    }
+
+    fn parseOperand(raw: []const u8) !Operand {
+        if (parseRegister(raw)) |reg| return .{ .reg = reg };
+        return error.InvalidOperand;
+    }
+
+    fn parseRegister(raw: []const u8) ?Register {
+        const ti = @typeInfo(Register).Enum;
+        inline for (ti.fields) |field| {
+            if (mem.eql(u8, raw, field.name)) {
+                return @field(Register, field.name);
+            }
+        }
+        return null;
+    }
+};
+
+test "assemble" {
+    const input =
+        \\mov rax, rbx
+    ;
+
+    // zig fmt: off
+    const expected = &[_]u8{
+        0x48, 0x89, 0xD8,
+    };
+    // zig fmt: on
+
+    var as = Assembler.init(input);
+    var output = std.ArrayList(u8).init(testing.allocator);
+    defer output.deinit();
+    try as.assemble(output.writer());
+    try expectEqualHexStrings(expected, output.items, input);
 }
