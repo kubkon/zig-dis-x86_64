@@ -688,6 +688,7 @@ test "assemble" {
         \\mov rax, rbx
         \\mov qword ptr [rbp], rax
         \\mov qword ptr [rbp - 16], rax
+        \\mov qword ptr [16 + rbp], rax
     ;
 
     // zig fmt: off
@@ -696,6 +697,7 @@ test "assemble" {
         0x48, 0x89, 0xD8,
         0x48, 0x89, 0x45, 0x00,
         0x48, 0x89, 0x45, 0xF0,
+        0x48, 0x89, 0x45, 0x10,
     };
     // zig fmt: on
 

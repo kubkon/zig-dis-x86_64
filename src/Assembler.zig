@@ -311,6 +311,45 @@ fn registerFromString(bytes: []const u8) ?Register {
     return null;
 }
 
+const Pair = std.meta.Tuple(&.{ Tokenizer.Token.Id, ?[]const u8 });
+const Rule = []const Pair;
+
+const memory_rules = &[_]Rule{
+    &.{
+        .{ .open_br, null },
+        .{ .string, "base" },
+        .{ .close_br, null },
+    },
+    &.{
+        .{ .open_br, null },
+        .{ .string, "base" },
+        .{ .plus, null },
+        .{ .numeral, "disp" },
+        .{ .close_br, null },
+    },
+    &.{
+        .{ .open_br, null },
+        .{ .string, "base" },
+        .{ .minus, null },
+        .{ .numeral, "disp" },
+        .{ .close_br, null },
+    },
+    &.{
+        .{ .open_br, null },
+        .{ .numeral, "disp" },
+        .{ .plus, null },
+        .{ .string, "base" },
+        .{ .close_br, null },
+    },
+    &.{
+        .{ .open_br, null },
+        .{ .numeral, "disp" },
+        .{ .minus, null },
+        .{ .string, "base" },
+        .{ .close_br, null },
+    },
+};
+
 fn parseMemory(as: *Assembler) ParseError!Memory {
     var mem = Memory{
         .base = null,
@@ -324,175 +363,46 @@ fn parseMemory(as: *Assembler) ParseError!Memory {
 
     try as.skip(1, .{.space});
 
-    // Currently supported variants:
-    // 1. [ reg ]
-    // 2. [ reg + disp ]
-    // 3. [ disp + reg ]
-
-    err: {
-        const pos = as.it.pos;
-        as.parseMemoryBaseOnly(&mem) catch {
+    const pos = as.it.pos;
+    inline for (memory_rules) |rule| {
+        if (as.parseMemoryRule(rule, &mem)) {
+            return mem;
+        } else |_| {
             as.it.seekTo(pos);
-            break :err;
-        };
-        return mem;
-    }
-
-    err: {
-        const pos = as.it.pos;
-        as.parseMemoryBaseWithDisp(&mem) catch {
-            as.it.seekTo(pos);
-            break :err;
-        };
-        return mem;
+        }
     }
 
     return error.InvalidOperand;
 }
 
-fn parseMemoryBaseOnly(as: *Assembler, mem: *Memory) ParseError!void {
-    _ = try as.expect(.open_br);
-    try as.skip(1, .{.space});
-    const base_tok = try as.expect(.string);
-    const base = registerFromString(as.source(base_tok)) orelse return error.InvalidMemoryOperand;
-    try as.skip(1, .{.space});
-    _ = try as.expect(.close_br);
-    switch (try as.peek()) {
-        .eof, .new_line, .comma => mem.base = base,
-        else => return error.InvalidMemoryOperand,
-    }
-}
-
-fn parseMemoryBaseWithDisp(as: *Assembler, mem: *Memory) ParseError!void {
-    _ = try as.expect(.open_br);
-    try as.skip(1, .{.space});
-    const base_tok = try as.expect(.string);
-    const base = registerFromString(as.source(base_tok)) orelse return error.InvalidMemoryOperand;
-    try as.skip(1, .{.space});
-    var is_negative = false;
-    const next_tok = try as.it.next();
-    switch (next_tok.id) {
-        .plus => {},
-        .minus => {
-            is_negative = true;
-        },
-        else => return error.InvalidMemoryOperand,
-    }
-    try as.skip(1, .{.space});
-    const disp_tok = try as.expect(.numeral);
-    var disp = try std.fmt.parseInt(i32, as.source(disp_tok), 0);
-    if (is_negative) {
-        disp *= -1;
-    }
-    try as.skip(1, .{.space});
-    _ = try as.expect(.close_br);
-    switch (try as.peek()) {
-        .eof, .new_line, .comma => {
-            mem.base = base;
-            mem.disp = disp;
-        },
-        else => return error.InvalidMemoryOperand,
-    }
-}
-
-fn isSegmentBase(as: *Assembler) Tokenizer.Error!bool {
-    const pos = as.it.pos;
-    err: {
-        _ = as.expect(.string) catch break :err;
+fn parseMemoryRule(as: *Assembler, comptime rule: Rule, mem: *Memory) ParseError!void {
+    inline for (rule, 0..) |pair, i| {
+        const tok = try as.expect(pair[0]);
         try as.skip(1, .{.space});
-        _ = as.expect(.colon) catch break :err;
-        return true;
-    }
-    as.it.seekTo(pos);
-    return false;
-}
 
-fn isScaleIndex(as: *Assembler) Tokenizer.Error!bool {
-    const pos = as.it.pos;
-    err: {
-        switch (try as.peek()) {
-            .numeral => {
-                _ = as.expect(.numeral) catch break :err;
-                try as.skip(1, .{.space});
-                _ = as.expect(.star) catch break :err;
-                try as.skip(1, .{.space});
-                _ = as.expect(.string) catch break :err;
-            },
-            .string => {
-                _ = as.expect(.string) catch break :err;
-                try as.skip(1, .{.space});
-                _ = as.expect(.star) catch break :err;
-                try as.skip(1, .{.space});
-                _ = as.expect(.numeral) catch break :err;
-            },
-            else => break :err,
+        if (pair[1]) |field_name| {
+            if (std.mem.eql(u8, field_name, "base")) {
+                @field(mem, "base") = registerFromString(as.source(tok)) orelse return error.InvalidMemoryOperand;
+            }
+            if (std.mem.eql(u8, field_name, "disp")) {
+                const is_neg = blk: {
+                    if (i > 0) {
+                        if (rule[i - 1][0] == .minus) break :blk true;
+                    }
+                    break :blk false;
+                };
+                var disp = try std.fmt.parseInt(i32, as.source(tok), 0);
+                if (is_neg) {
+                    disp *= -1;
+                }
+                @field(mem, "disp") = disp;
+            }
         }
-        return true;
     }
-    as.it.seekTo(pos);
-    return false;
-}
-
-fn isBase(as: *Assembler) Tokenizer.Error!bool {
-    if (try as.isSegmentBase()) return false;
-    if (try as.isScaleIndex()) return false;
-    const pos = as.it.pos;
-    const res = if (as.expect(.string)) |_| true else |_| false;
-    as.it.seekTo(pos);
-    return res;
-}
-
-fn isDisplacement(as: *Assembler) Tokenizer.Error!bool {
-    const pos = as.it.pos;
-    const res = if (as.expect(.numeral)) |_| true else |_| false;
-    as.it.seekTo(pos);
-    return res;
-}
-
-fn parseSegmentBase(as: *Assembler) ParseError!Register {
-    const base = try as.parseRegister();
-    try as.skip(1, .{.space});
-    _ = try as.expect(.colon);
-    return base;
-}
-
-fn parseScaleIndex(as: *Assembler) ParseError!Memory.ScaleIndex {
-    var res = Memory.ScaleIndex{
-        .scale = undefined,
-        .index = undefined,
-    };
     switch (try as.peek()) {
-        .numeral => {
-            res.scale = try as.parseScale();
-            try as.skip(1, .{.space});
-            _ = try as.expect(.star);
-            try as.skip(1, .{.space});
-            res.index = try as.parseRegister();
-        },
-        .string => {
-            res.index = try as.parseRegister();
-            try as.skip(1, .{.space});
-            _ = try as.expect(.star);
-            try as.skip(1, .{.space});
-            res.scale = try as.parseScale();
-        },
-        else => return error.InvalidScaleIndex,
+        .eof, .new_line, .comma => {},
+        else => return error.InvalidMemoryOperand,
     }
-    return res;
-}
-
-fn parseScale(as: *Assembler) ParseError!u2 {
-    const scale = try as.expect(.numeral);
-    const raw = as.source(scale);
-    const value = try std.fmt.parseInt(u2, raw, 0);
-    return value;
-}
-
-fn parseDisplacement(as: *Assembler) ParseError!i32 {
-    const disp = try as.expect(.numeral);
-    const raw = as.source(disp);
-    const value = try std.fmt.parseInt(i32, raw, 0);
-    return value;
 }
 
 fn parsePtrSize(as: *Assembler) ParseError!Memory.PtrSize {
