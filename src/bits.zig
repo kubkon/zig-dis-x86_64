@@ -166,26 +166,6 @@ test "Register classes" {
     try expect(Register.fs.class() == .seg);
 }
 
-pub const ScaleIndex = packed struct {
-    scale: u2,
-    index: Register,
-};
-
-pub const PtrSize = enum(u2) {
-    byte = 0b00,
-    word = 0b01,
-    dword = 0b10,
-    qword = 0b11,
-
-    pub fn fromBitSize(bit_size: u64) PtrSize {
-        return @intToEnum(PtrSize, math.log2_int(u4, @intCast(u4, @divExact(bit_size, 8))));
-    }
-
-    pub fn bitSize(s: PtrSize) u64 {
-        return 8 * (math.powi(u8, 2, @enumToInt(s)) catch unreachable);
-    }
-};
-
 pub const Moffs = struct {
     seg: Register,
     offset: u64,
@@ -202,6 +182,26 @@ pub const Memory = struct {
     disp: i32,
     ptr_size: PtrSize,
     scale_index: ?ScaleIndex = null,
+
+    pub const ScaleIndex = packed struct {
+        scale: u2,
+        index: Register,
+    };
+
+    pub const PtrSize = enum(u2) {
+        byte = 0b00,
+        word = 0b01,
+        dword = 0b10,
+        qword = 0b11,
+
+        pub fn fromBitSize(bit_size: u64) PtrSize {
+            return @intToEnum(PtrSize, math.log2_int(u4, @intCast(u4, @divExact(bit_size, 8))));
+        }
+
+        pub fn bitSize(s: PtrSize) u64 {
+            return 8 * (math.powi(u8, 2, @enumToInt(s)) catch unreachable);
+        }
+    };
 
     pub fn mem(ptr_size: PtrSize, args: struct {
         disp: i32,
