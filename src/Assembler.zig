@@ -276,26 +276,26 @@ fn parseOperandRule(as: *Assembler, rule: anytype, ops: *[4]Operand) ParseError!
             _ = try as.expect(.comma);
             try as.skip(1, .{.space});
         }
-        switch (@typeInfo(@TypeOf(cond))) {
-            .EnumLiteral => switch (cond) {
-                .register => {
-                    const reg_tok = try as.expect(.string);
-                    const reg = registerFromString(as.source(reg_tok)) orelse
-                        return error.InvalidOperand;
-                    ops[i] = .{ .reg = reg };
-                },
-                .memory => {
-                    const mem = try as.parseMemory();
-                    ops[i] = .{ .mem = mem };
-                },
-                .immediate => {
-                    const imm_tok = try as.expect(.numeral);
-                    const imm = try std.fmt.parseInt(i64, as.source(imm_tok), 0);
-                    ops[i] = .{ .imm = imm };
-                },
-                else => @compileError("unhandled enum literal " ++ @tagName(cond)),
+        if (@typeInfo(@TypeOf(cond)) != .EnumLiteral) {
+            @compileError("invalid condition in the rule: " ++ @typeName(@TypeOf(cond)));
+        }
+        switch (cond) {
+            .register => {
+                const reg_tok = try as.expect(.string);
+                const reg = registerFromString(as.source(reg_tok)) orelse
+                    return error.InvalidOperand;
+                ops[i] = .{ .reg = reg };
             },
-            else => @compileError("invalid condition in the rule: " ++ @typeName(@TypeOf(cond))),
+            .memory => {
+                const mem = try as.parseMemory();
+                ops[i] = .{ .mem = mem };
+            },
+            .immediate => {
+                const imm_tok = try as.expect(.numeral);
+                const imm = try std.fmt.parseInt(i64, as.source(imm_tok), 0);
+                ops[i] = .{ .imm = imm };
+            },
+            else => @compileError("unhandled enum literal " ++ @tagName(cond)),
         }
         try as.skip(1, .{.space});
     }
@@ -332,10 +332,12 @@ fn parseMemory(as: *Assembler) ParseError!Memory {
     try as.skip(1, .{.space});
 
     const rules = .{
-        .{ .open_br, .{ .string, "base" }, .close_br },
-        .{ .open_br, .{ .string, "base" }, .plus, .{ .numeral, "disp" }, .close_br },
-        .{ .open_br, .{ .string, "base" }, .minus, .{ .numeral, "disp" }, .close_br },
-        .{ .open_br, .{ .numeral, "disp" }, .plus, .{ .string, "base" }, .close_br },
+        .{ .open_br, .base, .close_br },
+        .{ .open_br, .base, .plus, .disp, .close_br },
+        .{ .open_br, .base, .minus, .disp, .close_br },
+        .{ .open_br, .disp, .plus, .base, .close_br },
+        .{ .open_br, .base, .plus, .index, .close_br },
+        .{ .open_br, .base, .plus, .index, .star, .scale, .close_br },
     };
 
     const pos = as.it.pos;
@@ -352,36 +354,54 @@ fn parseMemory(as: *Assembler) ParseError!Memory {
 
 fn parseMemoryRule(as: *Assembler, rule: anytype, mem: *Memory) ParseError!void {
     inline for (rule, 0..) |cond, i| {
-        const ti = @typeInfo(@TypeOf(cond));
-        switch (ti) {
-            .EnumLiteral => {
+        if (@typeInfo(@TypeOf(cond)) != .EnumLiteral) {
+            @compileError("unsupported condition type in the rule: " ++ @typeName(@TypeOf(cond)));
+        }
+        switch (cond) {
+            .open_br, .close_br, .plus, .minus, .star => {
                 _ = try as.expect(cond);
             },
-            .Struct => |sti| {
-                if (!sti.is_tuple) {
-                    @compileError("unsupported condition in the rule: " ++ @typeName(@TypeOf(cond)));
-                }
-                const tok_id = cond[0];
-                const field_name = cond[1];
-                const tok = try as.expect(tok_id);
-                if (comptime std.mem.eql(u8, field_name, "base")) {
-                    @field(mem, "base") = registerFromString(as.source(tok)) orelse
-                        return error.InvalidMemoryOperand;
-                } else if (comptime std.mem.eql(u8, field_name, "disp")) {
-                    const is_neg = blk: {
-                        if (i > 0) {
-                            if (rule[i - 1] == .minus) break :blk true;
-                        }
-                        break :blk false;
-                    };
-                    var disp = try std.fmt.parseInt(i32, as.source(tok), 0);
-                    if (is_neg) {
-                        disp *= -1;
-                    }
-                    @field(mem, "disp") = disp;
-                } else unreachable;
+            .base => {
+                const tok = try as.expect(.string);
+                @field(mem, "base") = registerFromString(as.source(tok)) orelse
+                    return error.InvalidMemoryOperand;
             },
-            else => @compileError("unsupported condition in the rule: " ++ @typeName(@TypeOf(cond))),
+            .index => {
+                const tok = try as.expect(.string);
+                const index = registerFromString(as.source(tok)) orelse
+                    return error.InvalidMemoryOperand;
+                var scale_index = @field(mem, "scale_index");
+                if (scale_index == null) {
+                    scale_index = .{ .scale = 1, .index = undefined };
+                }
+                scale_index.?.index = index;
+                @field(mem, "scale_index") = scale_index;
+            },
+            .scale => {
+                const tok = try as.expect(.numeral);
+                const scale = try std.fmt.parseInt(u2, as.source(tok), 0);
+                var scale_index = @field(mem, "scale_index");
+                if (scale_index == null) {
+                    scale_index = .{ .scale = 1, .index = undefined };
+                }
+                scale_index.?.scale = scale;
+                @field(mem, "scale_index") = scale_index;
+            },
+            .disp => {
+                const tok = try as.expect(.numeral);
+                const is_neg = blk: {
+                    if (i > 0) {
+                        if (rule[i - 1] == .minus) break :blk true;
+                    }
+                    break :blk false;
+                };
+                var disp = try std.fmt.parseInt(i32, as.source(tok), 0);
+                if (is_neg) {
+                    disp *= -1;
+                }
+                @field(mem, "disp") = disp;
+            },
+            else => @compileError("unhandled operand output type: " ++ @tagName(cond)),
         }
         try as.skip(1, .{.space});
     }

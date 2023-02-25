@@ -184,7 +184,7 @@ pub const Memory = struct {
     scale_index: ?ScaleIndex = null,
 
     pub const ScaleIndex = packed struct {
-        scale: u2,
+        scale: u4,
         index: Register,
     };
 
@@ -260,7 +260,7 @@ pub const Memory = struct {
 
         if (self.scale_index) |si| {
             try si.index.fmtPrint(writer);
-            try writer.print(" * {d}", .{math.powi(u4, 2, si.scale) catch unreachable});
+            try writer.print(" * {d}", .{si.scale});
         }
 
         if (self.disp != 0) {

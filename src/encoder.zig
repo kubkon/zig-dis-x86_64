@@ -263,7 +263,8 @@ pub const Instruction = struct {
                 // TODO audit this wrt SIB
                 try encoder.modRm_SIBDisp0(operand_enc);
                 if (mem.scale_index) |si| {
-                    try encoder.sib_scaleIndexDisp32(si.scale, si.index.lowEnc());
+                    const scale = math.log2_int(u4, si.scale);
+                    try encoder.sib_scaleIndexDisp32(scale, si.index.lowEnc());
                 } else {
                     try encoder.sib_disp32();
                 }
@@ -276,14 +277,16 @@ pub const Instruction = struct {
                     if (mem.disp == 0 and dst != 5) {
                         try encoder.modRm_SIBDisp0(src);
                         if (mem.scale_index) |si| {
-                            try encoder.sib_scaleIndexBase(si.scale, si.index.lowEnc(), dst);
+                            const scale = math.log2_int(u4, si.scale);
+                            try encoder.sib_scaleIndexBase(scale, si.index.lowEnc(), dst);
                         } else {
                             try encoder.sib_base(dst);
                         }
                     } else if (math.cast(i8, mem.disp)) |_| {
                         try encoder.modRm_SIBDisp8(src);
                         if (mem.scale_index) |si| {
-                            try encoder.sib_scaleIndexBaseDisp8(si.scale, si.index.lowEnc(), dst);
+                            const scale = math.log2_int(u4, si.scale);
+                            try encoder.sib_scaleIndexBaseDisp8(scale, si.index.lowEnc(), dst);
                         } else {
                             try encoder.sib_baseDisp8(dst);
                         }
@@ -291,7 +294,8 @@ pub const Instruction = struct {
                     } else {
                         try encoder.modRm_SIBDisp32(src);
                         if (mem.scale_index) |si| {
-                            try encoder.sib_scaleIndexBaseDisp32(si.scale, si.index.lowEnc(), dst);
+                            const scale = math.log2_int(u4, si.scale);
+                            try encoder.sib_scaleIndexBaseDisp32(scale, si.index.lowEnc(), dst);
                         } else {
                             try encoder.sib_baseDisp32(dst);
                         }
@@ -315,7 +319,8 @@ pub const Instruction = struct {
             } else {
                 try encoder.modRm_SIBDisp0(operand_enc);
                 if (mem.scale_index) |si| {
-                    try encoder.sib_scaleIndexDisp32(si.scale, si.index.lowEnc());
+                    const scale = math.log2_int(u4, si.scale);
+                    try encoder.sib_scaleIndexDisp32(scale, si.index.lowEnc());
                 } else {
                     try encoder.sib_disp32();
                 }

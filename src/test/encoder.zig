@@ -175,7 +175,7 @@ test "lower MI encoding" {
         .base = .ds,
         .disp = 0x10000000,
         .scale_index = .{
-            .scale = 1,
+            .scale = 2,
             .index = .rcx,
         },
     }) }, .op2 = .{ .imm = 0x10 } });
@@ -277,7 +277,7 @@ test "lower RM encoding" {
     try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .reg = .rax }, .op2 = .{ .mem = Memory.mem(.qword, .{
         .base = .rbp,
         .scale_index = .{
-            .scale = 0,
+            .scale = 1,
             .index = .rcx,
         },
         .disp = -8,
@@ -287,7 +287,7 @@ test "lower RM encoding" {
     try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .reg = .eax }, .op2 = .{ .mem = Memory.mem(.dword, .{
         .base = .rbp,
         .scale_index = .{
-            .scale = 2,
+            .scale = 4,
             .index = .rdx,
         },
         .disp = -4,
@@ -297,7 +297,7 @@ test "lower RM encoding" {
     try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .reg = .rax }, .op2 = .{ .mem = Memory.mem(.qword, .{
         .base = .rbp,
         .scale_index = .{
-            .scale = 3,
+            .scale = 8,
             .index = .rcx,
         },
         .disp = -8,
@@ -307,7 +307,7 @@ test "lower RM encoding" {
     try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .reg = .r8b }, .op2 = .{ .mem = Memory.mem(.byte, .{
         .base = .rsi,
         .scale_index = .{
-            .scale = 0,
+            .scale = 1,
             .index = .rcx,
         },
         .disp = -24,
@@ -352,7 +352,7 @@ test "lower RM encoding" {
         .base = null,
         .scale_index = .{
             .index = .rax,
-            .scale = 1,
+            .scale = 2,
         },
         .disp = 0,
     }) } });
@@ -385,7 +385,7 @@ test "lower RM encoding" {
     try enc.encode(.{ .mnemonic = .lea, .op1 = .{ .reg = .rsi }, .op2 = .{ .mem = Memory.mem(.qword, .{
         .base = .rbp,
         .scale_index = .{
-            .scale = 0,
+            .scale = 1,
             .index = .rcx,
         },
         .disp = 0,
@@ -478,7 +478,7 @@ test "lower MR encoding" {
     try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.mem(.qword, .{
         .base = .r11,
         .scale_index = .{
-            .scale = 1,
+            .scale = 2,
             .index = .r12,
         },
         .disp = 0x10,
@@ -491,7 +491,7 @@ test "lower MR encoding" {
     try enc.encode(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.mem(.byte, .{
         .base = .r11,
         .scale_index = .{
-            .scale = 1,
+            .scale = 2,
             .index = .r12,
         },
         .disp = 0x10,
@@ -539,7 +539,7 @@ test "lower M encoding" {
         .base = null,
         .scale_index = .{
             .index = .r11,
-            .scale = 1,
+            .scale = 2,
         },
         .disp = 0,
     }) } });
@@ -549,7 +549,7 @@ test "lower M encoding" {
         .base = null,
         .scale_index = .{
             .index = .r12,
-            .scale = 1,
+            .scale = 2,
         },
         .disp = 0,
     }) } });
@@ -691,6 +691,8 @@ test "assemble" {
         \\mov qword ptr [16 + rbp], rax
         \\mov rax, 0x10
         \\mov byte ptr [rbp - 0x10], 0x10
+        \\mov word ptr [rbp + r12], r11w
+        \\mov word ptr [rbp + r12 * 2], r11w
         \\movzx r12, al
     ;
 
@@ -703,6 +705,8 @@ test "assemble" {
         0x48, 0x89, 0x45, 0x10,
         0x48, 0xC7, 0xC0, 0x10, 0x00, 0x00, 0x00,
         0xC6, 0x45, 0xF0, 0x10,
+        0x66, 0x46, 0x89, 0x5C, 0x25, 0x00,
+        0x66, 0x46, 0x89, 0x5C, 0x65, 0x00,
         0x4C, 0x0F, 0xB6, 0xE0,
     };
     // zig fmt: on
