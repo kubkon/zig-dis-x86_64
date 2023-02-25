@@ -152,11 +152,11 @@ const table = &[_]Entry{
 
     .{ .movsxd, .rm, .r64, .rm32, .none, .none, 1, 0x63, 0x00, 0x00, 0 },
 
-    // .{ .movzx, .rm, .r16, .rm8, .none, .none, 2, 0x0f, 0xb6, 0x00, 0 },
-    // .{ .movzx, .rm, .r32, .rm8, .none, .none, 2, 0x0f, 0xb6, 0x00, 0 },
-    // .{ .movzx, .rm, .r64, .rm8, .none, .none, 2, 0x0f, 0xb6, 0x00, 0 },
-    // .{ .movzx, .rm, .r32, .rm16, .none, .none, 2, 0x0f, 0xb7, 0x00, 0 },
-    // .{ .movzx, .rm, .r64, .rm16, .none, .none, 2, 0x0f, 0xb7, 0x00, 0 },
+    .{ .movzx, .rm, .r16, .rm8, .none, .none, 2, 0x0f, 0xb6, 0x00, 0 },
+    .{ .movzx, .rm, .r32, .rm8, .none, .none, 2, 0x0f, 0xb6, 0x00, 0 },
+    .{ .movzx, .rm, .r64, .rm8, .none, .none, 2, 0x0f, 0xb6, 0x00, 0 },
+    .{ .movzx, .rm, .r32, .rm16, .none, .none, 2, 0x0f, 0xb7, 0x00, 0 },
+    .{ .movzx, .rm, .r64, .rm16, .none, .none, 2, 0x0f, 0xb7, 0x00, 0 },
 
     .{ .nop, .np, .none, .none, .none, .none, 1, 0x90, 0x00, 0x00, 0 },
 
@@ -264,7 +264,7 @@ pub const Mnemonic = enum {
     call, cmp,
     imul, int3,
     lea,
-    mov, movsx, movsxd,
+    mov, movsx, movsxd, movzx,
     nop,
     @"or",
     pop, push,

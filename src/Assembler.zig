@@ -132,7 +132,7 @@ const Tokenizer = struct {
                 },
 
                 .numeral => switch (ch) {
-                    '0'...'9' => {},
+                    'x', '0'...'9' => {}, // TODO validate there is only one '0x' pair within a numeral
                     else => {
                         result.id = .numeral;
                         break;
@@ -209,6 +209,8 @@ fn next(as: *Assembler) ParseError!?ParseResult {
         .{ .register, .register },
         .{ .register, .memory },
         .{ .memory, .register },
+        .{ .register, .immediate },
+        .{ .memory, .immediate },
     };
 
     const pos = as.it.pos;
@@ -285,6 +287,11 @@ fn parseOperandRule(as: *Assembler, rule: anytype, ops: *[4]Operand) ParseError!
                 .memory => {
                     const mem = try as.parseMemory();
                     ops[i] = .{ .mem = mem };
+                },
+                .immediate => {
+                    const imm_tok = try as.expect(.numeral);
+                    const imm = try std.fmt.parseInt(i64, as.source(imm_tok), 0);
+                    ops[i] = .{ .imm = imm };
                 },
                 else => @compileError("unhandled enum literal " ++ @tagName(cond)),
             },
