@@ -193,40 +193,38 @@ const ParseError = error{
 } || Tokenizer.Error || std.fmt.ParseIntError;
 
 fn next(as: *Assembler) ParseError!?ParseResult {
-    var result = ParseResult{
-        .mnemonic = undefined,
-        .ops = .{ .none, .none, .none, .none },
-    };
-
     try as.skip(2, .{ .space, .new_line });
-    const mnemonic = as.expect(.string) catch |err| switch (err) {
+    const mnemonic_tok = as.expect(.string) catch |err| switch (err) {
         error.UnexpectedToken => return if (try as.peek() == .eof) null else err,
         else => return err,
     };
-    result.mnemonic = mnemonicFromString(as.source(mnemonic)) orelse return error.InvalidMnemonic;
+    const mnemonic = mnemonicFromString(as.source(mnemonic_tok)) orelse
+        return error.InvalidMnemonic;
+    try as.skip(1, .{.space});
 
-    inline for (&result.ops, 0..) |*op, i| {
-        if (i > 0) {
-            try as.skip(1, .{.space});
-            _ = as.expect(.comma) catch |err| switch (err) {
-                error.UnexpectedToken => switch (try as.peek()) {
-                    .new_line, .eof => break,
-                    else => return err,
-                },
-                else => return err,
+    const rules = .{
+        .{},
+        .{.register},
+        .{.memory},
+        .{ .register, .register },
+        .{ .register, .memory },
+        .{ .memory, .register },
+    };
+
+    const pos = as.it.pos;
+    inline for (rules) |rule| {
+        var ops = [4]Operand{ .none, .none, .none, .none };
+        if (as.parseOperandRule(rule, &ops)) {
+            return .{
+                .mnemonic = mnemonic,
+                .ops = ops,
             };
+        } else |_| {
+            as.it.seekTo(pos);
         }
-        try as.skip(1, .{.space});
-        op.* = as.parseOperand() catch |err| switch (err) {
-            error.InvalidOperand => switch (try as.peek()) {
-                .new_line, .eof => break,
-                else => return err,
-            },
-            else => return err,
-        };
     }
 
-    return result;
+    return error.InvalidOperand;
 }
 
 fn source(as: *Assembler, token: Tokenizer.Token) []const u8 {
@@ -269,34 +267,36 @@ fn mnemonicFromString(bytes: []const u8) ?Mnemonic {
     return null;
 }
 
-fn parseOperand(as: *Assembler) ParseError!Operand {
-    err: {
-        const pos = as.it.pos;
-        const reg = as.parseRegister() catch {
-            as.it.seekTo(pos);
-            break :err;
-        };
-        return .{ .reg = reg };
+fn parseOperandRule(as: *Assembler, rule: anytype, ops: *[4]Operand) ParseError!void {
+    inline for (rule, 0..) |cond, i| {
+        comptime assert(i < 4);
+        if (i > 0) {
+            _ = try as.expect(.comma);
+            try as.skip(1, .{.space});
+        }
+        switch (@typeInfo(@TypeOf(cond))) {
+            .EnumLiteral => switch (cond) {
+                .register => {
+                    const reg_tok = try as.expect(.string);
+                    const reg = registerFromString(as.source(reg_tok)) orelse
+                        return error.InvalidOperand;
+                    ops[i] = .{ .reg = reg };
+                },
+                .memory => {
+                    const mem = try as.parseMemory();
+                    ops[i] = .{ .mem = mem };
+                },
+                else => @compileError("unhandled enum literal " ++ @tagName(cond)),
+            },
+            else => @compileError("invalid condition in the rule: " ++ @typeName(@TypeOf(cond))),
+        }
+        try as.skip(1, .{.space});
     }
 
-    err: {
-        const pos = as.it.pos;
-        const mem = as.parseMemory() catch {
-            as.it.seekTo(pos);
-            break :err;
-        };
-        return .{ .mem = mem };
-    }
-
-    return error.InvalidOperand;
-}
-
-fn parseRegister(as: *Assembler) ParseError!Register {
-    const string = try as.expect(.string);
-    const reg = registerFromString(as.source(string)) orelse return error.InvalidOperand;
     try as.skip(1, .{.space});
-    switch (try as.peek()) {
-        .eof, .new_line, .comma => return reg,
+    const tok = try as.it.next();
+    switch (tok.id) {
+        .new_line, .eof => {},
         else => return error.InvalidOperand,
     }
 }
@@ -311,45 +311,6 @@ fn registerFromString(bytes: []const u8) ?Register {
     return null;
 }
 
-const Pair = std.meta.Tuple(&.{ Tokenizer.Token.Id, ?[]const u8 });
-const Rule = []const Pair;
-
-const memory_rules = &[_]Rule{
-    &.{
-        .{ .open_br, null },
-        .{ .string, "base" },
-        .{ .close_br, null },
-    },
-    &.{
-        .{ .open_br, null },
-        .{ .string, "base" },
-        .{ .plus, null },
-        .{ .numeral, "disp" },
-        .{ .close_br, null },
-    },
-    &.{
-        .{ .open_br, null },
-        .{ .string, "base" },
-        .{ .minus, null },
-        .{ .numeral, "disp" },
-        .{ .close_br, null },
-    },
-    &.{
-        .{ .open_br, null },
-        .{ .numeral, "disp" },
-        .{ .plus, null },
-        .{ .string, "base" },
-        .{ .close_br, null },
-    },
-    &.{
-        .{ .open_br, null },
-        .{ .numeral, "disp" },
-        .{ .minus, null },
-        .{ .string, "base" },
-        .{ .close_br, null },
-    },
-};
-
 fn parseMemory(as: *Assembler) ParseError!Memory {
     var mem = Memory{
         .base = null,
@@ -363,8 +324,15 @@ fn parseMemory(as: *Assembler) ParseError!Memory {
 
     try as.skip(1, .{.space});
 
+    const rules = .{
+        .{ .open_br, .{ .string, "base" }, .close_br },
+        .{ .open_br, .{ .string, "base" }, .plus, .{ .numeral, "disp" }, .close_br },
+        .{ .open_br, .{ .string, "base" }, .minus, .{ .numeral, "disp" }, .close_br },
+        .{ .open_br, .{ .numeral, "disp" }, .plus, .{ .string, "base" }, .close_br },
+    };
+
     const pos = as.it.pos;
-    inline for (memory_rules) |rule| {
+    inline for (rules) |rule| {
         if (as.parseMemoryRule(rule, &mem)) {
             return mem;
         } else |_| {
@@ -375,33 +343,40 @@ fn parseMemory(as: *Assembler) ParseError!Memory {
     return error.InvalidOperand;
 }
 
-fn parseMemoryRule(as: *Assembler, comptime rule: Rule, mem: *Memory) ParseError!void {
-    inline for (rule, 0..) |pair, i| {
-        const tok = try as.expect(pair[0]);
-        try as.skip(1, .{.space});
-
-        if (pair[1]) |field_name| {
-            if (std.mem.eql(u8, field_name, "base")) {
-                @field(mem, "base") = registerFromString(as.source(tok)) orelse return error.InvalidMemoryOperand;
-            }
-            if (std.mem.eql(u8, field_name, "disp")) {
-                const is_neg = blk: {
-                    if (i > 0) {
-                        if (rule[i - 1][0] == .minus) break :blk true;
-                    }
-                    break :blk false;
-                };
-                var disp = try std.fmt.parseInt(i32, as.source(tok), 0);
-                if (is_neg) {
-                    disp *= -1;
+fn parseMemoryRule(as: *Assembler, rule: anytype, mem: *Memory) ParseError!void {
+    inline for (rule, 0..) |cond, i| {
+        const ti = @typeInfo(@TypeOf(cond));
+        switch (ti) {
+            .EnumLiteral => {
+                _ = try as.expect(cond);
+            },
+            .Struct => |sti| {
+                if (!sti.is_tuple) {
+                    @compileError("unsupported condition in the rule: " ++ @typeName(@TypeOf(cond)));
                 }
-                @field(mem, "disp") = disp;
-            }
+                const tok_id = cond[0];
+                const field_name = cond[1];
+                const tok = try as.expect(tok_id);
+                if (comptime std.mem.eql(u8, field_name, "base")) {
+                    @field(mem, "base") = registerFromString(as.source(tok)) orelse
+                        return error.InvalidMemoryOperand;
+                } else if (comptime std.mem.eql(u8, field_name, "disp")) {
+                    const is_neg = blk: {
+                        if (i > 0) {
+                            if (rule[i - 1] == .minus) break :blk true;
+                        }
+                        break :blk false;
+                    };
+                    var disp = try std.fmt.parseInt(i32, as.source(tok), 0);
+                    if (is_neg) {
+                        disp *= -1;
+                    }
+                    @field(mem, "disp") = disp;
+                } else unreachable;
+            },
+            else => @compileError("unsupported condition in the rule: " ++ @typeName(@TypeOf(cond))),
         }
-    }
-    switch (try as.peek()) {
-        .eof, .new_line, .comma => {},
-        else => return error.InvalidMemoryOperand,
+        try as.skip(1, .{.space});
     }
 }
 
