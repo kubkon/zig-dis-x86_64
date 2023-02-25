@@ -7,7 +7,7 @@ const Instruction = encoder.Instruction;
 const Rex = encoder.Rex;
 const LegacyPrefixes = encoder.LegacyPrefixes;
 
-const Entry = std.meta.Tuple(&.{ Mnemonic, OpEn, Op, Op, Op, Op, u2, u8, u8, u8, u3 });
+const Entry = struct { Mnemonic, OpEn, Op, Op, Op, Op, u2, u8, u8, u8, u3 };
 
 // TODO move this into a .zon file when Zig is capable of importing .zon files
 const table = &[_]Entry{
