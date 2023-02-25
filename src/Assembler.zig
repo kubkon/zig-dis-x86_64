@@ -331,13 +331,23 @@ fn parseMemory(as: *Assembler) ParseError!Memory {
 
     try as.skip(1, .{.space});
 
+    // Supported rules and orderings.
     const rules = .{
-        .{ .open_br, .base, .close_br },
-        .{ .open_br, .base, .plus, .disp, .close_br },
-        .{ .open_br, .base, .minus, .disp, .close_br },
-        .{ .open_br, .disp, .plus, .base, .close_br },
-        .{ .open_br, .base, .plus, .index, .close_br },
-        .{ .open_br, .base, .plus, .index, .star, .scale, .close_br },
+        .{ .open_br, .base, .close_br }, // [ base ]
+        .{ .open_br, .base, .plus, .disp, .close_br }, // [ base + disp ]
+        .{ .open_br, .base, .minus, .disp, .close_br }, // [ base - disp ]
+        .{ .open_br, .disp, .plus, .base, .close_br }, // [ disp + base ]
+        .{ .open_br, .base, .plus, .index, .close_br }, // [ base + index ]
+        .{ .open_br, .base, .plus, .index, .star, .scale, .close_br }, // [ base + index * scale ]
+        .{ .open_br, .index, .star, .scale, .plus, .base, .close_br }, // [ index * scale + base ]
+        .{ .open_br, .base, .plus, .index, .star, .scale, .plus, .disp, .close_br }, // [ base + index * scale + disp ]
+        .{ .open_br, .base, .plus, .index, .star, .scale, .minus, .disp, .close_br }, // [ base + index * scale - disp ]
+        .{ .open_br, .index, .star, .scale, .plus, .base, .plus, .disp, .close_br }, // [ index * scale + base + disp ]
+        .{ .open_br, .index, .star, .scale, .plus, .base, .minus, .disp, .close_br }, // [ index * scale + base - disp ]
+        .{ .open_br, .disp, .plus, .index, .star, .scale, .plus, .base, .close_br }, // [ disp + index * scale + base ]
+        .{ .open_br, .disp, .plus, .base, .plus, .index, .star, .scale, .close_br }, // [ disp + base + index * scale ]
+        .{ .open_br, .rip, .plus, .disp, .close_br }, // [ rip + disp ]
+        .{ .open_br, .rip, .minus, .disp, .close_br }, // [ rig - disp ]
     };
 
     const pos = as.it.pos;
@@ -365,6 +375,12 @@ fn parseMemoryRule(as: *Assembler, rule: anytype, mem: *Memory) ParseError!void 
                 const tok = try as.expect(.string);
                 @field(mem, "base") = registerFromString(as.source(tok)) orelse
                     return error.InvalidMemoryOperand;
+            },
+            .rip => {
+                const tok = try as.expect(.string);
+                if (!std.mem.eql(u8, as.source(tok), "rip"))
+                    return error.InvalidMemoryOperand;
+                @field(mem, "rip") = true;
             },
             .index => {
                 const tok = try as.expect(.string);
