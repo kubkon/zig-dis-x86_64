@@ -324,10 +324,17 @@ fn parseMemory(as: *Assembler) ParseError!Memory {
         .ptr_size = undefined,
         .disp = 0,
     };
-    mem.ptr_size = as.parsePtrSize() catch |err| switch (err) {
-        error.UnexpectedToken => .qword,
-        else => return err,
-    };
+
+    {
+        const pos = as.it.pos;
+        mem.ptr_size = as.parsePtrSize() catch |err| switch (err) {
+            error.UnexpectedToken => blk: {
+                as.it.seekTo(pos);
+                break :blk .qword;
+            },
+            else => return err,
+        };
+    }
 
     try as.skip(1, .{.space});
 
@@ -348,6 +355,7 @@ fn parseMemory(as: *Assembler) ParseError!Memory {
         .{ .open_br, .disp, .plus, .base, .plus, .index, .star, .scale, .close_br }, // [ disp + base + index * scale ]
         .{ .open_br, .rip, .plus, .disp, .close_br }, // [ rip + disp ]
         .{ .open_br, .rip, .minus, .disp, .close_br }, // [ rig - disp ]
+        .{ .base, .colon, .disp }, // seg:disp
     };
 
     const pos = as.it.pos;
@@ -368,7 +376,7 @@ fn parseMemoryRule(as: *Assembler, rule: anytype, mem: *Memory) ParseError!void 
             @compileError("unsupported condition type in the rule: " ++ @typeName(@TypeOf(cond)));
         }
         switch (cond) {
-            .open_br, .close_br, .plus, .minus, .star => {
+            .open_br, .close_br, .plus, .minus, .star, .colon => {
                 _ = try as.expect(cond);
             },
             .base => {
