@@ -6,11 +6,11 @@ pub fn build(b: *std.Build.Builder) void {
 
     b.addModule(.{
         .name = "dis_x86_64",
-        .source_file = .{ .path = "src/dis_x86_64.zig" },
+        .source_file = .{ .path = "src/main.zig" },
     });
 
     const tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/dis_x86_64.zig" },
+        .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = mode,
     });
