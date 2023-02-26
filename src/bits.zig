@@ -166,22 +166,10 @@ test "Register classes" {
     try expect(Register.fs.class() == .seg);
 }
 
-pub const Moffs = struct {
-    seg: Register,
-    offset: u64,
-
-    pub fn moffs(seg: Register, offset: u64) Moffs {
-        assert(seg.isSegment());
-        return .{ .seg = seg, .offset = offset };
-    }
-};
-
-pub const Memory = struct {
-    base: ?Register,
-    rip: bool = false,
-    disp: i32,
-    ptr_size: PtrSize,
-    scale_index: ?ScaleIndex = null,
+pub const Memory = union(enum) {
+    sib: Sib,
+    rip: Rip,
+    moffs: Moffs,
 
     pub const ScaleIndex = packed struct {
         scale: u4,
@@ -203,98 +191,138 @@ pub const Memory = struct {
         }
     };
 
-    pub fn mem(ptr_size: PtrSize, args: struct {
+    pub const Sib = struct {
+        ptr_size: PtrSize,
+        base: ?Register,
+        scale_index: ?ScaleIndex,
+        disp: i32,
+    };
+
+    pub const Rip = struct {
+        ptr_size: PtrSize,
+        disp: i32,
+    };
+
+    pub const Moffs = struct {
+        seg: Register,
+        offset: u64,
+    };
+
+    pub fn moffs(reg: Register, offset: u64) Memory {
+        assert(reg.isSegment());
+        return .{ .moffs = .{ .seg = reg, .offset = offset } };
+    }
+
+    pub fn sib(ptr_size: PtrSize, args: struct {
         disp: i32,
         base: ?Register = null,
         scale_index: ?ScaleIndex = null,
     }) Memory {
-        return .{
+        return .{ .sib = .{
             .base = args.base,
             .disp = args.disp,
             .ptr_size = ptr_size,
             .scale_index = args.scale_index,
-        };
+        } };
     }
 
     pub fn rip(ptr_size: PtrSize, disp: i32) Memory {
-        return .{
-            .base = null,
-            .rip = true,
-            .disp = disp,
-            .ptr_size = ptr_size,
+        return .{ .rip = .{ .ptr_size = ptr_size, .disp = disp } };
+    }
+
+    pub fn isSegment(mem: Memory) bool {
+        return switch (mem) {
+            .moffs => true,
+            .rip => false,
+            .sib => |s| if (s.base) |r| r.isSegment() else false,
         };
     }
 
-    pub fn isSegment(self: Memory) bool {
-        return if (self.base) |r| r.isSegment() else false;
+    pub fn base(mem: Memory) ?Register {
+        return switch (mem) {
+            .moffs => |m| m.seg,
+            .sib => |s| s.base,
+            .rip => null,
+        };
     }
 
-    pub fn fmtPrint(self: Memory, writer: anytype) !void {
-        if (self.base == null and self.scale_index == null and !self.rip) {
-            const disp_abs: u32 = @intCast(u32, try std.math.absInt(self.disp));
-            if (sign(self.disp) < 0) {
-                try writer.writeAll("-");
-            }
-            try writer.print("0x{x}", .{disp_abs});
-            return;
-        }
-
-        switch (self.ptr_size) {
-            .byte => try writer.writeAll("BYTE PTR "),
-            .word => try writer.writeAll("WORD PTR "),
-            .dword => try writer.writeAll("DWORD PTR "),
-            .qword => try writer.writeAll("QWORD PTR "),
-        }
-
-        const base_is_segment_reg = if (self.base) |r| r.isSegment() else false;
-
-        if (!base_is_segment_reg) {
-            try writer.writeByte('[');
-        }
-
-        if (self.base) |r| {
-            try r.fmtPrint(writer);
-        } else if (self.rip) {
-            try writer.writeAll("rip");
-        }
-
-        if (self.scale_index) |si| {
-            try si.index.fmtPrint(writer);
-            try writer.print(" * {d}", .{si.scale});
-        }
-
-        if (self.disp != 0) {
-            const disp_abs: u32 = @intCast(u32, try std.math.absInt(self.disp));
-            blk: {
-                if (self.base) |r| {
-                    if (r.isSegment()) {
-                        try writer.writeAll(":");
-                        if (sign(self.disp) < 0) {
-                            try writer.writeAll("-");
-                        }
-                        break :blk;
-                    }
-                }
-                if (sign(self.disp) < 0) {
-                    try writer.writeAll(" - ");
-                } else {
-                    try writer.writeAll(" + ");
-                }
-            }
-            switch (self.ptr_size) {
-                .byte => try writer.print("0x{x}", .{@intCast(u8, disp_abs)}),
-                else => try writer.print("0x{x}", .{disp_abs}),
-            }
-        }
-
-        if (!base_is_segment_reg) {
-            try writer.writeByte(']');
-        }
+    pub fn scaleIndex(mem: Memory) ?ScaleIndex {
+        return switch (mem) {
+            .moffs, .rip => null,
+            .sib => |s| s.scale_index,
+        };
     }
 
-    pub fn bitSize(self: Memory) u64 {
-        return self.ptr_size.bitSize();
+    pub fn bitSize(mem: Memory) u64 {
+        return switch (mem) {
+            .rip => |r| r.ptr_size.bitSize(),
+            .sib => |s| s.ptr_size.bitSize(),
+            .moffs => unreachable,
+        };
     }
+
+    // pub fn fmtPrint(self: Memory, writer: anytype) !void {
+    //     if (self.base == null and self.scale_index == null and !self.rip) {
+    //         const disp_abs: u32 = @intCast(u32, try std.math.absInt(self.disp));
+    //         if (sign(self.disp) < 0) {
+    //             try writer.writeAll("-");
+    //         }
+    //         try writer.print("0x{x}", .{disp_abs});
+    //         return;
+    //     }
+
+    //     switch (self.ptr_size) {
+    //         .byte => try writer.writeAll("BYTE PTR "),
+    //         .word => try writer.writeAll("WORD PTR "),
+    //         .dword => try writer.writeAll("DWORD PTR "),
+    //         .qword => try writer.writeAll("QWORD PTR "),
+    //     }
+
+    //     const base_is_segment_reg = if (self.base) |r| r.isSegment() else false;
+
+    //     if (!base_is_segment_reg) {
+    //         try writer.writeByte('[');
+    //     }
+
+    //     if (self.base) |r| {
+    //         try r.fmtPrint(writer);
+    //     } else if (self.rip) {
+    //         try writer.writeAll("rip");
+    //     }
+
+    //     if (self.scale_index) |si| {
+    //         try si.index.fmtPrint(writer);
+    //         try writer.print(" * {d}", .{si.scale});
+    //     }
+
+    //     if (self.disp != 0) {
+    //         const disp_abs: u32 = @intCast(u32, try std.math.absInt(self.disp));
+    //         blk: {
+    //             if (self.base) |r| {
+    //                 if (r.isSegment()) {
+    //                     try writer.writeAll(":");
+    //                     if (sign(self.disp) < 0) {
+    //                         try writer.writeAll("-");
+    //                     }
+    //                     break :blk;
+    //                 }
+    //             }
+    //             if (sign(self.disp) < 0) {
+    //                 try writer.writeAll(" - ");
+    //             } else {
+    //                 try writer.writeAll(" + ");
+    //             }
+    //         }
+    //         switch (self.ptr_size) {
+    //             .byte => try writer.print("0x{x}", .{@intCast(u8, disp_abs)}),
+    //             else => try writer.print("0x{x}", .{disp_abs}),
+    //         }
+    //     }
+
+    //     if (!base_is_segment_reg) {
+    //         try writer.writeByte(']');
+    //     }
+    // }
 };
 
 pub inline fn sign(i: anytype) @TypeOf(i) {

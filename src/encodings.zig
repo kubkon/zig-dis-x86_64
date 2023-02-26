@@ -333,18 +333,19 @@ pub const Op = enum {
                 }
             },
 
-            .mem => |mem| {
-                const bit_size = mem.bitSize();
-                return switch (bit_size) {
-                    8 => .m8,
-                    16 => .m16,
-                    32 => .m32,
-                    64 => .m64,
-                    else => unreachable,
-                };
+            .mem => |mem| switch (mem) {
+                .moffs => return .moffs,
+                .sib, .rip => {
+                    const bit_size = mem.bitSize();
+                    return switch (bit_size) {
+                        8 => .m8,
+                        16 => .m16,
+                        32 => .m32,
+                        64 => .m64,
+                        else => unreachable,
+                    };
+                },
             },
-
-            .moffs => return .moffs,
 
             .imm => |imm| {
                 if (math.cast(i8, imm)) |_| return .imm8;

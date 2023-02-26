@@ -319,22 +319,17 @@ fn registerFromString(bytes: []const u8) ?Register {
 }
 
 fn parseMemory(as: *Assembler) ParseError!Memory {
-    var mem = Memory{
-        .base = null,
-        .ptr_size = undefined,
-        .disp = 0,
-    };
-
-    {
+    const ptr_size: ?Memory.PtrSize = blk: {
         const pos = as.it.pos;
-        mem.ptr_size = as.parsePtrSize() catch |err| switch (err) {
-            error.UnexpectedToken => blk: {
+        const ptr_size = as.parsePtrSize() catch |err| switch (err) {
+            error.UnexpectedToken => {
                 as.it.seekTo(pos);
-                break :blk .qword;
+                break :blk null;
             },
             else => return err,
         };
-    }
+        break :blk ptr_size;
+    };
 
     try as.skip(1, .{.space});
 
@@ -360,8 +355,27 @@ fn parseMemory(as: *Assembler) ParseError!Memory {
 
     const pos = as.it.pos;
     inline for (rules) |rule| {
-        if (as.parseMemoryRule(rule, &mem)) {
-            return mem;
+        if (as.parseMemoryRule(rule)) |res| {
+            if (res.rip) {
+                if (res.base != null or res.scale_index != null or res.offset != null)
+                    return error.InvalidMemoryOperand;
+                return Memory.rip(ptr_size orelse .qword, res.disp orelse 0);
+            }
+            if (res.base) |base| {
+                if (res.rip)
+                    return error.InvalidMemoryOperand;
+                if (res.offset) |offset| {
+                    if (res.scale_index != null or res.disp != null)
+                        return error.InvalidMemoryOperand;
+                    return Memory.moffs(base, offset);
+                }
+                return Memory.sib(ptr_size orelse .qword, .{
+                    .base = base,
+                    .scale_index = res.scale_index,
+                    .disp = res.disp orelse 0,
+                });
+            }
+            return error.InvalidMemoryOperand;
         } else |_| {
             as.it.seekTo(pos);
         }
@@ -370,7 +384,16 @@ fn parseMemory(as: *Assembler) ParseError!Memory {
     return error.InvalidOperand;
 }
 
-fn parseMemoryRule(as: *Assembler, rule: anytype, mem: *Memory) ParseError!void {
+const MemoryParseResult = struct {
+    rip: bool = false,
+    base: ?Register = null,
+    scale_index: ?Memory.ScaleIndex = null,
+    disp: ?i32 = null,
+    offset: ?u64 = null,
+};
+
+fn parseMemoryRule(as: *Assembler, rule: anytype) ParseError!MemoryParseResult {
+    var res: MemoryParseResult = .{};
     inline for (rule, 0..) |cond, i| {
         if (@typeInfo(@TypeOf(cond)) != .EnumLiteral) {
             @compileError("unsupported condition type in the rule: " ++ @typeName(@TypeOf(cond)));
@@ -381,35 +404,31 @@ fn parseMemoryRule(as: *Assembler, rule: anytype, mem: *Memory) ParseError!void 
             },
             .base => {
                 const tok = try as.expect(.string);
-                @field(mem, "base") = registerFromString(as.source(tok)) orelse
-                    return error.InvalidMemoryOperand;
+                res.base = registerFromString(as.source(tok)) orelse return error.InvalidMemoryOperand;
             },
             .rip => {
                 const tok = try as.expect(.string);
-                if (!std.mem.eql(u8, as.source(tok), "rip"))
-                    return error.InvalidMemoryOperand;
-                @field(mem, "rip") = true;
+                if (!std.mem.eql(u8, as.source(tok), "rip")) return error.InvalidMemoryOperand;
+                res.rip = true;
             },
             .index => {
                 const tok = try as.expect(.string);
                 const index = registerFromString(as.source(tok)) orelse
                     return error.InvalidMemoryOperand;
-                var scale_index = @field(mem, "scale_index");
-                if (scale_index == null) {
-                    scale_index = .{ .scale = 1, .index = undefined };
+                if (res.scale_index) |*si| {
+                    si.index = index;
+                } else {
+                    res.scale_index = .{ .scale = 1, .index = index };
                 }
-                scale_index.?.index = index;
-                @field(mem, "scale_index") = scale_index;
             },
             .scale => {
                 const tok = try as.expect(.numeral);
                 const scale = try std.fmt.parseInt(u2, as.source(tok), 0);
-                var scale_index = @field(mem, "scale_index");
-                if (scale_index == null) {
-                    scale_index = .{ .scale = 1, .index = undefined };
+                if (res.scale_index) |*si| {
+                    si.scale = scale;
+                } else {
+                    res.scale_index = .{ .scale = scale, .index = undefined };
                 }
-                scale_index.?.scale = scale;
-                @field(mem, "scale_index") = scale_index;
             },
             .disp => {
                 const tok = try as.expect(.numeral);
@@ -419,16 +438,25 @@ fn parseMemoryRule(as: *Assembler, rule: anytype, mem: *Memory) ParseError!void 
                     }
                     break :blk false;
                 };
-                var disp = try std.fmt.parseInt(i32, as.source(tok), 0);
-                if (is_neg) {
-                    disp *= -1;
+                if (std.fmt.parseInt(i32, as.source(tok), 0)) |disp| {
+                    res.disp = if (is_neg) -1 * disp else disp;
+                } else |err| switch (err) {
+                    error.Overflow => {
+                        if (is_neg) return err;
+                        if (res.base) |base| {
+                            if (!base.isSegment()) return err;
+                        }
+                        const offset = try std.fmt.parseInt(u64, as.source(tok), 0);
+                        res.offset = offset;
+                    },
+                    else => return err,
                 }
-                @field(mem, "disp") = disp;
             },
             else => @compileError("unhandled operand output type: " ++ @tagName(cond)),
         }
         try as.skip(1, .{.space});
     }
+    return res;
 }
 
 fn parsePtrSize(as: *Assembler) ParseError!Memory.PtrSize {

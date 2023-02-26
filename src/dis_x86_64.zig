@@ -11,7 +11,6 @@ pub const Error = decoder.Error;
 pub const Instruction = encoder.Instruction;
 pub const Register = bits.Register;
 pub const Memory = bits.Memory;
-pub const Moffs = bits.Moffs;
 
 test {
     std.testing.refAllDecls(@This());

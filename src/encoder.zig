@@ -24,7 +24,6 @@ pub const Instruction = struct {
         none,
         reg: Register,
         mem: Memory,
-        moffs: Moffs,
         imm: i64,
 
         /// Returns the bitsize of the operand.
@@ -34,7 +33,6 @@ pub const Instruction = struct {
                 .none => unreachable,
                 .reg => |reg| reg.bitSize(),
                 .mem => |mem| mem.bitSize(),
-                .moffs => unreachable,
                 .imm => unreachable,
             };
         }
@@ -46,7 +44,6 @@ pub const Instruction = struct {
                 .none => unreachable,
                 .reg => |reg| reg.isSegment(),
                 .mem => |mem| mem.isSegment(),
-                .moffs => true,
                 .imm => unreachable,
             };
         }
@@ -65,7 +62,6 @@ pub const Instruction = struct {
                     };
                 },
                 .mem => |mem| return mem.bitSize() == 64,
-                .moffs => unreachable,
                 .imm => unreachable,
             }
         }
@@ -106,8 +102,8 @@ pub const Instruction = struct {
             .np, .o => {},
             .i => try encodeImm(inst.op1.imm, encoding.op1, encoder),
             .zi, .oi => try encodeImm(inst.op2.imm, encoding.op2, encoder),
-            .fd => try encoder.imm64(inst.op2.moffs.offset),
-            .td => try encoder.imm64(inst.op1.moffs.offset),
+            .fd => try encoder.imm64(inst.op2.mem.moffs.offset),
+            .td => try encoder.imm64(inst.op1.mem.moffs.offset),
             else => {
                 const mem_op = switch (encoding.op_en) {
                     .m, .mi, .mr => inst.op1,
@@ -173,19 +169,19 @@ pub const Instruction = struct {
 
         const segment_override: ?Register = switch (op_en) {
             .i, .zi, .o, .oi => null,
-            .fd => inst.op2.moffs.seg,
-            .td => inst.op1.moffs.seg,
+            .fd => inst.op2.mem.base().?,
+            .td => inst.op1.mem.base().?,
             .rm, .rmi => if (inst.op2.isSegment()) blk: {
                 break :blk switch (inst.op2) {
                     .reg => |r| r,
-                    .mem => |m| m.base.?,
+                    .mem => |m| m.base().?,
                     else => unreachable,
                 };
             } else null,
             .m, .mi, .mr => if (inst.op1.isSegment()) blk: {
                 break :blk switch (inst.op1) {
                     .reg => |r| r,
-                    .mem => |m| m.base.?,
+                    .mem => |m| m.base().?,
                     else => unreachable,
                 };
             } else null,
@@ -239,8 +235,8 @@ pub const Instruction = struct {
                         rex.b = r.isExtended();
                     },
                     .mem => |mem| {
-                        rex.b = if (mem.base) |base| base.isExtended() else false;
-                        rex.x = if (mem.scale_index) |si| si.index.isExtended() else false;
+                        rex.b = if (mem.base()) |base| base.isExtended() else false;
+                        rex.x = if (mem.scaleIndex()) |si| si.index.isExtended() else false;
                     },
                     else => unreachable,
                 }
@@ -258,74 +254,79 @@ pub const Instruction = struct {
             else => unreachable,
         };
 
-        if (mem.base) |base| {
-            if (base.class() == .seg) {
-                // TODO audit this wrt SIB
-                try encoder.modRm_SIBDisp0(operand_enc);
-                if (mem.scale_index) |si| {
-                    const scale = math.log2_int(u4, si.scale);
-                    try encoder.sib_scaleIndexDisp32(scale, si.index.lowEnc());
-                } else {
-                    try encoder.sib_disp32();
-                }
-                try encoder.disp32(mem.disp);
-            } else {
-                assert(base.class() == .gp);
-                const dst = base.lowEnc();
-                const src = operand_enc;
-                if (dst == 4 or mem.scale_index != null) {
-                    if (mem.disp == 0 and dst != 5) {
-                        try encoder.modRm_SIBDisp0(src);
-                        if (mem.scale_index) |si| {
+        switch (mem) {
+            .moffs => unreachable,
+            .sib => |sib| {
+                if (sib.base) |base| {
+                    if (base.class() == .seg) {
+                        // TODO audit this wrt SIB
+                        try encoder.modRm_SIBDisp0(operand_enc);
+                        if (sib.scale_index) |si| {
                             const scale = math.log2_int(u4, si.scale);
-                            try encoder.sib_scaleIndexBase(scale, si.index.lowEnc(), dst);
+                            try encoder.sib_scaleIndexDisp32(scale, si.index.lowEnc());
                         } else {
-                            try encoder.sib_base(dst);
+                            try encoder.sib_disp32();
                         }
-                    } else if (math.cast(i8, mem.disp)) |_| {
-                        try encoder.modRm_SIBDisp8(src);
-                        if (mem.scale_index) |si| {
-                            const scale = math.log2_int(u4, si.scale);
-                            try encoder.sib_scaleIndexBaseDisp8(scale, si.index.lowEnc(), dst);
-                        } else {
-                            try encoder.sib_baseDisp8(dst);
-                        }
-                        try encoder.disp8(@truncate(i8, mem.disp));
+                        try encoder.disp32(sib.disp);
                     } else {
-                        try encoder.modRm_SIBDisp32(src);
-                        if (mem.scale_index) |si| {
-                            const scale = math.log2_int(u4, si.scale);
-                            try encoder.sib_scaleIndexBaseDisp32(scale, si.index.lowEnc(), dst);
+                        assert(base.class() == .gp);
+                        const dst = base.lowEnc();
+                        const src = operand_enc;
+                        if (dst == 4 or sib.scale_index != null) {
+                            if (sib.disp == 0 and dst != 5) {
+                                try encoder.modRm_SIBDisp0(src);
+                                if (sib.scale_index) |si| {
+                                    const scale = math.log2_int(u4, si.scale);
+                                    try encoder.sib_scaleIndexBase(scale, si.index.lowEnc(), dst);
+                                } else {
+                                    try encoder.sib_base(dst);
+                                }
+                            } else if (math.cast(i8, sib.disp)) |_| {
+                                try encoder.modRm_SIBDisp8(src);
+                                if (sib.scale_index) |si| {
+                                    const scale = math.log2_int(u4, si.scale);
+                                    try encoder.sib_scaleIndexBaseDisp8(scale, si.index.lowEnc(), dst);
+                                } else {
+                                    try encoder.sib_baseDisp8(dst);
+                                }
+                                try encoder.disp8(@truncate(i8, sib.disp));
+                            } else {
+                                try encoder.modRm_SIBDisp32(src);
+                                if (sib.scale_index) |si| {
+                                    const scale = math.log2_int(u4, si.scale);
+                                    try encoder.sib_scaleIndexBaseDisp32(scale, si.index.lowEnc(), dst);
+                                } else {
+                                    try encoder.sib_baseDisp32(dst);
+                                }
+                                try encoder.disp32(sib.disp);
+                            }
                         } else {
-                            try encoder.sib_baseDisp32(dst);
+                            if (sib.disp == 0 and dst != 5) {
+                                try encoder.modRm_indirectDisp0(src, dst);
+                            } else if (math.cast(i8, sib.disp)) |_| {
+                                try encoder.modRm_indirectDisp8(src, dst);
+                                try encoder.disp8(@truncate(i8, sib.disp));
+                            } else {
+                                try encoder.modRm_indirectDisp32(src, dst);
+                                try encoder.disp32(sib.disp);
+                            }
                         }
-                        try encoder.disp32(mem.disp);
                     }
                 } else {
-                    if (mem.disp == 0 and dst != 5) {
-                        try encoder.modRm_indirectDisp0(src, dst);
-                    } else if (math.cast(i8, mem.disp)) |_| {
-                        try encoder.modRm_indirectDisp8(src, dst);
-                        try encoder.disp8(@truncate(i8, mem.disp));
+                    try encoder.modRm_SIBDisp0(operand_enc);
+                    if (sib.scale_index) |si| {
+                        const scale = math.log2_int(u4, si.scale);
+                        try encoder.sib_scaleIndexDisp32(scale, si.index.lowEnc());
                     } else {
-                        try encoder.modRm_indirectDisp32(src, dst);
-                        try encoder.disp32(mem.disp);
+                        try encoder.sib_disp32();
                     }
+                    try encoder.disp32(sib.disp);
                 }
-            }
-        } else {
-            if (mem.rip) {
+            },
+            .rip => |rip| {
                 try encoder.modRm_RIPDisp32(operand_enc);
-            } else {
-                try encoder.modRm_SIBDisp0(operand_enc);
-                if (mem.scale_index) |si| {
-                    const scale = math.log2_int(u4, si.scale);
-                    try encoder.sib_scaleIndexDisp32(scale, si.index.lowEnc());
-                } else {
-                    try encoder.sib_disp32();
-                }
-            }
-            try encoder.disp32(mem.disp);
+                try encoder.disp32(rip.disp);
+            },
         }
     }
 
