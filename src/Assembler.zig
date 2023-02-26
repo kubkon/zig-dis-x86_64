@@ -211,6 +211,8 @@ fn next(as: *Assembler) ParseError!?ParseResult {
         .{ .memory, .register },
         .{ .register, .immediate },
         .{ .memory, .immediate },
+        .{ .register, .register, .immediate },
+        .{ .register, .memory, .immediate },
     };
 
     const pos = as.it.pos;
