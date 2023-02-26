@@ -133,10 +133,6 @@ pub const Register = enum(u7) {
         assert(self.class() == .sse);
         return @intToEnum(Register, @as(u8, self.enc()) + 64);
     }
-
-    pub fn fmtPrint(self: Register, writer: anytype) !void {
-        try writer.writeAll(@tagName(self));
-    }
 };
 
 test "Register id - different classes" {

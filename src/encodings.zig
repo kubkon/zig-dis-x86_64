@@ -534,20 +534,43 @@ pub const Encoding = struct {
         return candidates[shortest_encoding.?.index];
     }
 
-    pub fn findByOpcode(opc: [3]u8) ?Encoding {
+    /// Returns first matching encoding by opcode.
+    pub fn findByOpcode(opc: []const u8, prefixes: struct {
+        legacy: LegacyPrefixes,
+        rex: Rex,
+    }) ?Encoding {
         inline for (table) |entry| {
-            if (entry[6] == opc[0] and entry[7] == opc[1] and entry[8] == opc[2]) {
-                return .{
-                    .mnemonic = entry[0],
-                    .op_en = entry[1],
-                    .op1 = .none,
-                    .op2 = .none,
-                    .op3 = .none,
-                    .op4 = .none,
-                    .opc_len = entry[6],
-                    .opc = .{ entry[7], entry[8], entry[9] },
-                    .modrm_ext = entry[10],
-                };
+            const enc = Encoding{
+                .mnemonic = entry[0],
+                .op_en = entry[1],
+                .op1 = entry[2],
+                .op2 = entry[3],
+                .op3 = entry[4],
+                .op4 = entry[5],
+                .opc_len = entry[6],
+                .opc = .{ entry[7], entry[8], entry[9] },
+                .modrm_ext = entry[10],
+            };
+            if (std.mem.eql(u8, enc.opcode(), opc)) {
+                switch (enc.op_en) {
+                    .i, .np => return enc,
+                    else => {},
+                }
+                if (prefixes.rex.w) {
+                    const bit_size = switch (enc.op_en) {
+                        .i, .np => unreachable,
+                        .td => enc.op2.bitSize(),
+                        else => enc.op1.bitSize(),
+                    };
+                    if (bit_size == 64) return enc;
+                } else if (prefixes.legacy.prefix_66) {
+                    const bit_size = switch (enc.op_en) {
+                        .i, .np => unreachable,
+                        .td => enc.op2.bitSize(),
+                        else => enc.op1.bitSize(),
+                    };
+                    if (bit_size == 16) return enc;
+                }
             }
         }
         return null;

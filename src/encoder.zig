@@ -65,6 +65,21 @@ pub const Instruction = struct {
                 .imm => unreachable,
             }
         }
+
+        pub fn fmtPrint(op: Operand, encoding: encodings.Op, writer: anytype) !void {
+            switch (op) {
+                .none => {},
+                .reg => |reg| try writer.writeAll(@tagName(reg)),
+                .mem => return error.Todo,
+                .imm => |imm| switch (encoding) {
+                    .imm8 => try writer.print("0x{x}", .{@intCast(i8, imm)}),
+                    .imm16 => try writer.print("0x{x}", .{@intCast(i16, imm)}),
+                    .imm32 => try writer.print("0x{x}", .{@intCast(i32, imm)}),
+                    .imm64 => try writer.print("0x{x}", .{imm}),
+                    else => unreachable,
+                },
+            }
+        }
     };
 
     pub fn new(args: struct {
@@ -88,6 +103,24 @@ pub const Instruction = struct {
             .op4 = args.op4,
             .encoding = encoding,
         };
+    }
+
+    pub fn fmtPrint(inst: Instruction, writer: anytype) !void {
+        try writer.print("{s}", .{@tagName(inst.encoding.mnemonic)});
+        const ops = [_]struct { Operand, encodings.Op }{
+            .{ inst.op1, inst.encoding.op1 },
+            .{ inst.op2, inst.encoding.op2 },
+            .{ inst.op3, inst.encoding.op3 },
+            .{ inst.op4, inst.encoding.op4 },
+        };
+        for (&ops, 0..) |op, i| {
+            if (op[1] == .none) break;
+            if (i > 0) {
+                try writer.writeByte(',');
+            }
+            try writer.writeByte(' ');
+            try op[0].fmtPrint(op[1], writer);
+        }
     }
 
     pub fn encode(inst: Instruction, writer: anytype) !void {

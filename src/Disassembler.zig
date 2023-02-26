@@ -12,17 +12,18 @@ const Encoding = encodings.Encoding;
 const Instruction = encoder.Instruction;
 const LegacyPrefixes = encoder.LegacyPrefixes;
 const Memory = bits.Memory;
+const Mnemonic = encodings.Mnemonic;
 const PtrSize = bits.PtrSize;
 const Register = bits.Register;
 const Rex = encoder.Rex;
 const ScaleIndex = bits.ScaleIndex;
 
-const Allocator = std.mem.Allocator;
-
 pub const Error = error{
     EndOfStream,
+    LegacyPrefixAfterRex,
     InvalidModRmByte,
     InvalidRexForEncoding,
+    UnknownOpcode,
     Todo,
 };
 
@@ -33,43 +34,98 @@ pub fn init(code: []const u8) Disassembler {
     return .{ .code = code };
 }
 
-pub fn next(self: *Disassembler) Error!?Instruction {
-    // TODO this should be done in a loop
-    const prefixes = self.parseLegacyPrefixes() catch |err| switch (err) {
+pub fn next(dis: *Disassembler) Error!?Instruction {
+    const prefixes = dis.parsePrefixes() catch |err| switch (err) {
         error.EndOfStream => return null,
         else => |e| return e,
     };
-    _ = prefixes;
-    const rex = self.parseRexPrefix() catch |err| switch (err) {
-        error.EndOfStream => return null,
-        else => |e| return e,
-    };
-    _ = rex;
 
-    // TODO we should also parse VEX prefix and other escape codes
-
-    // Parse primary opcode
-
-    var stream = std.io.fixedBufferStream(self.code[self.pos..]);
-    var creader = std.io.countingReader(stream.reader());
-    const reader = creader.reader();
-    _ = reader;
-
-    self.pos += creader.bytes_read;
-
-    return error.Todo;
+    const encoding = try dis.parseEncoding(prefixes) orelse return error.UnknownOpcode;
+    std.log.warn("{}", .{encoding});
+    switch (encoding.op_en) {
+        .oi, .zi => {
+            const imm = try dis.parseImm(encoding.op2);
+            return Instruction{
+                .op1 = .{ .reg = Register.rax.toBitSize(encoding.op1.bitSize()) },
+                .op2 = .{ .imm = imm },
+                .encoding = encoding,
+            };
+        },
+        else => return error.Todo,
+    }
 }
 
-fn parseEncoding(self: *Disassembler) !?Encoding {
+const Prefixes = struct {
+    legacy: LegacyPrefixes = .{},
+    rex: Rex = .{},
+    // TODO add support for VEX prefix
+};
+
+fn parsePrefixes(dis: *Disassembler) !Prefixes {
+    const rex_prefix_mask: u8 = 0b0100_0000;
+    var stream = std.io.fixedBufferStream(dis.code[dis.pos..]);
+    const reader = stream.reader();
+
+    var res: Prefixes = .{};
+    var has_rex = false;
+
+    while (true) {
+        const next_byte = try reader.readByte();
+        dis.pos += 1;
+
+        switch (next_byte) {
+            0xf0, 0xf2, 0xf3, 0x2e, 0x36, 0x26, 0x64, 0x65, 0x3e, 0x66, 0x67 => {
+                // Legacy prefix
+                if (has_rex) return error.LegacyPrefixAfterRex;
+                switch (next_byte) {
+                    0xf0 => res.legacy.prefix_f0 = true,
+                    0xf2 => res.legacy.prefix_f2 = true,
+                    0xf3 => res.legacy.prefix_f3 = true,
+                    0x2e => res.legacy.prefix_2e = true,
+                    0x36 => res.legacy.prefix_36 = true,
+                    0x26 => res.legacy.prefix_26 = true,
+                    0x64 => res.legacy.prefix_64 = true,
+                    0x65 => res.legacy.prefix_65 = true,
+                    0x3e => res.legacy.prefix_3e = true,
+                    0x66 => res.legacy.prefix_66 = true,
+                    0x67 => res.legacy.prefix_67 = true,
+                    else => unreachable,
+                }
+            },
+            else => {
+                if (rex_prefix_mask & next_byte != 0) {
+                    // REX prefix
+                    res.rex.w = next_byte & 0b1000 != 0;
+                    res.rex.r = next_byte & 0b100 != 0;
+                    res.rex.x = next_byte & 0b10 != 0;
+                    res.rex.b = next_byte & 0b1 != 0;
+                    has_rex = true;
+                    continue;
+                }
+
+                // TODO VEX prefix
+
+                dis.pos -= 1;
+                break;
+            },
+        }
+    }
+
+    return res;
+}
+
+fn parseEncoding(dis: *Disassembler, prefixes: Prefixes) !?Encoding {
     const o_mask: u8 = 0b1111_1000;
 
     var opcode: [3]u8 = .{ 0, 0, 0 };
-    var stream = std.io.fixedBufferStream(self.code[self.pos..]);
+    var stream = std.io.fixedBufferStream(dis.code[dis.pos..]);
     const reader = stream.reader();
 
     comptime var opc_count = 0;
     inline while (opc_count < 3) : (opc_count += 1) {
         const byte = try reader.readByte();
+        dis.pos += 1;
+
         if (byte == 0x0f) {
             // Multi-byte opcode
             opcode[opc_count] = byte;
@@ -77,76 +133,39 @@ fn parseEncoding(self: *Disassembler) !?Encoding {
             // Multi-byte opcode
             return error.Todo;
         } else {
+            opcode[opc_count] = byte;
             // Single-byte opcode
-            if (Encoding.findByOpcode(opcode)) |enc| {
-                return enc;
+            if (Encoding.findByOpcode(opcode[0..1], .{
+                .legacy = prefixes.legacy,
+                .rex = prefixes.rex,
+            })) |mnemonic| {
+                return mnemonic;
             } else {
                 // Try O* encoding
                 opcode[0] = opcode[0] & o_mask;
-                const enc = Encoding.findByOpcode(opcode) orelse return error.InvalidEncoding;
-                return enc;
+                return Encoding.findByOpcode(opcode[0..1], .{
+                    .legacy = prefixes.legacy,
+                    .rex = prefixes.rex,
+                });
             }
         }
     }
+    return null;
 }
 
-fn parseImm(enc: Instruction.Enc, bit_size: u64, reader: anytype) !u64 {
-    return switch (bit_size) {
-        8 => try reader.readInt(u8, .Little),
-        16 => try reader.readInt(u16, .Little),
-        32 => try reader.readInt(u32, .Little),
-        64 => switch (enc) {
-            .oi, .fd, .td => try reader.readInt(u64, .Little),
-            else => try reader.readInt(u32, .Little),
-        },
+fn parseImm(dis: *Disassembler, kind: encodings.Op) !i64 {
+    var stream = std.io.fixedBufferStream(dis.code[dis.pos..]);
+    var creader = std.io.countingReader(stream.reader());
+    const reader = creader.reader();
+    const imm = switch (kind) {
+        .imm8 => try reader.readInt(i8, .Little),
+        .imm16 => try reader.readInt(i16, .Little),
+        .imm32 => try reader.readInt(i32, .Little),
+        .imm64 => try reader.readInt(i64, .Little),
         else => unreachable,
     };
-}
-
-fn parseLegacyPrefixes(self: *Disassembler) !LegacyPrefixes {
-    var stream = std.io.fixedBufferStream(self.code[self.pos..]);
-    const reader = stream.reader();
-    var out = LegacyPrefixes{};
-    while (true) {
-        const next_byte = try reader.readByte();
-        self.pos += 1;
-
-        switch (next_byte) {
-            0xf0 => out.prefix_f0 = true,
-            0xf2 => out.prefix_f2 = true,
-            0xf3 => out.prefix_f3 = true,
-
-            0x2e => out.prefix_2e = true,
-            0x36 => out.prefix_36 = true,
-            0x26 => out.prefix_26 = true,
-            0x64 => out.prefix_64 = true,
-            0x65 => out.prefix_65 = true,
-
-            0x3e => out.prefix_3e = true,
-
-            0x66 => out.prefix_66 = true,
-
-            0x67 => out.prefix_67 = true,
-
-            else => {
-                self.pos -= 1;
-                break;
-            },
-        }
-    }
-    return out;
-}
-
-fn parseRexPrefix(self: *Disassembler) !Rex {
-    var stream = std.io.fixedBufferStream(self.code[self.pos..]);
-    const reader = stream.reader();
-    const next_byte = try reader.readByte();
-    self.pos += 1;
-    const rex: Rex = Rex.parse(next_byte) orelse blk: {
-        self.pos -= 1;
-        break :blk .{};
-    };
-    return rex;
+    dis.pos += creader.bytes_read;
+    return imm;
 }
 
 const ParsedOpc = struct {

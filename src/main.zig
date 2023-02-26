@@ -17,5 +17,5 @@ test {
     std.testing.refAllDecls(@import("Disassembler.zig"));
     std.testing.refAllDecls(@import("encoder.zig"));
     _ = @import("test/asm.zig");
-    // _ = @import("test/decoder.zig"); TODO
+    _ = @import("test/disasm.zig");
 }
