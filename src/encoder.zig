@@ -80,7 +80,7 @@ pub const Instruction = struct {
             .op3 = args.op3,
             .op4 = args.op4,
         }) orelse return error.InvalidInstruction;
-        std.log.err("{}", .{encoding});
+        std.log.debug("{}", .{encoding});
         return .{
             .op1 = args.op1,
             .op2 = args.op2,
