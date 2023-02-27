@@ -50,6 +50,7 @@ test "disassemble" {
         0x66, 0x0f, 0xbe, 0xc3,
         0x48, 0x63, 0xc3,
         0xe8, 0x00, 0x00, 0x00, 0x00,
+        0x41, 0x53,
         // zig fmt: on
     });
 
@@ -105,6 +106,7 @@ test "disassemble" {
         \\movsx ax, bl
         \\movsxd rax, ebx
         \\call 0x0
+        \\push r11
         \\
     , buf.items);
 }

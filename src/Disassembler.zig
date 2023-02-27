@@ -56,12 +56,14 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
                 .encoding = enc,
             };
         },
-        .oi => {
+        .o, .oi => {
             const reg_low_enc = @truncate(u3, dis.code[dis.pos - 1]);
-            const imm = try dis.parseImm(enc.op2);
+            const op2: Instruction.Operand = if (enc.op_en == .oi) .{
+                .imm = try dis.parseImm(enc.op2),
+            } else .none;
             return Instruction{
                 .op1 = .{ .reg = Register.gpFromLowEnc(reg_low_enc, prefixes.rex.b, enc.op1.bitSize()) },
-                .op2 = .{ .imm = imm },
+                .op2 = op2,
                 .encoding = enc,
             };
         },
