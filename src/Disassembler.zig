@@ -87,6 +87,44 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
                 .encoding = encoding,
             };
         },
+        .rm => {
+            const modrm = try dis.parseModRmByte();
+            const sib = if (modrm.sib()) try dis.parseSibByte() else null;
+
+            if (modrm.direct()) {
+                return Instruction{
+                    .op1 = .{ .reg = Register.gpFromLowEnc(modrm.op1, prefixes.rex.x, encoding.op1.bitSize()) },
+                    .op2 = .{ .reg = Register.gpFromLowEnc(modrm.op2, prefixes.rex.b, encoding.op2.bitSize()) },
+                    .encoding = encoding,
+                };
+            }
+
+            const disp = try dis.parseDisplacement(modrm, sib);
+
+            if (modrm.rip()) {
+                return Instruction{
+                    .op1 = .{ .reg = Register.gpFromLowEnc(modrm.op1, prefixes.rex.r, encoding.op1.bitSize()) },
+                    .op2 = .{ .mem = Memory.rip(Memory.PtrSize.fromBitSize(encoding.op2.bitSize()), disp) },
+                    .encoding = encoding,
+                };
+            }
+
+            const scale_index = if (sib) |info| info.scaleIndex(prefixes.rex) else null;
+            const base = if (sib) |info|
+                info.baseReg(modrm, prefixes)
+            else
+                Register.gpFromLowEnc(modrm.op2, prefixes.rex.b, 64);
+            const reg = Register.gpFromLowEnc(modrm.op1, prefixes.rex.r, encoding.op1.bitSize());
+            return Instruction{
+                .op1 = .{ .reg = reg },
+                .op2 = .{ .mem = Memory.sib(Memory.PtrSize.fromBitSize(encoding.op2.bitSize()), .{
+                    .base = base,
+                    .scale_index = scale_index,
+                    .disp = disp,
+                }) },
+                .encoding = encoding,
+            };
+        },
         else => return error.Todo,
     }
 }
@@ -283,9 +321,10 @@ fn parseDisplacement(dis: *Disassembler, modrm: ModRm, sib: ?Sib) !i32 {
             break :disp try reader.readInt(i32, .Little);
         }
         break :disp switch (modrm.mod) {
+            0b00 => 0,
             0b01 => try reader.readInt(i8, .Little),
             0b10 => try reader.readInt(i32, .Little),
-            else => unreachable,
+            0b11 => unreachable,
         };
     };
     dis.pos += creader.bytes_read;
