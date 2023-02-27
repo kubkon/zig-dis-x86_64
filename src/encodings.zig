@@ -573,6 +573,7 @@ pub const Encoding = struct {
                     if (bit_size == 16) return enc;
                 } else {
                     if (bit_size == 32 or bit_size == 8) return enc;
+                    if (enc.mnemonic.defaultsTo64Bits()) return enc;
                 }
             }
         }
