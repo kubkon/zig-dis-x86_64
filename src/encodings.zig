@@ -556,20 +556,17 @@ pub const Encoding = struct {
                     .i, .np => return enc,
                     else => {},
                 }
+                const bit_size = switch (enc.op_en) {
+                    .i, .np => unreachable,
+                    .td => enc.op2.bitSize(),
+                    else => enc.op1.bitSize(),
+                };
                 if (prefixes.rex.w) {
-                    const bit_size = switch (enc.op_en) {
-                        .i, .np => unreachable,
-                        .td => enc.op2.bitSize(),
-                        else => enc.op1.bitSize(),
-                    };
                     if (bit_size == 64) return enc;
                 } else if (prefixes.legacy.prefix_66) {
-                    const bit_size = switch (enc.op_en) {
-                        .i, .np => unreachable,
-                        .td => enc.op2.bitSize(),
-                        else => enc.op1.bitSize(),
-                    };
                     if (bit_size == 16) return enc;
+                } else {
+                    if (bit_size == 32) return enc;
                 }
             }
         }

@@ -4,7 +4,6 @@ const math = std.math;
 
 const bits = @import("bits.zig");
 const encodings = @import("encodings.zig");
-const sign = bits.sign;
 const Encoding = encodings.Encoding;
 const Memory = bits.Memory;
 const Moffs = bits.Moffs;
@@ -71,12 +70,18 @@ pub const Instruction = struct {
                 .none => {},
                 .reg => |reg| try writer.writeAll(@tagName(reg)),
                 .mem => return error.Todo,
-                .imm => |imm| switch (encoding) {
-                    .imm8 => try writer.print("0x{x}", .{@intCast(i8, imm)}),
-                    .imm16 => try writer.print("0x{x}", .{@intCast(i16, imm)}),
-                    .imm32 => try writer.print("0x{x}", .{@intCast(i32, imm)}),
-                    .imm64 => try writer.print("0x{x}", .{imm}),
-                    else => unreachable,
+                .imm => |imm| {
+                    const imm_abs = try std.math.absInt(imm);
+                    if (sign(imm) < 0) {
+                        try writer.writeByte('-');
+                    }
+                    switch (encoding) {
+                        .imm8 => try writer.print("0x{x}", .{@intCast(u8, imm_abs)}),
+                        .imm16 => try writer.print("0x{x}", .{@intCast(u16, imm_abs)}),
+                        .imm32 => try writer.print("0x{x}", .{@intCast(u32, imm_abs)}),
+                        .imm64 => try writer.print("0x{x}", .{imm}),
+                        else => unreachable,
+                    }
                 },
             }
         }
@@ -373,6 +378,10 @@ pub const Instruction = struct {
         }
     }
 };
+
+inline fn sign(i: anytype) @TypeOf(i) {
+    return @as(@TypeOf(i), @boolToInt(i > 0)) - @boolToInt(i < 0);
+}
 
 pub const LegacyPrefixes = packed struct {
     /// LOCK

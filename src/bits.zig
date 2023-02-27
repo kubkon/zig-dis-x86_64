@@ -320,7 +320,3 @@ pub const Memory = union(enum) {
     //     }
     // }
 };
-
-pub inline fn sign(i: anytype) @TypeOf(i) {
-    return @as(@TypeOf(i), @boolToInt(i > 0)) - @boolToInt(i < 0);
-}
