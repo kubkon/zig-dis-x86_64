@@ -111,6 +111,13 @@ const table = &[_]Entry{
 
     .{ .int3, .np, .none, .none, .none, .none, 1, 0xcc, 0x00, 0x00, 0 },
 
+    .{ .ja, .d, .rel32, .none, .none, .none, 2, 0x0f, 0x87, 0x00, 0 },
+    .{ .jae, .d, .rel32, .none, .none, .none, 2, 0x0f, 0x83, 0x00, 0 },
+    .{ .jb, .d, .rel32, .none, .none, .none, 2, 0x0f, 0x82, 0x00, 0 },
+    .{ .jbe, .d, .rel32, .none, .none, .none, 2, 0x0f, 0x86, 0x00, 0 },
+    .{ .jc, .d, .rel32, .none, .none, .none, 2, 0x0f, 0x82, 0x00, 0 },
+    .{ .jrcxz, .d, .rel32, .none, .none, .none, 1, 0xe3, 0x00, 0x00, 0 },
+
     .{ .jmp, .d, .rel32, .none, .none, .none, 1, 0xe9, 0x00, 0x00, 0 },
     .{ .jmp, .m, .rm64, .none, .none, .none, 1, 0xff, 0x00, 0x00, 4 },
 
@@ -266,7 +273,7 @@ pub const Mnemonic = enum {
     adc, add, @"and",
     call, cmp,
     imul, int3,
-    jmp,
+    ja, jae, jb, jbe, jc, jrcxz, jmp,
     lea,
     mov, movsx, movsxd, movzx,
     nop,
@@ -304,7 +311,7 @@ pub const Op = enum {
     r8, r16, r32, r64,
     rm8, rm16, rm32, rm64,
     m8, m16, m32, m64,
-    rel16, rel32,
+    rel8, rel16, rel32,
     m,
     moffs,
     sreg,
@@ -363,7 +370,7 @@ pub const Op = enum {
     pub fn bitSize(op: Op) u64 {
         return switch (op) {
             .none, .moffs, .m, .sreg => unreachable,
-            .imm8, .al, .r8, .m8, .rm8 => 8,
+            .imm8, .al, .r8, .m8, .rm8, .rel8 => 8,
             .imm16, .ax, .r16, .m16, .rm16, .rel16 => 16,
             .imm32, .eax, .r32, .m32, .rm32, .rel32 => 32,
             .imm64, .rax, .r64, .m64, .rm64 => 64,
@@ -384,7 +391,7 @@ pub const Op = enum {
 
     pub fn isImmediate(op: Op) bool {
         return switch (op) {
-            .imm8, .imm16, .imm32, .imm64, .rel16, .rel32 => return true,
+            .imm8, .imm16, .imm32, .imm64, .rel8, .rel16, .rel32 => return true,
             else => false,
         };
     }
@@ -424,16 +431,16 @@ pub const Op = enum {
                     else => return op.bitSize() == target.bitSize(),
                 };
                 if (op.isImmediate() and target.isImmediate()) switch (target) {
-                    .imm32 => switch (op) {
+                    .imm32, .rel32 => switch (op) {
                         .imm8, .imm16, .imm32 => return true,
                         else => return op == target,
                     },
-                    .imm16 => switch (op) {
+                    .imm16, .rel16 => switch (op) {
                         .imm8, .imm16 => return true,
                         else => return op == target,
                     },
-                    .rel32 => switch (op) {
-                        .imm8, .imm16, .imm32 => return true,
+                    .imm8, .rel8 => switch (op) {
+                        .imm8 => return true,
                         else => return op == target,
                     },
                     else => return op == target,
@@ -636,6 +643,7 @@ pub const Encoding = struct {
                     .imm16 => "iw",
                     .imm32 => "id",
                     .imm64 => "io",
+                    .rel8 => "cb",
                     .rel16 => "cw ",
                     .rel32 => "cd ",
                     else => unreachable,

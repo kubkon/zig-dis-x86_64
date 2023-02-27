@@ -320,8 +320,8 @@ fn parseImm(dis: *Disassembler, kind: encodings.Op) !i64 {
     var creader = std.io.countingReader(stream.reader());
     const reader = creader.reader();
     const imm = switch (kind) {
-        .imm8 => try reader.readInt(i8, .Little),
-        .imm16 => try reader.readInt(i16, .Little),
+        .imm8, .rel8 => try reader.readInt(i8, .Little),
+        .imm16, .rel16 => try reader.readInt(i16, .Little),
         .imm32, .rel32 => try reader.readInt(i32, .Little),
         .imm64 => try reader.readInt(i64, .Little),
         else => unreachable,
