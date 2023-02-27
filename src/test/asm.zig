@@ -790,3 +790,48 @@ test "assemble - Jcc" {
         try expectEqualHexStrings(&expected, output.items, input);
     }
 }
+
+test "assemble - SETcc" {
+    const mnemonics = [_]struct { Mnemonic, u8 }{
+        .{ .seta, 0x97 },
+        .{ .setae, 0x93 },
+        .{ .setb, 0x92 },
+        .{ .setbe, 0x96 },
+        .{ .setc, 0x92 },
+        .{ .sete, 0x94 },
+        .{ .setg, 0x9f },
+        .{ .setge, 0x9d },
+        .{ .setl, 0x9c },
+        .{ .setle, 0x9e },
+        .{ .setna, 0x96 },
+        .{ .setnae, 0x92 },
+        .{ .setnb, 0x93 },
+        .{ .setnbe, 0x97 },
+        .{ .setnc, 0x93 },
+        .{ .setne, 0x95 },
+        .{ .setng, 0x9e },
+        .{ .setnge, 0x9c },
+        .{ .setnl, 0x9d },
+        .{ .setnle, 0x9f },
+        .{ .setno, 0x91 },
+        .{ .setnp, 0x9b },
+        .{ .setns, 0x99 },
+        .{ .setnz, 0x95 },
+        .{ .seto, 0x90 },
+        .{ .setp, 0x9a },
+        .{ .setpe, 0x9a },
+        .{ .setpo, 0x9b },
+        .{ .sets, 0x98 },
+        .{ .setz, 0x94 },
+    };
+
+    inline for (&mnemonics) |mnemonic| {
+        const input = @tagName(mnemonic[0]) ++ " al";
+        const expected = [_]u8{ 0x0f, mnemonic[1], 0xC0 };
+        var as = Assembler.init(input);
+        var output = std.ArrayList(u8).init(testing.allocator);
+        defer output.deinit();
+        try as.assemble(output.writer());
+        try expectEqualHexStrings(&expected, output.items, input);
+    }
+}
