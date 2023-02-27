@@ -206,6 +206,7 @@ fn next(as: *Assembler) ParseError!?ParseResult {
         .{},
         .{.register},
         .{.memory},
+        .{.immediate},
         .{ .register, .register },
         .{ .register, .memory },
         .{ .memory, .register },

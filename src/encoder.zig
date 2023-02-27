@@ -167,7 +167,7 @@ pub const Instruction = struct {
 
         switch (encoding.op_en) {
             .np, .o => {},
-            .i => try encodeImm(inst.op1.imm, encoding.op1, encoder),
+            .i, .d => try encodeImm(inst.op1.imm, encoding.op1, encoder),
             .zi, .oi => try encodeImm(inst.op2.imm, encoding.op2, encoder),
             .fd => try encoder.imm64(inst.op2.mem.moffs.offset),
             .td => try encoder.imm64(inst.op1.mem.moffs.offset),
@@ -235,7 +235,7 @@ pub const Instruction = struct {
         }
 
         const segment_override: ?Register = switch (op_en) {
-            .i, .zi, .o, .oi => null,
+            .i, .zi, .o, .oi, .d => null,
             .fd => inst.op2.mem.base().?,
             .td => inst.op1.mem.base().?,
             .rm, .rmi => if (inst.op2.isSegment()) blk: {
@@ -269,7 +269,7 @@ pub const Instruction = struct {
         var rex = Rex{};
 
         const rex_op: ?Operand = switch (op_en) {
-            .i => null,
+            .i, .d => null,
             .td => inst.op2,
             else => inst.op1,
         };
@@ -278,7 +278,7 @@ pub const Instruction = struct {
         }
 
         switch (op_en) {
-            .i, .zi, .fd, .td => {},
+            .i, .zi, .fd, .td, .d => {},
             .o, .oi => {
                 rex.b = inst.op1.reg.isExtended();
             },

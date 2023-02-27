@@ -111,6 +111,9 @@ const table = &[_]Entry{
 
     .{ .int3, .np, .none, .none, .none, .none, 1, 0xcc, 0x00, 0x00, 0 },
 
+    .{ .jmp, .d, .rel32, .none, .none, .none, 1, 0xe9, 0x00, 0x00, 0 },
+    .{ .jmp, .m, .rm64, .none, .none, .none, 1, 0xff, 0x00, 0x00, 4 },
+
     .{ .lea, .rm, .r16, .m, .none, .none, 1, 0x8d, 0x00, 0x00, 0 },
     .{ .lea, .rm, .r32, .m, .none, .none, 1, 0x8d, 0x00, 0x00, 0 },
     .{ .lea, .rm, .r64, .m, .none, .none, 1, 0x8d, 0x00, 0x00, 0 },
@@ -263,6 +266,7 @@ pub const Mnemonic = enum {
     adc, add, @"and",
     call, cmp,
     imul, int3,
+    jmp,
     lea,
     mov, movsx, movsxd, movzx,
     nop,
@@ -286,7 +290,7 @@ pub const OpEn = enum {
     np,
     o, oi,
     i, zi,
-    m,
+    d, m,
     fd, td,
     mi, mr, rm, rmi,
     // zig fmt: on
@@ -604,7 +608,7 @@ pub const Encoding = struct {
         }
 
         switch (encoding.op_en) {
-            .np, .fd, .td, .i, .zi => {},
+            .np, .fd, .td, .i, .zi, .d => {},
             .o, .oi => {
                 const tag = switch (encoding.op1) {
                     .r8 => "rb",
@@ -620,7 +624,7 @@ pub const Encoding = struct {
         }
 
         switch (encoding.op_en) {
-            .i, .zi, .oi, .mi, .rmi => {
+            .i, .d, .zi, .oi, .mi, .rmi => {
                 const op = switch (encoding.op_en) {
                     .i => encoding.op1,
                     .zi, .oi, .mi => encoding.op2,
