@@ -13,10 +13,8 @@ const Instruction = encoder.Instruction;
 const LegacyPrefixes = encoder.LegacyPrefixes;
 const Memory = bits.Memory;
 const Mnemonic = encodings.Mnemonic;
-const PtrSize = bits.PtrSize;
 const Register = bits.Register;
 const Rex = encoder.Rex;
-const ScaleIndex = bits.ScaleIndex;
 
 pub const Error = error{
     EndOfStream,
@@ -48,6 +46,44 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             return Instruction{
                 .op1 = .{ .reg = Register.gpFromLowEnc(reg_low_enc, prefixes.rex.b, encoding.op1.bitSize()) },
                 .op2 = .{ .imm = imm },
+                .encoding = encoding,
+            };
+        },
+        .mr => {
+            const modrm = try dis.parseModRmByte();
+            const sib = if (modrm.sib()) try dis.parseSibByte() else null;
+
+            if (modrm.direct()) {
+                return Instruction{
+                    .op1 = .{ .reg = Register.gpFromLowEnc(modrm.op2, prefixes.rex.b, encoding.op1.bitSize()) },
+                    .op2 = .{ .reg = Register.gpFromLowEnc(modrm.op1, prefixes.rex.x, encoding.op2.bitSize()) },
+                    .encoding = encoding,
+                };
+            }
+
+            const disp = try dis.parseDisplacement(modrm, sib);
+
+            if (modrm.rip()) {
+                return Instruction{
+                    .op1 = .{ .mem = Memory.rip(Memory.PtrSize.fromBitSize(encoding.op1.bitSize()), disp) },
+                    .op2 = .{ .reg = Register.gpFromLowEnc(modrm.op1, prefixes.rex.r, encoding.op2.bitSize()) },
+                    .encoding = encoding,
+                };
+            }
+
+            const scale_index = if (sib) |info| info.scaleIndex(prefixes.rex) else null;
+            const base = if (sib) |info|
+                info.baseReg(modrm, prefixes)
+            else
+                Register.gpFromLowEnc(modrm.op2, prefixes.rex.b, 64);
+            const reg = Register.gpFromLowEnc(modrm.op1, prefixes.rex.r, encoding.op2.bitSize());
+            return Instruction{
+                .op1 = .{ .mem = Memory.sib(Memory.PtrSize.fromBitSize(encoding.op1.bitSize()), .{
+                    .base = base,
+                    .scale_index = scale_index,
+                    .disp = disp,
+                }) },
+                .op2 = .{ .reg = reg },
                 .encoding = encoding,
             };
         },
@@ -172,21 +208,23 @@ const ModRm = packed struct {
     op1: u3,
     op2: u3,
 
-    inline fn isDirect(self: ModRm) bool {
+    inline fn direct(self: ModRm) bool {
         return self.mod == 0b11;
     }
 
-    inline fn isRip(self: ModRm) bool {
+    inline fn rip(self: ModRm) bool {
         return self.mod == 0 and self.op2 == 0b101;
     }
 
-    inline fn usesSib(self: ModRm) bool {
-        return !self.isDirect() and self.op2 == 0b100;
+    inline fn sib(self: ModRm) bool {
+        return !self.direct() and self.op2 == 0b100;
     }
 };
 
-fn parseModRmByte(reader: anytype) !ModRm {
-    const modrm_byte = try reader.readByte();
+fn parseModRmByte(dis: *Disassembler) !ModRm {
+    if (dis.code[dis.pos..].len == 0) return error.EndOfStream;
+    const modrm_byte = dis.code[dis.pos];
+    dis.pos += 1;
     const mod: u2 = @truncate(u2, modrm_byte >> 6);
     const op1: u3 = @truncate(u3, modrm_byte >> 3);
     const op2: u3 = @truncate(u3, modrm_byte);
@@ -194,54 +232,62 @@ fn parseModRmByte(reader: anytype) !ModRm {
 }
 
 const Sib = packed struct {
-    ss: u2,
+    scale: u2,
     index: u3,
     base: u3,
 
-    fn scaleIndex(self: Sib, rex: Rex) ?ScaleIndex {
+    fn scaleIndex(self: Sib, rex: Rex) ?Memory.ScaleIndex {
         if (self.index == 0b100 and !rex.x) return null;
-        return ScaleIndex{
-            .scale = self.ss,
+        return .{
+            .scale = @as(u4, 1) << self.scale,
             .index = Register.gpFromLowEnc(self.index, rex.x, 64),
         };
     }
 
-    fn baseReg(self: Sib, modrm: ModRm, rex: Rex, prefixes: LegacyPrefixes) ?Register {
+    fn baseReg(self: Sib, modrm: ModRm, prefixes: Prefixes) ?Register {
         if (self.base == 0b101 and modrm.mod == 0) {
-            if (self.scaleIndex(rex)) |_| return null;
+            if (self.scaleIndex(prefixes.rex)) |_| return null;
             // Segment register
-            if (prefixes.prefix_2e) return .cs;
-            if (prefixes.prefix_36) return .ss;
-            if (prefixes.prefix_26) return .es;
-            if (prefixes.prefix_64) return .fs;
-            if (prefixes.prefix_65) return .gs;
+            if (prefixes.legacy.prefix_2e) return .cs;
+            if (prefixes.legacy.prefix_36) return .ss;
+            if (prefixes.legacy.prefix_26) return .es;
+            if (prefixes.legacy.prefix_64) return .fs;
+            if (prefixes.legacy.prefix_65) return .gs;
             return .ds;
         }
-        return Register.gpFromLowEnc(self.base, rex.b, 64);
+        return Register.gpFromLowEnc(self.base, prefixes.rex.b, 64);
     }
 };
 
-fn parseSibByte(modrm: ModRm, reader: anytype) !?Sib {
-    if (!modrm.usesSib()) return null;
-    const sib_byte = try reader.readByte();
-    const ss: u2 = @truncate(u2, sib_byte >> 6);
+fn parseSibByte(dis: *Disassembler) !Sib {
+    if (dis.code[dis.pos..].len == 0) return error.EndOfStream;
+    const sib_byte = dis.code[dis.pos];
+    dis.pos += 1;
+    const scale: u2 = @truncate(u2, sib_byte >> 6);
     const index: u3 = @truncate(u3, sib_byte >> 3);
     const base: u3 = @truncate(u3, sib_byte);
-    return Sib{ .ss = ss, .index = index, .base = base };
+    return Sib{ .scale = scale, .index = index, .base = base };
 }
 
-fn parseDisplacement(modrm: ModRm, sib: ?Sib, reader: anytype) !i32 {
-    if (sib) |info| {
-        if (info.base == 0b101 and modrm.mod == 0) {
-            return try reader.readInt(i32, .Little);
+fn parseDisplacement(dis: *Disassembler, modrm: ModRm, sib: ?Sib) !i32 {
+    var stream = std.io.fixedBufferStream(dis.code[dis.pos..]);
+    var creader = std.io.countingReader(stream.reader());
+    const reader = creader.reader();
+    const disp = disp: {
+        if (sib) |info| {
+            if (info.base == 0b101 and modrm.mod == 0) {
+                break :disp try reader.readInt(i32, .Little);
+            }
         }
-    }
-    if (modrm.isRip()) {
-        return try reader.readInt(i32, .Little);
-    }
-    return switch (modrm.mod) {
-        0b01 => try reader.readInt(i8, .Little),
-        0b10 => try reader.readInt(i32, .Little),
-        else => 0,
+        if (modrm.rip()) {
+            break :disp try reader.readInt(i32, .Little);
+        }
+        break :disp switch (modrm.mod) {
+            0b01 => try reader.readInt(i8, .Little),
+            0b10 => try reader.readInt(i32, .Little),
+            else => unreachable,
+        };
     };
+    dis.pos += creader.bytes_read;
+    return disp;
 }

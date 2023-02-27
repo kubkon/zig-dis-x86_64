@@ -65,23 +65,57 @@ pub const Instruction = struct {
             }
         }
 
-        pub fn fmtPrint(op: Operand, encoding: encodings.Op, writer: anytype) !void {
+        pub fn fmtPrint(op: Operand, writer: anytype) !void {
             switch (op) {
                 .none => {},
                 .reg => |reg| try writer.writeAll(@tagName(reg)),
-                .mem => return error.Todo,
+                .mem => |mem| switch (mem) {
+                    .rip => |rip| {
+                        const sign_bit = if (sign(rip.disp) < 0) "-" else "+";
+                        const disp_abs = try std.math.absInt(rip.disp);
+                        try writer.print("{s} ptr [rip {s} 0x{x}]", .{
+                            @tagName(rip.ptr_size),
+                            sign_bit,
+                            disp_abs,
+                        });
+                    },
+                    .sib => |sib| {
+                        try writer.print("{s} ptr ", .{@tagName(sib.ptr_size)});
+
+                        if (!mem.isSegment()) {
+                            try writer.writeByte('[');
+                        }
+
+                        if (sib.base) |base| {
+                            try writer.print("{s}", .{@tagName(base)});
+                        }
+                        if (sib.scale_index) |si| {
+                            if (sib.base != null) {
+                                try writer.writeAll(" + ");
+                            }
+                            try writer.print("{s} * {d}", .{ @tagName(si.index), si.scale });
+                        }
+                        if (sib.disp != 0) {
+                            if (sib.base != null or sib.scale_index != null) {
+                                try writer.writeByte(' ');
+                            }
+                            try writer.writeByte(if (sign(sib.disp) < 0) '-' else '+');
+                            const disp_abs = try std.math.absInt(sib.disp);
+                            try writer.print(" 0x{x}", .{disp_abs});
+                        }
+
+                        if (!mem.isSegment()) {
+                            try writer.writeByte(']');
+                        }
+                    },
+                    .moffs => |moffs| try writer.print("{s}:0x{x}", .{ @tagName(moffs.seg), moffs.offset }),
+                },
                 .imm => |imm| {
                     const imm_abs = try std.math.absInt(imm);
                     if (sign(imm) < 0) {
                         try writer.writeByte('-');
                     }
-                    switch (encoding) {
-                        .imm8 => try writer.print("0x{x}", .{@intCast(u8, imm_abs)}),
-                        .imm16 => try writer.print("0x{x}", .{@intCast(u16, imm_abs)}),
-                        .imm32 => try writer.print("0x{x}", .{@intCast(u32, imm_abs)}),
-                        .imm64 => try writer.print("0x{x}", .{imm}),
-                        else => unreachable,
-                    }
+                    try writer.print("0x{x}", .{imm_abs});
                 },
             }
         }
@@ -112,19 +146,14 @@ pub const Instruction = struct {
 
     pub fn fmtPrint(inst: Instruction, writer: anytype) !void {
         try writer.print("{s}", .{@tagName(inst.encoding.mnemonic)});
-        const ops = [_]struct { Operand, encodings.Op }{
-            .{ inst.op1, inst.encoding.op1 },
-            .{ inst.op2, inst.encoding.op2 },
-            .{ inst.op3, inst.encoding.op3 },
-            .{ inst.op4, inst.encoding.op4 },
-        };
+        const ops = [_]Operand{ inst.op1, inst.op2, inst.op3, inst.op4 };
         for (&ops, 0..) |op, i| {
-            if (op[1] == .none) break;
+            if (op == .none) break;
             if (i > 0) {
                 try writer.writeByte(',');
             }
             try writer.writeByte(' ');
-            try op[0].fmtPrint(op[1], writer);
+            try op.fmtPrint(writer);
         }
     }
 

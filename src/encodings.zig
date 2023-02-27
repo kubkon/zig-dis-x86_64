@@ -566,7 +566,7 @@ pub const Encoding = struct {
                 } else if (prefixes.legacy.prefix_66) {
                     if (bit_size == 16) return enc;
                 } else {
-                    if (bit_size == 32) return enc;
+                    if (bit_size == 32 or bit_size == 8) return enc;
                 }
             }
         }
