@@ -40,7 +40,15 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
 
     const enc = try dis.parseEncoding(prefixes) orelse return error.UnknownOpcode;
     switch (enc.op_en) {
-        .oi, .zi => {
+        .zi => {
+            const imm = try dis.parseImm(enc.op2);
+            return Instruction{
+                .op1 = .{ .reg = Register.rax.toBitSize(enc.op1.bitSize()) },
+                .op2 = .{ .imm = imm },
+                .encoding = enc,
+            };
+        },
+        .oi => {
             const reg_low_enc = @truncate(u3, dis.code[dis.pos - 1]);
             const imm = try dis.parseImm(enc.op2);
             return Instruction{
@@ -90,6 +98,24 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
                 }) },
                 .op2 = .{ .imm = imm },
                 .encoding = act_enc,
+            };
+        },
+        .fd => {
+            const seg = segmentRegister(prefixes.legacy);
+            const offset = try dis.parseOffset();
+            return Instruction{
+                .op1 = .{ .reg = Register.rax.toBitSize(enc.op1.bitSize()) },
+                .op2 = .{ .mem = Memory.moffs(seg, offset) },
+                .encoding = enc,
+            };
+        },
+        .td => {
+            const seg = segmentRegister(prefixes.legacy);
+            const offset = try dis.parseOffset();
+            return Instruction{
+                .op1 = .{ .mem = Memory.moffs(seg, offset) },
+                .op2 = .{ .reg = Register.rax.toBitSize(enc.op2.bitSize()) },
+                .encoding = enc,
             };
         },
         .mr => {
@@ -286,6 +312,14 @@ fn parseImm(dis: *Disassembler, kind: encodings.Op) !i64 {
     return imm;
 }
 
+fn parseOffset(dis: *Disassembler) !u64 {
+    var stream = std.io.fixedBufferStream(dis.code[dis.pos..]);
+    const reader = stream.reader();
+    const offset = try reader.readInt(u64, .Little);
+    dis.pos += 8;
+    return offset;
+}
+
 const ModRm = packed struct {
     mod: u2,
     op1: u3,
@@ -314,6 +348,15 @@ fn parseModRmByte(dis: *Disassembler) !ModRm {
     return ModRm{ .mod = mod, .op1 = op1, .op2 = op2 };
 }
 
+fn segmentRegister(prefixes: LegacyPrefixes) Register {
+    if (prefixes.prefix_2e) return .cs;
+    if (prefixes.prefix_36) return .ss;
+    if (prefixes.prefix_26) return .es;
+    if (prefixes.prefix_64) return .fs;
+    if (prefixes.prefix_65) return .gs;
+    return .ds;
+}
+
 const Sib = packed struct {
     scale: u2,
     index: u3,
@@ -330,13 +373,7 @@ const Sib = packed struct {
     fn baseReg(self: Sib, modrm: ModRm, prefixes: Prefixes) ?Register {
         if (self.base == 0b101 and modrm.mod == 0) {
             if (self.scaleIndex(prefixes.rex)) |_| return null;
-            // Segment register
-            if (prefixes.legacy.prefix_2e) return .cs;
-            if (prefixes.legacy.prefix_36) return .ss;
-            if (prefixes.legacy.prefix_26) return .es;
-            if (prefixes.legacy.prefix_64) return .fs;
-            if (prefixes.legacy.prefix_65) return .gs;
-            return .ds;
+            return segmentRegister(prefixes.legacy);
         }
         return Register.gpFromLowEnc(self.base, prefixes.rex.b, 64);
     }

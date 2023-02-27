@@ -82,9 +82,11 @@ pub const Instruction = struct {
                     .sib => |sib| {
                         try writer.print("{s} ptr ", .{@tagName(sib.ptr_size)});
 
-                        if (!mem.isSegment()) {
-                            try writer.writeByte('[');
+                        if (mem.isSegment()) {
+                            return writer.print("{s}:0x{x}", .{ @tagName(sib.base.?), sib.disp });
                         }
+
+                        try writer.writeByte('[');
 
                         if (sib.base) |base| {
                             try writer.print("{s}", .{@tagName(base)});
@@ -104,9 +106,7 @@ pub const Instruction = struct {
                             try writer.print(" 0x{x}", .{disp_abs});
                         }
 
-                        if (!mem.isSegment()) {
-                            try writer.writeByte(']');
-                        }
+                        try writer.writeByte(']');
                     },
                     .moffs => |moffs| try writer.print("{s}:0x{x}", .{ @tagName(moffs.seg), moffs.offset }),
                 },
