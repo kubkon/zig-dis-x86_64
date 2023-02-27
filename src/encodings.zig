@@ -324,6 +324,19 @@ const table = &[_]Entry{
 
     .{ .syscall, .np, .none, .none, .none, .none, 2, 0x0f, 0x05, 0x00, 0 },
 
+    .{ .@"test", .zi, .al, .imm8, .none, .none, 1, 0xa8, 0x00, 0x00, 0 },
+    .{ .@"test", .zi, .ax, .imm16, .none, .none, 1, 0xa9, 0x00, 0x00, 0 },
+    .{ .@"test", .zi, .eax, .imm32, .none, .none, 1, 0xa9, 0x00, 0x00, 0 },
+    .{ .@"test", .zi, .rax, .imm32, .none, .none, 1, 0xa9, 0x00, 0x00, 0 },
+    .{ .@"test", .mi, .rm8, .imm8, .none, .none, 1, 0xf6, 0x00, 0x00, 0 },
+    .{ .@"test", .mi, .rm16, .imm16, .none, .none, 1, 0xf7, 0x00, 0x00, 0 },
+    .{ .@"test", .mi, .rm32, .imm32, .none, .none, 1, 0xf7, 0x00, 0x00, 0 },
+    .{ .@"test", .mi, .rm64, .imm32, .none, .none, 1, 0xf7, 0x00, 0x00, 0 },
+    .{ .@"test", .mr, .rm8, .r8, .none, .none, 1, 0x84, 0x00, 0x00, 0 },
+    .{ .@"test", .mr, .rm16, .r16, .none, .none, 1, 0x85, 0x00, 0x00, 0 },
+    .{ .@"test", .mr, .rm32, .r32, .none, .none, 1, 0x85, 0x00, 0x00, 0 },
+    .{ .@"test", .mr, .rm64, .r64, .none, .none, 1, 0x85, 0x00, 0x00, 0 },
+
     .{ .xor, .zi, .al, .imm8, .none, .none, 1, 0x34, 0x00, 0x00, 0 },
     .{ .xor, .zi, .ax, .imm16, .none, .none, 1, 0x35, 0x00, 0x00, 0 },
     .{ .xor, .zi, .eax, .imm32, .none, .none, 1, 0x35, 0x00, 0x00, 0 },
@@ -360,6 +373,7 @@ pub const Mnemonic = enum {
     pop, push,
     ret,
     sal, sar, sbb, shl, shr, sub, syscall,
+    @"test",
     xor,
     // zig fmt: on
 

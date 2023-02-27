@@ -58,6 +58,7 @@ test "disassemble" {
         0x48, 0xC1, 0xE0, 0x3F,
         0x48, 0xC1, 0xF8, 0x3F,
         0x48, 0xC1, 0xE8, 0x3F,
+        0x44, 0x84, 0x65, 0xF0,
         // zig fmt: on
     });
 
@@ -121,6 +122,7 @@ test "disassemble" {
         \\sal rax, 0x3f
         \\sar rax, 0x3f
         \\shr rax, 0x3f
+        \\test byte ptr [rbp - 0x10], r12b
         \\
     , buf.items);
 }
