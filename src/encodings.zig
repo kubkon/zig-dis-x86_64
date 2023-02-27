@@ -230,6 +230,32 @@ const table = &[_]Entry{
 
     .{ .ret, .np, .none, .none, .none, .none, 1, 0xc3, 0x00, 0x00, 0 },
 
+    .{ .sal, .m1, .rm8, .unity, .none, .none, 1, 0xd0, 0x00, 0x00, 4 },
+    .{ .sal, .m1, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
+    .{ .sal, .m1, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
+    .{ .sal, .m1, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
+    // .{ .sal, .mc, .rm8, .unity, .none, .none, 1, 0xd0, 0x00, 0x00, 4 },
+    // .{ .sal, .mc, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
+    // .{ .sal, .mc, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
+    // .{ .sal, .mc, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
+    .{ .sal, .mi, .rm8, .imm8, .none, .none, 1, 0xc0, 0x00, 0x00, 4 },
+    .{ .sal, .mi, .rm16, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 4 },
+    .{ .sal, .mi, .rm32, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 4 },
+    .{ .sal, .mi, .rm64, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 4 },
+
+    .{ .sar, .m1, .rm8, .unity, .none, .none, 1, 0xd0, 0x00, 0x00, 7 },
+    .{ .sar, .m1, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 7 },
+    .{ .sar, .m1, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 7 },
+    .{ .sar, .m1, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 7 },
+    // .{ .sar, .mc, .rm8, .unity, .none, .none, 1, 0xd0, 0x00, 0x00, 7 },
+    // .{ .sar, .mc, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 7 },
+    // .{ .sar, .mc, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 7 },
+    // .{ .sar, .mc, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 7 },
+    .{ .sar, .mi, .rm8, .imm8, .none, .none, 1, 0xc0, 0x00, 0x00, 7 },
+    .{ .sar, .mi, .rm16, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 7 },
+    .{ .sar, .mi, .rm32, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 7 },
+    .{ .sar, .mi, .rm64, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 7 },
+
     .{ .sbb, .zi, .al, .imm8, .none, .none, 1, 0x1c, 0x00, 0x00, 0 },
     .{ .sbb, .zi, .ax, .imm16, .none, .none, 1, 0x1d, 0x00, 0x00, 0 },
     .{ .sbb, .zi, .eax, .imm32, .none, .none, 1, 0x1d, 0x00, 0x00, 0 },
@@ -249,6 +275,32 @@ const table = &[_]Entry{
     .{ .sbb, .rm, .r16, .rm16, .none, .none, 1, 0x1b, 0x00, 0x00, 0 },
     .{ .sbb, .rm, .r32, .rm32, .none, .none, 1, 0x1b, 0x00, 0x00, 0 },
     .{ .sbb, .rm, .r64, .rm64, .none, .none, 1, 0x1b, 0x00, 0x00, 0 },
+
+    .{ .shl, .m1, .rm8, .unity, .none, .none, 1, 0xd0, 0x00, 0x00, 4 },
+    .{ .shl, .m1, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
+    .{ .shl, .m1, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
+    .{ .shl, .m1, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
+    // .{ .shl, .mc, .rm8, .unity, .none, .none, 1, 0xd0, 0x00, 0x00, 4 },
+    // .{ .shl, .mc, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
+    // .{ .shl, .mc, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
+    // .{ .shl, .mc, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
+    .{ .shl, .mi, .rm8, .imm8, .none, .none, 1, 0xc0, 0x00, 0x00, 4 },
+    .{ .shl, .mi, .rm16, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 4 },
+    .{ .shl, .mi, .rm32, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 4 },
+    .{ .shl, .mi, .rm64, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 4 },
+
+    .{ .shr, .m1, .rm8, .unity, .none, .none, 1, 0xd0, 0x00, 0x00, 5 },
+    .{ .shr, .m1, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 5 },
+    .{ .shr, .m1, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 5 },
+    .{ .shr, .m1, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 5 },
+    // .{ .shr, .mc, .rm8, .unity, .none, .none, 1, 0xd0, 0x00, 0x00, 5 },
+    // .{ .shr, .mc, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 5 },
+    // .{ .shr, .mc, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 5 },
+    // .{ .shr, .mc, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 5 },
+    .{ .shr, .mi, .rm8, .imm8, .none, .none, 1, 0xc0, 0x00, 0x00, 5 },
+    .{ .shr, .mi, .rm16, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 5 },
+    .{ .shr, .mi, .rm32, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 5 },
+    .{ .shr, .mi, .rm64, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 5 },
 
     .{ .sub, .zi, .al, .imm8, .none, .none, 1, 0x2c, 0x00, 0x00, 0 },
     .{ .sub, .zi, .ax, .imm16, .none, .none, 1, 0x2d, 0x00, 0x00, 0 },
@@ -307,7 +359,7 @@ pub const Mnemonic = enum {
     @"or",
     pop, push,
     ret,
-    sbb, sub, syscall,
+    sal, sar, sbb, shl, shr, sub, syscall,
     xor,
     // zig fmt: on
 
@@ -326,13 +378,14 @@ pub const OpEn = enum {
     i, zi,
     d, m,
     fd, td,
-    mi, mr, rm, rmi,
+    m1, mi, mr, rm, rmi,
     // zig fmt: on
 };
 
 pub const Op = enum {
     // zig fmt: off
     none,
+    unity,
     imm8, imm16, imm32, imm64,
     al, ax, eax, rax,
     r8, r16, r32, r64,
@@ -386,6 +439,7 @@ pub const Op = enum {
             },
 
             .imm => |imm| {
+                if (imm == 1) return .unity;
                 if (math.cast(i8, imm)) |_| return .imm8;
                 if (math.cast(i16, imm)) |_| return .imm16;
                 if (math.cast(i32, imm)) |_| return .imm32;
@@ -396,7 +450,7 @@ pub const Op = enum {
 
     pub fn bitSize(op: Op) u64 {
         return switch (op) {
-            .none, .moffs, .m, .sreg => unreachable,
+            .none, .moffs, .m, .sreg, .unity => unreachable,
             .imm8, .al, .r8, .m8, .rm8, .rel8 => 8,
             .imm16, .ax, .r16, .m16, .rm16, .rel16 => 16,
             .imm32, .eax, .r32, .m32, .rm32, .rel32 => 32,
@@ -417,10 +471,15 @@ pub const Op = enum {
     }
 
     pub fn isImmediate(op: Op) bool {
+        // zig fmt: off
         return switch (op) {
-            .imm8, .imm16, .imm32, .imm64, .rel8, .rel16, .rel32 => return true,
+            .imm8, .imm16, .imm32, .imm64, 
+            .rel8, .rel16, .rel32,
+            .unity,
+            => return true,
             else => false,
         };
+        // zig fmt: on
     }
 
     pub fn isMemory(op: Op) bool {
@@ -459,15 +518,15 @@ pub const Op = enum {
                 };
                 if (op.isImmediate() and target.isImmediate()) switch (target) {
                     .imm32, .rel32 => switch (op) {
-                        .imm8, .imm16, .imm32 => return true,
+                        .unity, .imm8, .imm16, .imm32 => return true,
                         else => return op == target,
                     },
                     .imm16, .rel16 => switch (op) {
-                        .imm8, .imm16 => return true,
+                        .unity, .imm8, .imm16 => return true,
                         else => return op == target,
                     },
                     .imm8, .rel8 => switch (op) {
-                        .imm8 => return true,
+                        .unity, .imm8 => return true,
                         else => return op == target,
                     },
                     else => return op == target,
@@ -624,7 +683,7 @@ pub const Encoding = struct {
 
     pub fn modRmExt(encoding: Encoding) u3 {
         return switch (encoding.op_en) {
-            .m, .mi => encoding.modrm_ext,
+            .m, .mi, .m1 => encoding.modrm_ext,
             else => unreachable,
         };
     }
@@ -653,7 +712,7 @@ pub const Encoding = struct {
                 };
                 try writer.print("+{s} ", .{tag});
             },
-            .m, .mi => try writer.print("/{d} ", .{encoding.modRmExt()}),
+            .m, .mi, .m1 => try writer.print("/{d} ", .{encoding.modRmExt()}),
             .mr, .rm, .rmi => try writer.writeAll("/r "),
         }
 
@@ -677,7 +736,7 @@ pub const Encoding = struct {
                 };
                 try writer.print("{s} ", .{tag});
             },
-            .np, .fd, .td, .o, .m, .mr, .rm => {},
+            .np, .fd, .td, .o, .m, .m1, .mr, .rm => {},
         }
 
         try writer.print("{s} ", .{@tagName(encoding.mnemonic)});

@@ -65,7 +65,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
                 .encoding = enc,
             };
         },
-        .m, .mi => {
+        .m, .mi, .m1 => {
             const modrm = try dis.parseModRmByte();
             const act_enc = Encoding.findByOpcode(enc.opcode(), .{
                 .legacy = prefixes.legacy,
@@ -74,9 +74,12 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             const sib = if (modrm.sib()) try dis.parseSibByte() else null;
 
             if (modrm.direct()) {
-                const op2: Instruction.Operand = if (enc.op_en == .mi) .{
-                    .imm = try dis.parseImm(enc.op2),
-                } else .none;
+                const op2: Instruction.Operand = switch (enc.op_en) {
+                    .mi => .{ .imm = try dis.parseImm(enc.op2) },
+                    .m1 => .{ .imm = 1 },
+                    .m => .none,
+                    else => unreachable,
+                };
                 return Instruction{
                     .op1 = .{ .reg = Register.gpFromLowEnc(modrm.op2, prefixes.rex.b, act_enc.op1.bitSize()) },
                     .op2 = op2,
@@ -85,9 +88,12 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             }
 
             const disp = try dis.parseDisplacement(modrm, sib);
-            const op2: Instruction.Operand = if (enc.op_en == .mi) .{
-                .imm = try dis.parseImm(enc.op2),
-            } else .none;
+            const op2: Instruction.Operand = switch (enc.op_en) {
+                .mi => .{ .imm = try dis.parseImm(enc.op2) },
+                .m1 => .{ .imm = 1 },
+                .m => .none,
+                else => unreachable,
+            };
 
             if (modrm.rip()) {
                 return Instruction{
