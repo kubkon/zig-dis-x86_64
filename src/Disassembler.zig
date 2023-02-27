@@ -40,6 +40,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
 
     const enc = try dis.parseEncoding(prefixes) orelse return error.UnknownOpcode;
     switch (enc.op_en) {
+        .np => return Instruction{ .encoding = enc },
         .zi => {
             const imm = try dis.parseImm(enc.op2);
             return Instruction{
@@ -269,16 +270,20 @@ fn parseEncoding(dis: *Disassembler, prefixes: Prefixes) !?Encoding {
     comptime var opc_count = 0;
     inline while (opc_count < 3) : (opc_count += 1) {
         const byte = try reader.readByte();
+        opcode[opc_count] = byte;
         dis.pos += 1;
 
         if (byte == 0x0f) {
             // Multi-byte opcode
-            opcode[opc_count] = byte;
-        } else if (opc_count > 1) {
+        } else if (opc_count > 0) {
             // Multi-byte opcode
-            return error.Todo;
+            if (Encoding.findByOpcode(opcode[0 .. opc_count + 1], .{
+                .legacy = prefixes.legacy,
+                .rex = prefixes.rex,
+            }, null)) |mnemonic| {
+                return mnemonic;
+            }
         } else {
-            opcode[opc_count] = byte;
             // Single-byte opcode
             if (Encoding.findByOpcode(opcode[0..1], .{
                 .legacy = prefixes.legacy,
