@@ -269,9 +269,9 @@ pub const Instruction = struct {
         var rex = Rex{};
 
         const rex_op: ?Operand = switch (op_en) {
-            .i, .d => null,
+            .i, .d, .np => null,
             .td => inst.op2,
-            else => inst.op1,
+            .o, .oi, .fd, .m, .mi, .zi, .mr, .rm, .rmi => inst.op1,
         };
         if (rex_op) |op| {
             rex.w = op.is64BitMode() and !mnemonic.defaultsTo64Bits();

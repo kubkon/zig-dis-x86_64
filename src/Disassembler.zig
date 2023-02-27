@@ -39,7 +39,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
     const enc = try dis.parseEncoding(prefixes) orelse return error.UnknownOpcode;
     switch (enc.op_en) {
         .np => return Instruction{ .encoding = enc },
-        .i => {
+        .d, .i => {
             const imm = try dis.parseImm(enc.op1);
             return Instruction{
                 .op1 = .{ .imm = imm },
