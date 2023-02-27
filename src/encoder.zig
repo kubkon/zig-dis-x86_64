@@ -71,13 +71,13 @@ pub const Instruction = struct {
                 .reg => |reg| try writer.writeAll(@tagName(reg)),
                 .mem => |mem| switch (mem) {
                     .rip => |rip| {
-                        const sign_bit = if (sign(rip.disp) < 0) "-" else "+";
-                        const disp_abs = try std.math.absInt(rip.disp);
-                        try writer.print("{s} ptr [rip {s} 0x{x}]", .{
-                            @tagName(rip.ptr_size),
-                            sign_bit,
-                            disp_abs,
-                        });
+                        try writer.print("{s} ptr [rip", .{@tagName(rip.ptr_size)});
+                        if (rip.disp != 0) {
+                            const sign_bit = if (sign(rip.disp) < 0) "-" else "+";
+                            const disp_abs = try std.math.absInt(rip.disp);
+                            try writer.print(" {s} 0x{x}", .{ sign_bit, disp_abs });
+                        }
+                        try writer.writeByte(']');
                     },
                     .sib => |sib| {
                         try writer.print("{s} ptr ", .{@tagName(sib.ptr_size)});

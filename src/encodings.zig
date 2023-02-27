@@ -538,7 +538,7 @@ pub const Encoding = struct {
     pub fn findByOpcode(opc: []const u8, prefixes: struct {
         legacy: LegacyPrefixes,
         rex: Rex,
-    }) ?Encoding {
+    }, modrm_ext: ?u3) ?Encoding {
         inline for (table) |entry| {
             const enc = Encoding{
                 .mnemonic = entry[0],
@@ -551,7 +551,13 @@ pub const Encoding = struct {
                 .opc = .{ entry[7], entry[8], entry[9] },
                 .modrm_ext = entry[10],
             };
-            if (std.mem.eql(u8, enc.opcode(), opc)) {
+            const match = match: {
+                if (modrm_ext) |ext| {
+                    break :match ext == enc.modrm_ext and std.mem.eql(u8, enc.opcode(), opc);
+                }
+                break :match std.mem.eql(u8, enc.opcode(), opc);
+            };
+            if (match) {
                 switch (enc.op_en) {
                     .i, .np => return enc,
                     else => {},
