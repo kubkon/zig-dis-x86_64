@@ -19,8 +19,6 @@ const Rex = encoder.Rex;
 pub const Error = error{
     EndOfStream,
     LegacyPrefixAfterRex,
-    InvalidModRmByte,
-    InvalidRexForEncoding,
     UnknownOpcode,
     Todo,
 };
