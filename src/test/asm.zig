@@ -733,3 +733,48 @@ test "assemble" {
     try as.assemble(output.writer());
     try expectEqualHexStrings(expected, output.items, input);
 }
+
+test "assemble - Jcc" {
+    const mnemonics = [_]struct { Mnemonic, u8 }{
+        .{ .ja, 0x87 },
+        .{ .jae, 0x83 },
+        .{ .jb, 0x82 },
+        .{ .jbe, 0x86 },
+        .{ .jc, 0x82 },
+        .{ .je, 0x84 },
+        .{ .jg, 0x8f },
+        .{ .jge, 0x8d },
+        .{ .jl, 0x8c },
+        .{ .jle, 0x8e },
+        .{ .jna, 0x86 },
+        .{ .jnae, 0x82 },
+        .{ .jnb, 0x83 },
+        .{ .jnbe, 0x87 },
+        .{ .jnc, 0x83 },
+        .{ .jne, 0x85 },
+        .{ .jng, 0x8e },
+        .{ .jnge, 0x8c },
+        .{ .jnl, 0x8d },
+        .{ .jnle, 0x8f },
+        .{ .jno, 0x81 },
+        .{ .jnp, 0x8b },
+        .{ .jns, 0x89 },
+        .{ .jnz, 0x85 },
+        .{ .jo, 0x80 },
+        .{ .jp, 0x8a },
+        .{ .jpe, 0x8a },
+        .{ .jpo, 0x8b },
+        .{ .js, 0x88 },
+        .{ .jz, 0x84 },
+    };
+
+    inline for (&mnemonics) |mnemonic| {
+        const input = @tagName(mnemonic[0]) ++ " 0x0";
+        const expected = [_]u8{ 0x0f, mnemonic[1], 0x0, 0x0, 0x0, 0x0 };
+        var as = Assembler.init(input);
+        var output = std.ArrayList(u8).init(testing.allocator);
+        defer output.deinit();
+        try as.assemble(output.writer());
+        try expectEqualHexStrings(&expected, output.items, input);
+    }
+}
