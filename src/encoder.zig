@@ -281,7 +281,7 @@ pub const Instruction = struct {
             },
         }
 
-        if ((rex.w or rex.r or rex.x or rex.b) and is_rex_invalid) return error.CannotEncode;
+        if (rex.isSet() and is_rex_invalid) return error.CannotEncode;
 
         try encoder.rex(rex);
     }
@@ -771,25 +771,7 @@ pub const Rex = struct {
     x: bool = false,
     b: bool = false,
 
-    pub fn isValid(byte: u8) bool {
-        const mask: u8 = 0b0100_0000;
-        return mask & byte != 0;
-    }
-
-    pub fn parse(byte: u8) ?Rex {
-        const is_rex = @truncate(u4, byte >> 4) & 0b1111 == 0b0100;
-        if (!is_rex) return null;
-
-        const w: bool = byte & 0b1000 != 0;
-        const r: bool = byte & 0b100 != 0;
-        const x: bool = byte & 0b10 != 0;
-        const b: bool = byte & 0b1 != 0;
-
-        return Rex{
-            .w = w,
-            .r = r,
-            .x = x,
-            .b = b,
-        };
+    pub fn isSet(rex: Rex) bool {
+        return rex.w or rex.r or rex.x or rex.b;
     }
 };

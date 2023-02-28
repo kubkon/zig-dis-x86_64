@@ -28,12 +28,6 @@ pub const Register = enum(u7) {
     es, cs, ss, ds, fs, gs,
     // zig fmt: on
 
-    pub fn fromLowEnc(low_enc: u3, is_extended: bool, bit_size: u64) Register {
-        const reg_id: u4 = @intCast(u4, @boolToInt(is_extended)) << 3 | low_enc;
-        const unsized = @intToEnum(Register, reg_id);
-        return unsized.toBitSize(bit_size);
-    }
-
     pub const Class = enum(u2) {
         gp,
         sse,
