@@ -176,26 +176,38 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
                 .encoding = enc,
             };
         },
-        .rm => {
+        .rm, .rmi => {
             const modrm = try dis.parseModRmByte();
             const sib = if (modrm.sib()) try dis.parseSibByte() else null;
             const dst_bit_size = enc.op1.bitSize();
             const src_bit_size = if (enc.op2 == .m) dst_bit_size else enc.op2.bitSize();
 
             if (modrm.direct()) {
+                const op3: Instruction.Operand = switch (enc.op_en) {
+                    .rmi => .{ .imm = try dis.parseImm(enc.op3) },
+                    .rm => .none,
+                    else => unreachable,
+                };
                 return Instruction{
                     .op1 = .{ .reg = Register.gpFromLowEnc(modrm.op1, prefixes.rex.x, dst_bit_size) },
                     .op2 = .{ .reg = Register.gpFromLowEnc(modrm.op2, prefixes.rex.b, src_bit_size) },
+                    .op3 = op3,
                     .encoding = enc,
                 };
             }
 
             const disp = try dis.parseDisplacement(modrm, sib);
+            const op3: Instruction.Operand = switch (enc.op_en) {
+                .rmi => .{ .imm = try dis.parseImm(enc.op3) },
+                .rm => .none,
+                else => unreachable,
+            };
 
             if (modrm.rip()) {
                 return Instruction{
                     .op1 = .{ .reg = Register.gpFromLowEnc(modrm.op1, prefixes.rex.r, dst_bit_size) },
                     .op2 = .{ .mem = Memory.rip(Memory.PtrSize.fromBitSize(src_bit_size), disp) },
+                    .op3 = op3,
                     .encoding = enc,
                 };
             }
@@ -213,10 +225,10 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
                     .scale_index = scale_index,
                     .disp = disp,
                 }) },
+                .op3 = op3,
                 .encoding = enc,
             };
         },
-        else => return error.Todo,
     }
 }
 
