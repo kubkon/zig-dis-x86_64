@@ -134,17 +134,13 @@ pub fn findByOpcode(opc: []const u8, prefixes: struct {
             break :match std.mem.eql(u8, enc.opcode(), opc);
         };
         if (match) {
-            switch (enc.op_en) {
-                .i, .np => return enc,
-                else => {},
-            }
             if (prefixes.rex.w) {
                 if (enc.prefix == .rex_w) return enc;
             } else if (prefixes.legacy.prefix_66) {
                 if (enc.prefix == .p_66h) return enc;
             } else {
                 const bit_size = switch (enc.op_en) {
-                    .i, .np => unreachable,
+                    .i, .np => return enc,
                     .td => enc.op2.bitSize(),
                     else => enc.op1.bitSize(),
                 };
