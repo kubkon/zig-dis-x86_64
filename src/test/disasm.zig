@@ -63,6 +63,7 @@ test "disassemble" {
         0x41, 0xD3, 0xEC,
         0x4A, 0x0F, 0x4A, 0x44, 0xE5, 0x00,
         0x48, 0x98,
+        0x41, 0x84, 0x24, 0x24,
         // zig fmt: on
     });
 
@@ -131,6 +132,7 @@ test "disassemble" {
         \\shr r12d, cl
         \\cmovp rax, qword ptr [rbp + r12 * 8]
         \\cdqe
+        \\test byte ptr [r12], spl
         \\
     , buf.items);
 }
