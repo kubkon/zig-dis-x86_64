@@ -708,6 +708,9 @@ test "assemble" {
         \\shr rax, 63
         \\test byte ptr [rbp - 16], r12b
         \\sal r12, cl
+        \\mul qword ptr [rip - 16]
+        \\div r12
+        \\idiv byte ptr [rbp - 16]
         \\
     ;
 
@@ -738,6 +741,9 @@ test "assemble" {
         0x48, 0xC1, 0xE8, 0x3F,
         0x44, 0x84, 0x65, 0xF0,
         0x49, 0xD3, 0xE4,
+        0x48, 0xF7, 0x25, 0xF0, 0xFF, 0xFF, 0xFF,
+        0x49, 0xF7, 0xF4,
+        0xF6, 0x7D, 0xF0,
     };
     // zig fmt: on
 

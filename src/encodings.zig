@@ -73,8 +73,8 @@ const table = &[_]Entry{
     .{ .@"and", .rm, .r32, .rm32, .none, .none, 1, 0x23, 0x00, 0x00, 0 },
     .{ .@"and", .rm, .r64, .rm64, .none, .none, 1, 0x23, 0x00, 0x00, 0 },
 
-    // This is M encoding according to Intel, but I makes more sense here.
-    .{ .call, .i, .rel32, .none, .none, .none, 1, 0xe8, 0x00, 0x00, 0 },
+    // This is M encoding according to Intel, but D makes more sense here.
+    .{ .call, .d, .rel32, .none, .none, .none, 1, 0xe8, 0x00, 0x00, 0 },
     .{ .call, .m, .rm64, .none, .none, .none, 1, 0xff, 0x00, 0x00, 2 },
 
     .{ .cmp, .zi, .al, .imm8, .none, .none, 1, 0x3c, 0x00, 0x00, 0 },
@@ -96,6 +96,16 @@ const table = &[_]Entry{
     .{ .cmp, .rm, .r16, .rm16, .none, .none, 1, 0x3b, 0x00, 0x00, 0 },
     .{ .cmp, .rm, .r32, .rm32, .none, .none, 1, 0x3b, 0x00, 0x00, 0 },
     .{ .cmp, .rm, .r64, .rm64, .none, .none, 1, 0x3b, 0x00, 0x00, 0 },
+
+    .{ .div, .m, .rm8, .none, .none, .none, 1, 0xf6, 0x00, 0x00, 6 },
+    .{ .div, .m, .rm16, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 6 },
+    .{ .div, .m, .rm32, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 6 },
+    .{ .div, .m, .rm64, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 6 },
+
+    .{ .idiv, .m, .rm8, .none, .none, .none, 1, 0xf6, 0x00, 0x00, 7 },
+    .{ .idiv, .m, .rm16, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 7 },
+    .{ .idiv, .m, .rm32, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 7 },
+    .{ .idiv, .m, .rm64, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 7 },
 
     .{ .imul, .m, .rm8, .none, .none, .none, 1, 0xf6, 0x00, 0x00, 5 },
     .{ .imul, .m, .rm16, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 5 },
@@ -194,6 +204,11 @@ const table = &[_]Entry{
     .{ .movzx, .rm, .r64, .rm8, .none, .none, 2, 0x0f, 0xb6, 0x00, 0 },
     .{ .movzx, .rm, .r32, .rm16, .none, .none, 2, 0x0f, 0xb7, 0x00, 0 },
     .{ .movzx, .rm, .r64, .rm16, .none, .none, 2, 0x0f, 0xb7, 0x00, 0 },
+
+    .{ .mul, .m, .rm8, .none, .none, .none, 1, 0xf6, 0x00, 0x00, 4 },
+    .{ .mul, .m, .rm16, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 4 },
+    .{ .mul, .m, .rm32, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 4 },
+    .{ .mul, .m, .rm64, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 4 },
 
     .{ .nop, .np, .none, .none, .none, .none, 1, 0x90, 0x00, 0x00, 0 },
 
@@ -395,12 +410,13 @@ pub const Mnemonic = enum {
     // zig fmt: off
     adc, add, @"and",
     call, cmp,
-    imul, int3,
+    div,
+    idiv, imul, int3,
     ja, jae, jb, jbe, jc, jrcxz, je, jg, jge, jl, jle, jna, jnae, jnb, jnbe,
     jnc, jne, jng, jnge, jnl, jnle, jno, jnp, jns, jnz, jo, jp, jpe, jpo, js, jz,
     jmp, 
     lea,
-    mov, movsx, movsxd, movzx,
+    mov, movsx, movsxd, movzx, mul,
     nop,
     @"or",
     pop, push,
