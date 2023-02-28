@@ -843,3 +843,48 @@ test "assemble - SETcc" {
         try expectEqualHexStrings(&expected, output.items, input);
     }
 }
+
+test "assemble - CMOVcc" {
+    const mnemonics = [_]struct { Mnemonic, u8 }{
+        .{ .cmova, 0x47 },
+        .{ .cmovae, 0x43 },
+        .{ .cmovb, 0x42 },
+        .{ .cmovbe, 0x46 },
+        .{ .cmovc, 0x42 },
+        .{ .cmove, 0x44 },
+        .{ .cmovg, 0x4f },
+        .{ .cmovge, 0x4d },
+        .{ .cmovl, 0x4c },
+        .{ .cmovle, 0x4e },
+        .{ .cmovna, 0x46 },
+        .{ .cmovnae, 0x42 },
+        .{ .cmovnb, 0x43 },
+        .{ .cmovnbe, 0x47 },
+        .{ .cmovnc, 0x43 },
+        .{ .cmovne, 0x45 },
+        .{ .cmovng, 0x4e },
+        .{ .cmovnge, 0x4c },
+        .{ .cmovnl, 0x4d },
+        .{ .cmovnle, 0x4f },
+        .{ .cmovno, 0x41 },
+        .{ .cmovnp, 0x4b },
+        .{ .cmovns, 0x49 },
+        .{ .cmovnz, 0x45 },
+        .{ .cmovo, 0x40 },
+        .{ .cmovp, 0x4a },
+        .{ .cmovpe, 0x4a },
+        .{ .cmovpo, 0x4b },
+        .{ .cmovs, 0x48 },
+        .{ .cmovz, 0x44 },
+    };
+
+    inline for (&mnemonics) |mnemonic| {
+        const input = @tagName(mnemonic[0]) ++ " rax, rbx";
+        const expected = [_]u8{ 0x48, 0x0f, mnemonic[1], 0xC3 };
+        var as = Assembler.init(input);
+        var output = std.ArrayList(u8).init(testing.allocator);
+        defer output.deinit();
+        try as.assemble(output.writer());
+        try expectEqualHexStrings(&expected, output.items, input);
+    }
+}
