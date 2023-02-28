@@ -22,6 +22,7 @@ op4: Op,
 opc_len: u2,
 opc: [3]u8,
 modrm_ext: u3,
+prefix: Prefix,
 
 pub fn findByMnemonic(mnemonic: Mnemonic, args: struct {
     op1: Instruction.Operand,
@@ -38,23 +39,25 @@ pub fn findByMnemonic(mnemonic: Mnemonic, args: struct {
     var candidates: [10]Encoding = undefined;
     var count: usize = 0;
     inline for (table) |entry| {
-        if (entry[0] == mnemonic and
-            input_op1.isSubset(entry[2]) and
-            input_op2.isSubset(entry[3]) and
-            input_op3.isSubset(entry[4]) and
-            input_op4.isSubset(entry[5]))
+        const enc = Encoding{
+            .mnemonic = entry[0],
+            .op_en = entry[1],
+            .op1 = entry[2],
+            .op2 = entry[3],
+            .op3 = entry[4],
+            .op4 = entry[5],
+            .opc_len = entry[6],
+            .opc = .{ entry[7], entry[8], entry[9] },
+            .modrm_ext = entry[10],
+            .prefix = entry[11],
+        };
+        if (enc.mnemonic == mnemonic and
+            input_op1.isSubset(enc.op1) and
+            input_op2.isSubset(enc.op2) and
+            input_op3.isSubset(enc.op3) and
+            input_op4.isSubset(enc.op4))
         {
-            candidates[count] = Encoding{
-                .mnemonic = mnemonic,
-                .op_en = entry[1],
-                .op1 = entry[2],
-                .op2 = entry[3],
-                .op3 = entry[4],
-                .op4 = entry[5],
-                .opc_len = entry[6],
-                .opc = .{ entry[7], entry[8], entry[9] },
-                .modrm_ext = entry[10],
-            };
+            candidates[count] = enc;
             count += 1;
         }
     }
@@ -122,6 +125,7 @@ pub fn findByOpcode(opc: []const u8, prefixes: struct {
             .opc_len = entry[6],
             .opc = .{ entry[7], entry[8], entry[9] },
             .modrm_ext = entry[10],
+            .prefix = entry[11],
         };
         const match = match: {
             if (modrm_ext) |ext| {
@@ -134,18 +138,18 @@ pub fn findByOpcode(opc: []const u8, prefixes: struct {
                 .i, .np => return enc,
                 else => {},
             }
-            const bit_size = switch (enc.op_en) {
-                .i, .np => unreachable,
-                .td => enc.op2.bitSize(),
-                else => enc.op1.bitSize(),
-            };
             if (prefixes.rex.w) {
-                if (bit_size == 64) return enc;
+                if (enc.prefix == .rex_w) return enc;
             } else if (prefixes.legacy.prefix_66) {
-                if (bit_size == 16) return enc;
+                if (enc.prefix == .p_66h) return enc;
             } else {
+                const bit_size = switch (enc.op_en) {
+                    .i, .np => unreachable,
+                    .td => enc.op2.bitSize(),
+                    else => enc.op1.bitSize(),
+                };
                 if (bit_size == 32 or bit_size == 8) return enc;
-                if (bit_size == 64 and enc.mnemonic.defaultsTo64Bits()) return enc;
+                if (bit_size == 64 and enc.prefix == .none) return enc;
             }
         }
     }
@@ -171,6 +175,11 @@ pub fn format(
 ) !void {
     _ = options;
     _ = fmt;
+    switch (encoding.prefix) {
+        .rex_w => try writer.writeAll("REX.W + "),
+        else => {},
+    }
+
     for (encoding.opcode()) |byte| {
         try writer.print("{x:0>2} ", .{byte});
     }
@@ -254,13 +263,6 @@ pub const Mnemonic = enum {
     @"test",
     xor,
     // zig fmt: on
-
-    pub fn defaultsTo64Bits(mnemonic: Mnemonic) bool {
-        return switch (mnemonic) {
-            .call, .push, .pop, .ret => true,
-            else => false,
-        };
-    }
 };
 
 pub const OpEn = enum {

@@ -46,22 +46,16 @@ pub const Instruction = struct {
             };
         }
 
-        /// Returns true if the operand requires 64bit mode.
-        /// Asserts the operand is either register or memory.
-        pub fn is64BitMode(op: Operand) bool {
-            switch (op) {
-                .none => unreachable,
-                .reg => |reg| {
-                    if (reg.bitSize() > 64) return false;
-                    if (reg.bitSize() == 64) return true;
-                    return switch (reg) {
-                        .ah, .ch, .dh, .bh => true,
-                        else => false,
-                    };
+        /// Returns true if the operand is a byte register AH, CH, DH, BH
+        /// and therefore requires REX.W prefix.
+        pub fn byteRegRequiresRexW(op: Operand) bool {
+            return switch (op) {
+                .reg => |reg| switch (reg) {
+                    .ah, .ch, .dh, .bh => true,
+                    else => false,
                 },
-                .mem => |mem| return mem.bitSize() == 64,
-                .imm => unreachable,
-            }
+                else => false,
+            };
         }
 
         pub fn fmtPrint(op: Operand, writer: anytype) !void {
@@ -221,20 +215,15 @@ pub const Instruction = struct {
 
     fn encodeLegacyPrefixes(inst: Instruction, encoder: anytype) !void {
         const op_en = inst.encoding.op_en;
-        if (op_en == .np) return;
 
         var legacy = LegacyPrefixes{};
-
-        const prefix_66_op = switch (op_en) {
-            .zi, .td => inst.encoding.op2,
-            else => inst.encoding.op1,
-        };
-        if (prefix_66_op.bitSize() == 16) {
-            legacy.set16BitOverride();
+        switch (inst.encoding.prefix) {
+            .p_66h => legacy.set16BitOverride(),
+            else => {},
         }
 
         const segment_override: ?Register = switch (op_en) {
-            .i, .zi, .o, .oi, .d => null,
+            .i, .zi, .o, .oi, .d, .np => null,
             .fd => inst.op2.mem.base().?,
             .td => inst.op1.mem.base().?,
             .rm, .rmi => if (inst.op2.isSegment()) blk: {
@@ -251,7 +240,6 @@ pub const Instruction = struct {
                     else => unreachable,
                 };
             } else null,
-            .np => unreachable,
         };
         if (segment_override) |seg| {
             legacy.setSegmentOverride(seg);
@@ -262,22 +250,16 @@ pub const Instruction = struct {
 
     fn encodeRexPrefix(inst: Instruction, encoder: anytype) !void {
         const op_en = inst.encoding.op_en;
-        if (op_en == .np) return;
 
-        const mnemonic = inst.encoding.mnemonic;
         var rex = Rex{};
-
-        const rex_op: ?Operand = switch (op_en) {
-            .i, .d, .np => null,
-            .td => inst.op2,
-            .o, .oi, .fd, .m, .mi, .zi, .m1, .mc, .mr, .rm, .rmi => inst.op1,
+        rex.w = inst.encoding.prefix == .rex_w or switch (op_en) {
+            .i, .d, .np => false,
+            .td => inst.op2.byteRegRequiresRexW(),
+            .o, .oi, .fd, .m, .mi, .zi, .m1, .mc, .mr, .rm, .rmi => inst.op1.byteRegRequiresRexW(),
         };
-        if (rex_op) |op| {
-            rex.w = op.is64BitMode() and !mnemonic.defaultsTo64Bits();
-        }
 
         switch (op_en) {
-            .i, .zi, .fd, .td, .d => {},
+            .np, .i, .zi, .fd, .td, .d => {},
             .o, .oi => {
                 rex.b = inst.op1.reg.isExtended();
             },
@@ -307,7 +289,6 @@ pub const Instruction = struct {
                     else => unreachable,
                 }
             },
-            .np => unreachable,
         }
 
         try encoder.rex(rex);
