@@ -426,3 +426,9 @@ pub const Op = enum {
         }
     }
 };
+
+pub const Prefix = enum {
+    none,
+    rex_w,
+    p_66h,
+};
