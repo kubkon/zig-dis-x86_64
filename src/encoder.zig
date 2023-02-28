@@ -46,18 +46,6 @@ pub const Instruction = struct {
             };
         }
 
-        /// Returns true if the operand is a byte register AH, CH, DH, BH
-        /// and therefore requires REX.W prefix.
-        pub fn byteRegRequiresRexW(op: Operand) bool {
-            return switch (op) {
-                .reg => |reg| switch (reg) {
-                    .ah, .ch, .dh, .bh => true,
-                    else => false,
-                },
-                else => false,
-            };
-        }
-
         pub fn fmtPrint(op: Operand, writer: anytype) !void {
             switch (op) {
                 .none => {},
@@ -251,12 +239,14 @@ pub const Instruction = struct {
     fn encodeRexPrefix(inst: Instruction, encoder: anytype) !void {
         const op_en = inst.encoding.op_en;
 
+        // Check if we need REX and can actually encode it
+        const is_rex_invalid = for (&[_]Operand{ inst.op1, inst.op2, inst.op3, inst.op4 }) |op| switch (op) {
+            .reg => |r| if (r.isRexInvalid()) break true,
+            else => {},
+        } else false;
+
         var rex = Rex{};
-        rex.w = inst.encoding.prefix == .rex_w or switch (op_en) {
-            .i, .d, .np => false,
-            .td => inst.op2.byteRegRequiresRexW(),
-            .o, .oi, .fd, .m, .mi, .zi, .m1, .mc, .mr, .rm, .rmi => inst.op1.byteRegRequiresRexW(),
-        };
+        rex.w = inst.encoding.prefix == .rex_w;
 
         switch (op_en) {
             .np, .i, .zi, .fd, .td, .d => {},
@@ -290,6 +280,8 @@ pub const Instruction = struct {
                 }
             },
         }
+
+        if ((rex.w or rex.r or rex.x or rex.b) and is_rex_invalid) return error.CannotEncode;
 
         try encoder.rex(rex);
     }

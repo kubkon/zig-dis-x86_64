@@ -58,7 +58,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
                 .imm = try dis.parseImm(enc.op2),
             } else .none;
             return Instruction{
-                .op1 = .{ .reg = Register.gpFromLowEnc(reg_low_enc, prefixes.rex.b, enc.op1.bitSize()) },
+                .op1 = .{ .reg = Register.fromLowEnc(reg_low_enc, prefixes.rex.b, enc.op1.bitSize()) },
                 .op2 = op2,
                 .encoding = enc,
             };
@@ -80,7 +80,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
                     else => unreachable,
                 };
                 return Instruction{
-                    .op1 = .{ .reg = Register.gpFromLowEnc(modrm.op2, prefixes.rex.b, act_enc.op1.bitSize()) },
+                    .op1 = .{ .reg = Register.fromLowEnc(modrm.op2, prefixes.rex.b, act_enc.op1.bitSize()) },
                     .op2 = op2,
                     .encoding = act_enc,
                 };
@@ -107,7 +107,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             const base = if (sib) |info|
                 info.baseReg(modrm, prefixes)
             else
-                Register.gpFromLowEnc(modrm.op2, prefixes.rex.b, 64);
+                Register.fromLowEnc(modrm.op2, prefixes.rex.b, 64);
             return Instruction{
                 .op1 = .{ .mem = Memory.sib(Memory.PtrSize.fromBitSize(enc.op1.bitSize()), .{
                     .base = base,
@@ -144,8 +144,8 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
 
             if (modrm.direct()) {
                 return Instruction{
-                    .op1 = .{ .reg = Register.gpFromLowEnc(modrm.op2, prefixes.rex.b, dst_bit_size) },
-                    .op2 = .{ .reg = Register.gpFromLowEnc(modrm.op1, prefixes.rex.x, src_bit_size) },
+                    .op1 = .{ .reg = Register.fromLowEnc(modrm.op2, prefixes.rex.b, dst_bit_size) },
+                    .op2 = .{ .reg = Register.fromLowEnc(modrm.op1, prefixes.rex.x, src_bit_size) },
                     .encoding = enc,
                 };
             }
@@ -155,7 +155,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             if (modrm.rip()) {
                 return Instruction{
                     .op1 = .{ .mem = Memory.rip(Memory.PtrSize.fromBitSize(dst_bit_size), disp) },
-                    .op2 = .{ .reg = Register.gpFromLowEnc(modrm.op1, prefixes.rex.r, src_bit_size) },
+                    .op2 = .{ .reg = Register.fromLowEnc(modrm.op1, prefixes.rex.r, src_bit_size) },
                     .encoding = enc,
                 };
             }
@@ -164,8 +164,8 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             const base = if (sib) |info|
                 info.baseReg(modrm, prefixes)
             else
-                Register.gpFromLowEnc(modrm.op2, prefixes.rex.b, 64);
-            const reg = Register.gpFromLowEnc(modrm.op1, prefixes.rex.r, src_bit_size);
+                Register.fromLowEnc(modrm.op2, prefixes.rex.b, 64);
+            const reg = Register.fromLowEnc(modrm.op1, prefixes.rex.r, src_bit_size);
             return Instruction{
                 .op1 = .{ .mem = Memory.sib(Memory.PtrSize.fromBitSize(dst_bit_size), .{
                     .base = base,
@@ -189,8 +189,8 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
                     else => unreachable,
                 };
                 return Instruction{
-                    .op1 = .{ .reg = Register.gpFromLowEnc(modrm.op1, prefixes.rex.x, dst_bit_size) },
-                    .op2 = .{ .reg = Register.gpFromLowEnc(modrm.op2, prefixes.rex.b, src_bit_size) },
+                    .op1 = .{ .reg = Register.fromLowEnc(modrm.op1, prefixes.rex.x, dst_bit_size) },
+                    .op2 = .{ .reg = Register.fromLowEnc(modrm.op2, prefixes.rex.b, src_bit_size) },
                     .op3 = op3,
                     .encoding = enc,
                 };
@@ -205,7 +205,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
 
             if (modrm.rip()) {
                 return Instruction{
-                    .op1 = .{ .reg = Register.gpFromLowEnc(modrm.op1, prefixes.rex.r, dst_bit_size) },
+                    .op1 = .{ .reg = Register.fromLowEnc(modrm.op1, prefixes.rex.r, dst_bit_size) },
                     .op2 = .{ .mem = Memory.rip(Memory.PtrSize.fromBitSize(src_bit_size), disp) },
                     .op3 = op3,
                     .encoding = enc,
@@ -216,8 +216,8 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             const base = if (sib) |info|
                 info.baseReg(modrm, prefixes)
             else
-                Register.gpFromLowEnc(modrm.op2, prefixes.rex.b, 64);
-            const reg = Register.gpFromLowEnc(modrm.op1, prefixes.rex.r, src_bit_size);
+                Register.fromLowEnc(modrm.op2, prefixes.rex.b, 64);
+            const reg = Register.fromLowEnc(modrm.op1, prefixes.rex.r, src_bit_size);
             return Instruction{
                 .op1 = .{ .reg = reg },
                 .op2 = .{ .mem = Memory.sib(Memory.PtrSize.fromBitSize(dst_bit_size), .{
@@ -402,7 +402,7 @@ const Sib = packed struct {
         if (self.index == 0b100 and !rex.x) return null;
         return .{
             .scale = @as(u4, 1) << self.scale,
-            .index = Register.gpFromLowEnc(self.index, rex.x, 64),
+            .index = Register.fromLowEnc(self.index, rex.x, 64),
         };
     }
 
@@ -411,7 +411,7 @@ const Sib = packed struct {
             if (self.scaleIndex(prefixes.rex)) |_| return null;
             return segmentRegister(prefixes.legacy);
         }
-        return Register.gpFromLowEnc(self.base, prefixes.rex.b, 64);
+        return Register.fromLowEnc(self.base, prefixes.rex.b, 64);
     }
 };
 

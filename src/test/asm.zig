@@ -31,23 +31,6 @@ fn expectEqualHexStrings(expected: []const u8, given: []const u8, assembly: []co
     return error.TestFailed;
 }
 
-fn expectError(args: struct {
-    mnemonic: Mnemonic,
-    op1: Operand = .none,
-    op2: Operand = .none,
-    op3: Operand = .none,
-    op4: Operand = .none,
-}) !void {
-    const err = Instruction.new(.{
-        .mnemonic = args.mnemonic,
-        .op1 = args.op1,
-        .op2 = args.op2,
-        .op3 = args.op3,
-        .op4 = args.op4,
-    });
-    try testing.expectError(error.InvalidInstruction, err);
-}
-
 const TestEncode = struct {
     buffer: [32]u8 = undefined,
     index: usize = 0,
@@ -664,21 +647,66 @@ test "lower NP encoding" {
     try expectEqualHexStrings("\x0f\x05", enc.code(), "syscall");
 }
 
-test "invalid lowering" {
-    try expectError(.{ .mnemonic = .call, .op1 = .{ .reg = .eax } });
-    try expectError(.{ .mnemonic = .call, .op1 = .{ .reg = .ax } });
-    try expectError(.{ .mnemonic = .call, .op1 = .{ .reg = .al } });
-    try expectError(.{ .mnemonic = .call, .op1 = .{ .mem = Memory.rip(.dword, 0) } });
-    try expectError(.{ .mnemonic = .call, .op1 = .{ .mem = Memory.rip(.word, 0) } });
-    try expectError(.{ .mnemonic = .call, .op1 = .{ .mem = Memory.rip(.byte, 0) } });
-    try expectError(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.rip(.word, 0x10) }, .op2 = .{ .reg = .r12 } });
-    try expectError(.{ .mnemonic = .lea, .op1 = .{ .reg = .rax }, .op2 = .{ .reg = .rbx } });
-    try expectError(.{ .mnemonic = .lea, .op1 = .{ .reg = .al }, .op2 = .{ .mem = Memory.rip(.byte, 0) } });
-    try expectError(.{ .mnemonic = .pop, .op1 = .{ .reg = .r12b } });
-    try expectError(.{ .mnemonic = .pop, .op1 = .{ .reg = .r12d } });
-    try expectError(.{ .mnemonic = .push, .op1 = .{ .reg = .r12b } });
-    try expectError(.{ .mnemonic = .push, .op1 = .{ .reg = .r12d } });
-    try expectError(.{ .mnemonic = .push, .op1 = .{ .imm = 0x1000000000000000 } });
+fn invalidInstruction(args: struct {
+    mnemonic: Mnemonic,
+    op1: Operand = .none,
+    op2: Operand = .none,
+    op3: Operand = .none,
+    op4: Operand = .none,
+}) !void {
+    const err = Instruction.new(.{
+        .mnemonic = args.mnemonic,
+        .op1 = args.op1,
+        .op2 = args.op2,
+        .op3 = args.op3,
+        .op4 = args.op4,
+    });
+    try testing.expectError(error.InvalidInstruction, err);
+}
+
+test "invalid instruction" {
+    try invalidInstruction(.{ .mnemonic = .call, .op1 = .{ .reg = .eax } });
+    try invalidInstruction(.{ .mnemonic = .call, .op1 = .{ .reg = .ax } });
+    try invalidInstruction(.{ .mnemonic = .call, .op1 = .{ .reg = .al } });
+    try invalidInstruction(.{ .mnemonic = .call, .op1 = .{ .mem = Memory.rip(.dword, 0) } });
+    try invalidInstruction(.{ .mnemonic = .call, .op1 = .{ .mem = Memory.rip(.word, 0) } });
+    try invalidInstruction(.{ .mnemonic = .call, .op1 = .{ .mem = Memory.rip(.byte, 0) } });
+    try invalidInstruction(.{ .mnemonic = .mov, .op1 = .{ .mem = Memory.rip(.word, 0x10) }, .op2 = .{ .reg = .r12 } });
+    try invalidInstruction(.{ .mnemonic = .lea, .op1 = .{ .reg = .rax }, .op2 = .{ .reg = .rbx } });
+    try invalidInstruction(.{ .mnemonic = .lea, .op1 = .{ .reg = .al }, .op2 = .{ .mem = Memory.rip(.byte, 0) } });
+    try invalidInstruction(.{ .mnemonic = .pop, .op1 = .{ .reg = .r12b } });
+    try invalidInstruction(.{ .mnemonic = .pop, .op1 = .{ .reg = .r12d } });
+    try invalidInstruction(.{ .mnemonic = .push, .op1 = .{ .reg = .r12b } });
+    try invalidInstruction(.{ .mnemonic = .push, .op1 = .{ .reg = .r12d } });
+    try invalidInstruction(.{ .mnemonic = .push, .op1 = .{ .imm = 0x1000000000000000 } });
+}
+
+fn cannotEncode(args: struct {
+    mnemonic: Mnemonic,
+    op1: Operand = .none,
+    op2: Operand = .none,
+    op3: Operand = .none,
+    op4: Operand = .none,
+}) !void {
+    var buffer: [32]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buffer);
+    var inst = try Instruction.new(.{
+        .mnemonic = args.mnemonic,
+        .op1 = args.op1,
+        .op2 = args.op2,
+        .op3 = args.op3,
+        .op4 = args.op4,
+    });
+    try testing.expectError(error.CannotEncode, inst.encode(stream.writer()));
+}
+
+test "cannot encode" {
+    try cannotEncode(.{
+        .mnemonic = .@"test",
+        .op1 = .{ .mem = Memory.sib(.byte, .{ .base = .r12, .disp = 0 }) },
+        .op2 = .{ .reg = .ah },
+    });
+    try cannotEncode(.{ .mnemonic = .@"test", .op1 = .{ .reg = .r11b }, .op2 = .{ .reg = .bh } });
 }
 
 test "assemble" {
@@ -714,6 +742,8 @@ test "assemble" {
         \\cbw
         \\cwde
         \\cdqe
+        \\test byte ptr [rbp], ah
+        \\test byte ptr [r12], spl
         \\
     ;
 
@@ -750,6 +780,8 @@ test "assemble" {
         0x98,
         0x66, 0x98,
         0x48, 0x98,
+        0x84, 0x65, 0x00,
+        0x41, 0x84, 0x24, 0x24,
     };
     // zig fmt: on
 

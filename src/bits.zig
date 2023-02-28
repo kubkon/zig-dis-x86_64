@@ -14,8 +14,10 @@ pub const Register = enum(u7) {
     ax, cx, dx, bx, sp, bp, si, di,
     r8w, r9w, r10w, r11w, r12w, r13w, r14w, r15w,
 
-    al, cl, dl, bl, ah, ch, dh, bh,
+    al, cl, dl, bl, spl, bpl, sil, dil,
     r8b, r9b, r10b, r11b, r12b, r13b, r14b, r15b,
+
+    ah, ch, dh, bh,
 
     ymm0, ymm1, ymm2,  ymm3,  ymm4,  ymm5,  ymm6,  ymm7,
     ymm8, ymm9, ymm10, ymm11, ymm12, ymm13, ymm14, ymm15,
@@ -26,7 +28,7 @@ pub const Register = enum(u7) {
     es, cs, ss, ds, fs, gs,
     // zig fmt: on
 
-    pub fn gpFromLowEnc(low_enc: u3, is_extended: bool, bit_size: u64) Register {
+    pub fn fromLowEnc(low_enc: u3, is_extended: bool, bit_size: u64) Register {
         const reg_id: u4 = @intCast(u4, @boolToInt(is_extended)) << 3 | low_enc;
         const unsized = @intToEnum(Register, reg_id);
         return unsized.toBitSize(bit_size);
@@ -38,105 +40,185 @@ pub const Register = enum(u7) {
         seg,
     };
 
-    const class_bits_shift: u3 = 4;
+    pub fn class(reg: Register) Class {
+        return switch (@enumToInt(reg)) {
+            // zig fmt: off
+            @enumToInt(Register.rax)  ... @enumToInt(Register.r15)   => .gp,
+            @enumToInt(Register.eax)  ... @enumToInt(Register.r15d)  => .gp,
+            @enumToInt(Register.ax)   ... @enumToInt(Register.r15w)  => .gp,
+            @enumToInt(Register.al)   ... @enumToInt(Register.r15b)  => .gp,
+            @enumToInt(Register.ah)   ... @enumToInt(Register.bh)    => .gp,
 
-    pub fn id(self: Register) u7 {
-        const base_id = @truncate(u4, @enumToInt(self));
-        const class_id: u2 = switch (@enumToInt(self)) {
-            0...63 => @enumToInt(Class.gp),
-            64...95 => @enumToInt(Class.sse),
-            96...112 => @enumToInt(Class.seg),
+            @enumToInt(Register.ymm0) ... @enumToInt(Register.ymm15) => .sse,
+            @enumToInt(Register.xmm0) ... @enumToInt(Register.xmm15) => .sse,
+
+            @enumToInt(Register.es)   ... @enumToInt(Register.gs)    => .seg,
+
             else => unreachable,
-        };
-        return @as(u7, class_id) << class_bits_shift | base_id;
-    }
-
-    pub fn class(self: Register) Class {
-        return @intToEnum(Class, @truncate(u2, self.id() >> class_bits_shift));
-    }
-
-    pub fn bitSize(self: Register) u64 {
-        return switch (@enumToInt(self)) {
-            0...15 => 64,
-            16...31 => 32,
-            32...47 => 16,
-            48...63 => 8,
-            64...79 => 256,
-            80...95 => 128,
-            96...112 => 16,
-            else => unreachable,
+            // zig fmt: on
         };
     }
 
-    pub fn isGp(self: Register) bool {
-        return self.class() == .gp;
+    pub fn id(reg: Register) u6 {
+        const base = switch (@enumToInt(reg)) {
+            // zig fmt: off
+            @enumToInt(Register.rax)  ... @enumToInt(Register.r15)   => @enumToInt(Register.rax),
+            @enumToInt(Register.eax)  ... @enumToInt(Register.r15d)  => @enumToInt(Register.eax),
+            @enumToInt(Register.ax)   ... @enumToInt(Register.r15w)  => @enumToInt(Register.ax),
+            @enumToInt(Register.al)   ... @enumToInt(Register.r15b)  => @enumToInt(Register.al),
+            @enumToInt(Register.ah)   ... @enumToInt(Register.bh)    => @enumToInt(Register.ah) - 4,
+
+            @enumToInt(Register.ymm0) ... @enumToInt(Register.ymm15) => @enumToInt(Register.ymm0) - 16,
+            @enumToInt(Register.xmm0) ... @enumToInt(Register.xmm15) => @enumToInt(Register.xmm0) - 16,
+
+            @enumToInt(Register.es)   ... @enumToInt(Register.gs)    => @enumToInt(Register.es) - 32,
+
+            else => unreachable,
+            // zig fmt: on
+        };
+        return @intCast(u6, @enumToInt(reg) - base);
     }
 
-    pub fn isSegment(self: Register) bool {
-        return self.class() == .seg;
+    pub fn bitSize(reg: Register) u64 {
+        return switch (@enumToInt(reg)) {
+            // zig fmt: off
+            @enumToInt(Register.rax)  ... @enumToInt(Register.r15)   => 64,
+            @enumToInt(Register.eax)  ... @enumToInt(Register.r15d)  => 32,
+            @enumToInt(Register.ax)   ... @enumToInt(Register.r15w)  => 16,
+            @enumToInt(Register.al)   ... @enumToInt(Register.r15b)  => 8,
+            @enumToInt(Register.ah)   ... @enumToInt(Register.bh)    => 8,
+
+            @enumToInt(Register.ymm0) ... @enumToInt(Register.ymm15) => 256,
+            @enumToInt(Register.xmm0) ... @enumToInt(Register.xmm15) => 128,
+
+            @enumToInt(Register.es)   ... @enumToInt(Register.gs)    => 16,
+
+            else => unreachable,
+            // zig fmt: on
+        };
     }
 
-    pub fn isSse(self: Register) bool {
-        return self.class() == .sse;
+    pub fn isGp(reg: Register) bool {
+        return reg.class() == .gp;
     }
 
-    pub fn isExtended(self: Register) bool {
-        return @enumToInt(self) & 0x08 != 0;
+    pub fn isSegment(reg: Register) bool {
+        return reg.class() == .seg;
     }
 
-    pub fn enc(self: Register) u4 {
-        return @truncate(u4, @enumToInt(self));
+    pub fn isSse(reg: Register) bool {
+        return reg.class() == .sse;
     }
 
-    pub fn lowEnc(self: Register) u3 {
-        return @truncate(u3, @enumToInt(self));
+    pub fn isExtended(reg: Register) bool {
+        assert(reg.isGp() or reg.isSegment());
+        return switch (@enumToInt(reg)) {
+            // zig fmt: off
+            @enumToInt(Register.r8)  ... @enumToInt(Register.r15)   => true,
+            @enumToInt(Register.r8d) ... @enumToInt(Register.r15d)  => true,
+            @enumToInt(Register.r8w) ... @enumToInt(Register.r15w)  => true,
+            @enumToInt(Register.r8b) ... @enumToInt(Register.r15b)  => true,
+            else => false,
+            // zig fmt: on
+        };
     }
 
-    pub fn toBitSize(self: Register, bit_size: u64) Register {
+    pub fn isRexInvalid(reg: Register) bool {
+        assert(reg.isGp() or reg.isSegment());
+        return switch (@enumToInt(reg)) {
+            @enumToInt(Register.ah)...@enumToInt(Register.bh) => true,
+            else => false,
+        };
+    }
+
+    pub fn enc(reg: Register) u4 {
+        const base = switch (@enumToInt(reg)) {
+            // zig fmt: off
+            @enumToInt(Register.rax)  ... @enumToInt(Register.r15)   => @enumToInt(Register.rax),
+            @enumToInt(Register.eax)  ... @enumToInt(Register.r15d)  => @enumToInt(Register.eax),
+            @enumToInt(Register.ax)   ... @enumToInt(Register.r15w)  => @enumToInt(Register.ax),
+            @enumToInt(Register.al)   ... @enumToInt(Register.r15b)  => @enumToInt(Register.al),
+            @enumToInt(Register.ah)   ... @enumToInt(Register.bh)    => @enumToInt(Register.ah) - 4,
+
+            @enumToInt(Register.ymm0) ... @enumToInt(Register.ymm15) => @enumToInt(Register.ymm0),
+            @enumToInt(Register.xmm0) ... @enumToInt(Register.xmm15) => @enumToInt(Register.xmm0),
+
+            @enumToInt(Register.es)   ... @enumToInt(Register.gs)    => @enumToInt(Register.es),
+
+            else => unreachable,
+            // zig fmt: on
+        };
+        return @truncate(u4, @enumToInt(reg) - base);
+    }
+
+    pub fn lowEnc(reg: Register) u3 {
+        assert(reg.isGp() or reg.isSegment());
+        return @truncate(u3, reg.enc());
+    }
+
+    pub fn toBitSize(reg: Register, bit_size: u64) Register {
         return switch (bit_size) {
-            8 => self.to8(),
-            16 => self.to16(),
-            32 => self.to32(),
-            64 => self.to64(),
-            128 => self.to128(),
-            256 => self.to256(),
+            8 => reg.to8(),
+            16 => reg.to16(),
+            32 => reg.to32(),
+            64 => reg.to64(),
+            128 => reg.to128(),
+            256 => reg.to256(),
             else => unreachable,
         };
     }
 
-    pub fn to64(self: Register) Register {
-        assert(self.class() == .gp);
-        return @intToEnum(Register, self.enc());
+    fn gpBase(reg: Register) u7 {
+        assert(reg.isGp());
+        return switch (@enumToInt(reg)) {
+            // zig fmt: off
+            @enumToInt(Register.rax)  ... @enumToInt(Register.r15)   => @enumToInt(Register.rax),
+            @enumToInt(Register.eax)  ... @enumToInt(Register.r15d)  => @enumToInt(Register.eax),
+            @enumToInt(Register.ax)   ... @enumToInt(Register.r15w)  => @enumToInt(Register.ax),
+            @enumToInt(Register.al)   ... @enumToInt(Register.r15b)  => @enumToInt(Register.al),
+            @enumToInt(Register.ah)   ... @enumToInt(Register.bh)    => @enumToInt(Register.ah) - 4,
+            else => unreachable,
+            // zig fmt: on
+        };
     }
 
-    pub fn to32(self: Register) Register {
-        assert(self.class() == .gp);
-        return @intToEnum(Register, @as(u8, self.enc()) + 16);
+    pub fn to64(reg: Register) Register {
+        return @intToEnum(Register, @enumToInt(reg) - reg.gpBase() + @enumToInt(Register.rax));
     }
 
-    pub fn to16(self: Register) Register {
-        assert(self.class() == .gp);
-        return @intToEnum(Register, @as(u8, self.enc()) + 32);
+    pub fn to32(reg: Register) Register {
+        return @intToEnum(Register, @enumToInt(reg) - reg.gpBase() + @enumToInt(Register.eax));
     }
 
-    pub fn to8(self: Register) Register {
-        assert(self.class() == .gp);
-        return @intToEnum(Register, @as(u8, self.enc()) + 48);
+    pub fn to16(reg: Register) Register {
+        return @intToEnum(Register, @enumToInt(reg) - reg.gpBase() + @enumToInt(Register.ax));
     }
 
-    pub fn to128(self: Register) Register {
-        assert(self.class() == .sse);
-        return @intToEnum(Register, @as(u8, self.enc()) + 80);
+    pub fn to8(reg: Register) Register {
+        return @intToEnum(Register, @enumToInt(reg) - reg.gpBase() + @enumToInt(Register.al));
     }
 
-    pub fn to256(self: Register) Register {
-        assert(self.class() == .sse);
-        return @intToEnum(Register, @as(u8, self.enc()) + 64);
+    fn sseBase(reg: Register) u7 {
+        assert(reg.isSse());
+        return switch (@enumToInt(reg)) {
+            @enumToInt(Register.ymm0)...@enumToInt(Register.ymm15) => @enumToInt(Register.ymm0),
+            @enumToInt(Register.xmm0)...@enumToInt(Register.xmm15) => @enumToInt(Register.xmm0),
+            else => unreachable,
+        };
+    }
+
+    pub fn to256(reg: Register) Register {
+        return @intToEnum(Register, @enumToInt(reg) - reg.sseBase() + @enumToInt(Register.ymm0));
+    }
+
+    pub fn to128(reg: Register) Register {
+        return @intToEnum(Register, @enumToInt(reg) - reg.sseBase() + @enumToInt(Register.xmm0));
     }
 };
 
 test "Register id - different classes" {
     try expect(Register.al.id() == Register.ax.id());
+    try expect(Register.ah.id() == Register.spl.id());
     try expect(Register.ax.id() == Register.eax.id());
     try expect(Register.eax.id() == Register.rax.id());
 
