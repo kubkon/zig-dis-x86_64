@@ -77,6 +77,10 @@ const table = &[_]Entry{
     .{ .call, .d, .rel32, .none, .none, .none, 1, 0xe8, 0x00, 0x00, 0 },
     .{ .call, .m, .rm64, .none, .none, .none, 1, 0xff, 0x00, 0x00, 2 },
 
+    .{ .cbw, .np, .none, .none, .none, .none, 1, 0x98, 0x00, 0x00, 0 },
+    .{ .cwde, .np, .none, .none, .none, .none, 1, 0x98, 0x00, 0x00, 0 },
+    .{ .cdqe, .np, .none, .none, .none, .none, 1, 0x98, 0x00, 0x00, 0 },
+
     .{ .cmova, .rm, .r16, .rm16, .none, .none, 2, 0x0f, 0x47, 0x00, 0 },
     .{ .cmova, .rm, .r32, .rm32, .none, .none, 2, 0x0f, 0x47, 0x00, 0 },
     .{ .cmova, .rm, .r64, .rm64, .none, .none, 2, 0x0f, 0x47, 0x00, 0 },
