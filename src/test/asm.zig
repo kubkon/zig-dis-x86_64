@@ -711,6 +711,9 @@ test "assemble" {
         \\mul qword ptr [rip - 16]
         \\div r12
         \\idiv byte ptr [rbp - 16]
+        \\cbw
+        \\cwde
+        \\cdqe
         \\
     ;
 
@@ -744,6 +747,9 @@ test "assemble" {
         0x48, 0xF7, 0x25, 0xF0, 0xFF, 0xFF, 0xFF,
         0x49, 0xF7, 0xF4,
         0xF6, 0x7D, 0xF0,
+        0x98,
+        0x66, 0x98,
+        0x48, 0x98,
     };
     // zig fmt: on
 

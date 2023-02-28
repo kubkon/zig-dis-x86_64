@@ -3,8 +3,7 @@ const assert = std.debug.assert;
 const math = std.math;
 
 const bits = @import("bits.zig");
-const encodings = @import("encodings.zig");
-const Encoding = encodings.Encoding;
+const Encoding = @import("Encoding.zig");
 const Memory = bits.Memory;
 const Moffs = bits.Moffs;
 const PtrSize = bits.PtrSize;
@@ -17,7 +16,7 @@ pub const Instruction = struct {
     op4: Operand = .none,
     encoding: Encoding,
 
-    pub const Mnemonic = encodings.Mnemonic;
+    pub const Mnemonic = Encoding.Mnemonic;
 
     pub const Operand = union(enum) {
         none,
@@ -397,7 +396,7 @@ pub const Instruction = struct {
         }
     }
 
-    fn encodeImm(imm: i64, kind: encodings.Op, encoder: anytype) !void {
+    fn encodeImm(imm: i64, kind: Encoding.Op, encoder: anytype) !void {
         switch (kind) {
             .imm8, .rel8 => try encoder.imm8(@truncate(i8, imm)),
             .imm16, .rel16 => try encoder.imm16(@truncate(i16, imm)),

@@ -6,13 +6,11 @@ const math = std.math;
 
 const bits = @import("bits.zig");
 const encoder = @import("encoder.zig");
-const encodings = @import("encodings.zig");
 
-const Encoding = encodings.Encoding;
+const Encoding = @import("Encoding.zig");
 const Instruction = encoder.Instruction;
 const LegacyPrefixes = encoder.LegacyPrefixes;
 const Memory = bits.Memory;
-const Mnemonic = encodings.Mnemonic;
 const Register = bits.Register;
 const Rex = encoder.Rex;
 
@@ -335,7 +333,7 @@ fn parseEncoding(dis: *Disassembler, prefixes: Prefixes) !?Encoding {
     return null;
 }
 
-fn parseImm(dis: *Disassembler, kind: encodings.Op) !i64 {
+fn parseImm(dis: *Disassembler, kind: Encoding.Op) !i64 {
     var stream = std.io.fixedBufferStream(dis.code[dis.pos..]);
     var creader = std.io.countingReader(stream.reader());
     const reader = creader.reader();

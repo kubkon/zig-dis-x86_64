@@ -7,6 +7,7 @@ const encoder = @import("encoder.zig");
 
 pub const Assembler = @import("Assembler.zig");
 pub const Disassembler = @import("Disassembler.zig");
+pub const Encoding = @import("Encoding.zig");
 pub const Instruction = encoder.Instruction;
 pub const Register = bits.Register;
 pub const Memory = bits.Memory;
