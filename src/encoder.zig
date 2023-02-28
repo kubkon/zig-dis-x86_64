@@ -173,14 +173,14 @@ pub const Instruction = struct {
             .td => try encoder.imm64(inst.op1.mem.moffs.offset),
             else => {
                 const mem_op = switch (encoding.op_en) {
-                    .m, .mi, .m1, .mr => inst.op1,
+                    .m, .mi, .m1, .mc, .mr => inst.op1,
                     .rm, .rmi => inst.op2,
                     else => unreachable,
                 };
                 switch (mem_op) {
                     .reg => |reg| {
                         const rm = switch (encoding.op_en) {
-                            .m, .mi, .m1 => encoding.modRmExt(),
+                            .m, .mi, .m1, .mc => encoding.modRmExt(),
                             .mr => inst.op2.reg.lowEnc(),
                             .rm, .rmi => inst.op1.reg.lowEnc(),
                             else => unreachable,
@@ -189,7 +189,7 @@ pub const Instruction = struct {
                     },
                     .mem => |mem| {
                         const op = switch (encoding.op_en) {
-                            .m, .mi, .m1 => .none,
+                            .m, .mi, .m1, .mc => .none,
                             .mr => inst.op2,
                             .rm, .rmi => inst.op1,
                             else => unreachable,
@@ -245,7 +245,7 @@ pub const Instruction = struct {
                     else => unreachable,
                 };
             } else null,
-            .m, .mi, .m1, .mr => if (inst.op1.isSegment()) blk: {
+            .m, .mi, .m1, .mc, .mr => if (inst.op1.isSegment()) blk: {
                 break :blk switch (inst.op1) {
                     .reg => |r| r,
                     .mem => |m| m.base().?,
@@ -271,7 +271,7 @@ pub const Instruction = struct {
         const rex_op: ?Operand = switch (op_en) {
             .i, .d, .np => null,
             .td => inst.op2,
-            .o, .oi, .fd, .m, .mi, .zi, .m1, .mr, .rm, .rmi => inst.op1,
+            .o, .oi, .fd, .m, .mi, .zi, .m1, .mc, .mr, .rm, .rmi => inst.op1,
         };
         if (rex_op) |op| {
             rex.w = op.is64BitMode() and !mnemonic.defaultsTo64Bits();
@@ -282,7 +282,7 @@ pub const Instruction = struct {
             .o, .oi => {
                 rex.b = inst.op1.reg.isExtended();
             },
-            .m, .mi, .m1, .mr, .rm, .rmi => {
+            .m, .mi, .m1, .mc, .mr, .rm, .rmi => {
                 const r_op = switch (op_en) {
                     .rm, .rmi => inst.op1,
                     .mr => inst.op2,
@@ -294,7 +294,7 @@ pub const Instruction = struct {
 
                 const b_x_op = switch (op_en) {
                     .rm, .rmi => inst.op2,
-                    .m, .mi, .m1, .mr => inst.op1,
+                    .m, .mi, .m1, .mc, .mr => inst.op1,
                     else => unreachable,
                 };
                 switch (b_x_op) {

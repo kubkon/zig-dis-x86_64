@@ -707,6 +707,7 @@ test "assemble" {
         \\sar rax, 63
         \\shr rax, 63
         \\test byte ptr [rbp - 16], r12b
+        \\sal r12, cl
         \\
     ;
 
@@ -736,6 +737,7 @@ test "assemble" {
         0x48, 0xC1, 0xF8, 0x3F,
         0x48, 0xC1, 0xE8, 0x3F,
         0x44, 0x84, 0x65, 0xF0,
+        0x49, 0xD3, 0xE4,
     };
     // zig fmt: on
 

@@ -65,7 +65,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
                 .encoding = enc,
             };
         },
-        .m, .mi, .m1 => {
+        .m, .mi, .m1, .mc => {
             const modrm = try dis.parseModRmByte();
             const act_enc = Encoding.findByOpcode(enc.opcode(), .{
                 .legacy = prefixes.legacy,
@@ -77,6 +77,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
                 const op2: Instruction.Operand = switch (enc.op_en) {
                     .mi => .{ .imm = try dis.parseImm(enc.op2) },
                     .m1 => .{ .imm = 1 },
+                    .mc => .{ .reg = .cl },
                     .m => .none,
                     else => unreachable,
                 };
@@ -91,6 +92,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             const op2: Instruction.Operand = switch (enc.op_en) {
                 .mi => .{ .imm = try dis.parseImm(enc.op2) },
                 .m1 => .{ .imm = 1 },
+                .mc => .{ .reg = .cl },
                 .m => .none,
                 else => unreachable,
             };

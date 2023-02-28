@@ -2,8 +2,10 @@ const std = @import("std");
 const assert = std.debug.assert;
 const math = std.math;
 
+const bits = @import("bits.zig");
 const encoder = @import("encoder.zig");
 const Instruction = encoder.Instruction;
+const Register = bits.Register;
 const Rex = encoder.Rex;
 const LegacyPrefixes = encoder.LegacyPrefixes;
 
@@ -234,10 +236,10 @@ const table = &[_]Entry{
     .{ .sal, .m1, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
     .{ .sal, .m1, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
     .{ .sal, .m1, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
-    // .{ .sal, .mc, .rm8, .unity, .none, .none, 1, 0xd0, 0x00, 0x00, 4 },
-    // .{ .sal, .mc, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
-    // .{ .sal, .mc, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
-    // .{ .sal, .mc, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
+    .{ .sal, .mc, .rm8, .cl, .none, .none, 1, 0xd2, 0x00, 0x00, 4 },
+    .{ .sal, .mc, .rm16, .cl, .none, .none, 1, 0xd3, 0x00, 0x00, 4 },
+    .{ .sal, .mc, .rm32, .cl, .none, .none, 1, 0xd3, 0x00, 0x00, 4 },
+    .{ .sal, .mc, .rm64, .cl, .none, .none, 1, 0xd3, 0x00, 0x00, 4 },
     .{ .sal, .mi, .rm8, .imm8, .none, .none, 1, 0xc0, 0x00, 0x00, 4 },
     .{ .sal, .mi, .rm16, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 4 },
     .{ .sal, .mi, .rm32, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 4 },
@@ -247,10 +249,10 @@ const table = &[_]Entry{
     .{ .sar, .m1, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 7 },
     .{ .sar, .m1, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 7 },
     .{ .sar, .m1, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 7 },
-    // .{ .sar, .mc, .rm8, .unity, .none, .none, 1, 0xd0, 0x00, 0x00, 7 },
-    // .{ .sar, .mc, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 7 },
-    // .{ .sar, .mc, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 7 },
-    // .{ .sar, .mc, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 7 },
+    .{ .sar, .mc, .rm8, .cl, .none, .none, 1, 0xd2, 0x00, 0x00, 7 },
+    .{ .sar, .mc, .rm16, .cl, .none, .none, 1, 0xd3, 0x00, 0x00, 7 },
+    .{ .sar, .mc, .rm32, .cl, .none, .none, 1, 0xd3, 0x00, 0x00, 7 },
+    .{ .sar, .mc, .rm64, .cl, .none, .none, 1, 0xd3, 0x00, 0x00, 7 },
     .{ .sar, .mi, .rm8, .imm8, .none, .none, 1, 0xc0, 0x00, 0x00, 7 },
     .{ .sar, .mi, .rm16, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 7 },
     .{ .sar, .mi, .rm32, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 7 },
@@ -311,10 +313,10 @@ const table = &[_]Entry{
     .{ .shl, .m1, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
     .{ .shl, .m1, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
     .{ .shl, .m1, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
-    // .{ .shl, .mc, .rm8, .unity, .none, .none, 1, 0xd0, 0x00, 0x00, 4 },
-    // .{ .shl, .mc, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
-    // .{ .shl, .mc, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
-    // .{ .shl, .mc, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 4 },
+    .{ .shl, .mc, .rm8, .cl, .none, .none, 1, 0xd2, 0x00, 0x00, 4 },
+    .{ .shl, .mc, .rm16, .cl, .none, .none, 1, 0xd3, 0x00, 0x00, 4 },
+    .{ .shl, .mc, .rm32, .cl, .none, .none, 1, 0xd3, 0x00, 0x00, 4 },
+    .{ .shl, .mc, .rm64, .cl, .none, .none, 1, 0xd3, 0x00, 0x00, 4 },
     .{ .shl, .mi, .rm8, .imm8, .none, .none, 1, 0xc0, 0x00, 0x00, 4 },
     .{ .shl, .mi, .rm16, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 4 },
     .{ .shl, .mi, .rm32, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 4 },
@@ -324,10 +326,10 @@ const table = &[_]Entry{
     .{ .shr, .m1, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 5 },
     .{ .shr, .m1, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 5 },
     .{ .shr, .m1, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 5 },
-    // .{ .shr, .mc, .rm8, .unity, .none, .none, 1, 0xd0, 0x00, 0x00, 5 },
-    // .{ .shr, .mc, .rm16, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 5 },
-    // .{ .shr, .mc, .rm32, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 5 },
-    // .{ .shr, .mc, .rm64, .unity, .none, .none, 1, 0xd1, 0x00, 0x00, 5 },
+    .{ .shr, .mc, .rm8, .cl, .none, .none, 1, 0xd2, 0x00, 0x00, 5 },
+    .{ .shr, .mc, .rm16, .cl, .none, .none, 1, 0xd3, 0x00, 0x00, 5 },
+    .{ .shr, .mc, .rm32, .cl, .none, .none, 1, 0xd3, 0x00, 0x00, 5 },
+    .{ .shr, .mc, .rm64, .cl, .none, .none, 1, 0xd3, 0x00, 0x00, 5 },
     .{ .shr, .mi, .rm8, .imm8, .none, .none, 1, 0xc0, 0x00, 0x00, 5 },
     .{ .shr, .mi, .rm16, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 5 },
     .{ .shr, .mi, .rm32, .imm8, .none, .none, 1, 0xc1, 0x00, 0x00, 5 },
@@ -426,7 +428,7 @@ pub const OpEn = enum {
     i, zi,
     d, m,
     fd, td,
-    m1, mi, mr, rm, rmi,
+    m1, mc, mi, mr, rm, rmi,
     // zig fmt: on
 };
 
@@ -436,6 +438,7 @@ pub const Op = enum {
     unity,
     imm8, imm16, imm32, imm64,
     al, ax, eax, rax,
+    cl,
     r8, r16, r32, r64,
     rm8, rm16, rm32, rm64,
     m8, m16, m32, m64,
@@ -451,25 +454,21 @@ pub const Op = enum {
 
             .reg => |reg| {
                 if (reg.isSegment()) return .sreg;
-
-                const bit_size = reg.bitSize();
-                if (reg.to64() == .rax) {
-                    return switch (bit_size) {
-                        8 => .al,
-                        16 => .ax,
-                        32 => .eax,
-                        64 => .rax,
-                        else => unreachable,
-                    };
-                } else {
-                    return switch (bit_size) {
-                        8 => .r8,
-                        16 => .r16,
-                        32 => .r32,
-                        64 => .r64,
-                        else => unreachable,
-                    };
-                }
+                if (reg.to64() == .rax) return switch (reg) {
+                    .al => .al,
+                    .ax => .ax,
+                    .eax => .eax,
+                    .rax => .rax,
+                    else => unreachable,
+                };
+                if (reg == .cl) return .cl;
+                return switch (reg.bitSize()) {
+                    8 => .r8,
+                    16 => .r16,
+                    32 => .r32,
+                    64 => .r64,
+                    else => unreachable,
+                };
             },
 
             .mem => |mem| switch (mem) {
@@ -499,7 +498,7 @@ pub const Op = enum {
     pub fn bitSize(op: Op) u64 {
         return switch (op) {
             .none, .moffs, .m, .sreg, .unity => unreachable,
-            .imm8, .al, .r8, .m8, .rm8, .rel8 => 8,
+            .imm8, .al, .cl, .r8, .m8, .rm8, .rel8 => 8,
             .imm16, .ax, .r16, .m16, .rm16, .rel16 => 16,
             .imm32, .eax, .r32, .m32, .rm32, .rel32 => 32,
             .imm64, .rax, .r64, .m64, .rm64 => 64,
@@ -509,6 +508,7 @@ pub const Op = enum {
     pub fn isRegister(op: Op) bool {
         // zig fmt: off
         return switch (op) {
+            .cl,
             .al, .ax, .eax, .rax,
             .r8, .r16, .r32, .r64,
             .rm8, .rm16, .rm32, .rm64,
@@ -557,7 +557,7 @@ pub const Op = enum {
             .none, .moffs, .sreg => return op == target,
             else => {
                 if (op.isRegister() and target.isRegister()) switch (target) {
-                    .al, .ax, .eax, .rax => return op == target,
+                    .cl, .al, .ax, .eax, .rax => return op == target,
                     else => return op.bitSize() == target.bitSize(),
                 };
                 if (op.isMemory() and target.isMemory()) switch (target) {
@@ -731,7 +731,7 @@ pub const Encoding = struct {
 
     pub fn modRmExt(encoding: Encoding) u3 {
         return switch (encoding.op_en) {
-            .m, .mi, .m1 => encoding.modrm_ext,
+            .m, .mi, .m1, .mc => encoding.modrm_ext,
             else => unreachable,
         };
     }
@@ -760,14 +760,14 @@ pub const Encoding = struct {
                 };
                 try writer.print("+{s} ", .{tag});
             },
-            .m, .mi, .m1 => try writer.print("/{d} ", .{encoding.modRmExt()}),
+            .m, .mi, .m1, .mc => try writer.print("/{d} ", .{encoding.modRmExt()}),
             .mr, .rm, .rmi => try writer.writeAll("/r "),
         }
 
         switch (encoding.op_en) {
             .i, .d, .zi, .oi, .mi, .rmi => {
                 const op = switch (encoding.op_en) {
-                    .i => encoding.op1,
+                    .i, .d => encoding.op1,
                     .zi, .oi, .mi => encoding.op2,
                     .rmi => encoding.op3,
                     else => unreachable,
@@ -778,13 +778,13 @@ pub const Encoding = struct {
                     .imm32 => "id",
                     .imm64 => "io",
                     .rel8 => "cb",
-                    .rel16 => "cw ",
-                    .rel32 => "cd ",
+                    .rel16 => "cw",
+                    .rel32 => "cd",
                     else => unreachable,
                 };
                 try writer.print("{s} ", .{tag});
             },
-            .np, .fd, .td, .o, .m, .m1, .mr, .rm => {},
+            .np, .fd, .td, .o, .m, .m1, .mc, .mr, .rm => {},
         }
 
         try writer.print("{s} ", .{@tagName(encoding.mnemonic)});
