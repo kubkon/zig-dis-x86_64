@@ -744,6 +744,9 @@ test "assemble" {
         \\cdqe
         \\test byte ptr [rbp], ah
         \\test byte ptr [r12], spl
+        \\cwd
+        \\cdq
+        \\cqo
         \\
     ;
 
@@ -782,6 +785,9 @@ test "assemble" {
         0x48, 0x98,
         0x84, 0x65, 0x00,
         0x41, 0x84, 0x24, 0x24,
+        0x99,
+        0x66, 0x99,
+        0x48, 0x99,
     };
     // zig fmt: on
 

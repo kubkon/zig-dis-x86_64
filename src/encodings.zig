@@ -80,6 +80,10 @@ pub const table = &[_]Entry{
     .{ .cwde, .np, .none, .none, .none, .none, 1, 0x98, 0x00, 0x00, 0, .p_66h },
     .{ .cdqe, .np, .none, .none, .none, .none, 1, 0x98, 0x00, 0x00, 0, .rex_w },
 
+    .{ .cwd, .np, .none, .none, .none, .none, 1, 0x99, 0x00, 0x00, 0, .none  },
+    .{ .cdq, .np, .none, .none, .none, .none, 1, 0x99, 0x00, 0x00, 0, .p_66h },
+    .{ .cqo, .np, .none, .none, .none, .none, 1, 0x99, 0x00, 0x00, 0, .rex_w },
+
     .{ .cmova,   .rm, .r16, .rm16, .none, .none, 2, 0x0f, 0x47, 0x00, 0, .p_66h },
     .{ .cmova,   .rm, .r32, .rm32, .none, .none, 2, 0x0f, 0x47, 0x00, 0, .none  },
     .{ .cmova,   .rm, .r64, .rm64, .none, .none, 2, 0x0f, 0x47, 0x00, 0, .rex_w },

@@ -238,7 +238,7 @@ pub fn format(
 pub const Mnemonic = enum {
     // zig fmt: off
     adc, add, @"and",
-    call, cbw, cwde, cdqe, cmp,
+    call, cbw, cwde, cdqe, cwd, cdq, cqo, cmp,
     cmova, cmovae, cmovb, cmovbe, cmovc, cmove, cmovg, cmovge, cmovl, cmovle, cmovna,
     cmovnae, cmovnb, cmovnbe, cmovnc, cmovne, cmovng, cmovnge, cmovnl, cmovnle, cmovno,
     cmovnp, cmovns, cmovnz, cmovo, cmovp, cmovpe, cmovpo, cmovs, cmovz,
