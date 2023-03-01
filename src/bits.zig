@@ -29,24 +29,24 @@ pub const Register = enum(u7) {
     // zig fmt: on
 
     pub const Class = enum(u2) {
-        gp,
-        sse,
-        seg,
+        general_purpose,
+        floating_point,
+        segment,
     };
 
     pub fn class(reg: Register) Class {
         return switch (@enumToInt(reg)) {
             // zig fmt: off
-            @enumToInt(Register.rax)  ... @enumToInt(Register.r15)   => .gp,
-            @enumToInt(Register.eax)  ... @enumToInt(Register.r15d)  => .gp,
-            @enumToInt(Register.ax)   ... @enumToInt(Register.r15w)  => .gp,
-            @enumToInt(Register.al)   ... @enumToInt(Register.r15b)  => .gp,
-            @enumToInt(Register.ah)   ... @enumToInt(Register.bh)    => .gp,
+            @enumToInt(Register.rax)  ... @enumToInt(Register.r15)   => .general_purpose,
+            @enumToInt(Register.eax)  ... @enumToInt(Register.r15d)  => .general_purpose,
+            @enumToInt(Register.ax)   ... @enumToInt(Register.r15w)  => .general_purpose,
+            @enumToInt(Register.al)   ... @enumToInt(Register.r15b)  => .general_purpose,
+            @enumToInt(Register.ah)   ... @enumToInt(Register.bh)    => .general_purpose,
 
-            @enumToInt(Register.ymm0) ... @enumToInt(Register.ymm15) => .sse,
-            @enumToInt(Register.xmm0) ... @enumToInt(Register.xmm15) => .sse,
+            @enumToInt(Register.ymm0) ... @enumToInt(Register.ymm15) => .floating_point,
+            @enumToInt(Register.xmm0) ... @enumToInt(Register.xmm15) => .floating_point,
 
-            @enumToInt(Register.es)   ... @enumToInt(Register.gs)    => .seg,
+            @enumToInt(Register.es)   ... @enumToInt(Register.gs)    => .segment,
 
             else => unreachable,
             // zig fmt: on
@@ -92,20 +92,7 @@ pub const Register = enum(u7) {
         };
     }
 
-    pub fn isGp(reg: Register) bool {
-        return reg.class() == .gp;
-    }
-
-    pub fn isSegment(reg: Register) bool {
-        return reg.class() == .seg;
-    }
-
-    pub fn isSse(reg: Register) bool {
-        return reg.class() == .sse;
-    }
-
     pub fn isExtended(reg: Register) bool {
-        assert(reg.isGp() or reg.isSegment());
         return switch (@enumToInt(reg)) {
             // zig fmt: off
             @enumToInt(Register.r8)  ... @enumToInt(Register.r15)   => true,
@@ -118,7 +105,6 @@ pub const Register = enum(u7) {
     }
 
     pub fn isRexInvalid(reg: Register) bool {
-        assert(reg.isGp() or reg.isSegment());
         return switch (@enumToInt(reg)) {
             @enumToInt(Register.ah)...@enumToInt(Register.bh) => true,
             else => false,
@@ -146,7 +132,6 @@ pub const Register = enum(u7) {
     }
 
     pub fn lowEnc(reg: Register) u3 {
-        assert(reg.isGp() or reg.isSegment());
         return @truncate(u3, reg.enc());
     }
 
@@ -163,7 +148,7 @@ pub const Register = enum(u7) {
     }
 
     fn gpBase(reg: Register) u7 {
-        assert(reg.isGp());
+        assert(reg.class() == .general_purpose);
         return switch (@enumToInt(reg)) {
             // zig fmt: off
             @enumToInt(Register.rax)  ... @enumToInt(Register.r15)   => @enumToInt(Register.rax),
@@ -192,8 +177,8 @@ pub const Register = enum(u7) {
         return @intToEnum(Register, @enumToInt(reg) - reg.gpBase() + @enumToInt(Register.al));
     }
 
-    fn sseBase(reg: Register) u7 {
-        assert(reg.isSse());
+    fn fpBase(reg: Register) u7 {
+        assert(reg.class() == .floating_point);
         return switch (@enumToInt(reg)) {
             @enumToInt(Register.ymm0)...@enumToInt(Register.ymm15) => @enumToInt(Register.ymm0),
             @enumToInt(Register.xmm0)...@enumToInt(Register.xmm15) => @enumToInt(Register.xmm0),
@@ -202,11 +187,11 @@ pub const Register = enum(u7) {
     }
 
     pub fn to256(reg: Register) Register {
-        return @intToEnum(Register, @enumToInt(reg) - reg.sseBase() + @enumToInt(Register.ymm0));
+        return @intToEnum(Register, @enumToInt(reg) - reg.fpBase() + @enumToInt(Register.ymm0));
     }
 
     pub fn to128(reg: Register) Register {
-        return @intToEnum(Register, @enumToInt(reg) - reg.sseBase() + @enumToInt(Register.xmm0));
+        return @intToEnum(Register, @enumToInt(reg) - reg.fpBase() + @enumToInt(Register.xmm0));
     }
 };
 
@@ -233,9 +218,9 @@ test "Register enc - different classes" {
 }
 
 test "Register classes" {
-    try expect(Register.r11.class() == .gp);
-    try expect(Register.ymm11.class() == .sse);
-    try expect(Register.fs.class() == .seg);
+    try expect(Register.r11.class() == .general_purpose);
+    try expect(Register.ymm11.class() == .floating_point);
+    try expect(Register.fs.class() == .segment);
 }
 
 pub const Memory = union(enum) {
@@ -281,7 +266,7 @@ pub const Memory = union(enum) {
     };
 
     pub fn moffs(reg: Register, offset: u64) Memory {
-        assert(reg.isSegment());
+        assert(reg.class() == .segment);
         return .{ .moffs = .{ .seg = reg, .offset = offset } };
     }
 
@@ -306,7 +291,7 @@ pub const Memory = union(enum) {
         return switch (mem) {
             .moffs => true,
             .rip => false,
-            .sib => |s| if (s.base) |r| r.isSegment() else false,
+            .sib => |s| if (s.base) |r| r.class() == .segment else false,
         };
     }
 

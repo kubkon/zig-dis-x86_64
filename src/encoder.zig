@@ -40,7 +40,7 @@ pub const Instruction = struct {
         pub fn isSegment(op: Operand) bool {
             return switch (op) {
                 .none => unreachable,
-                .reg => |reg| reg.isSegment(),
+                .reg => |reg| reg.class() == .segment,
                 .mem => |mem| mem.isSegment(),
                 .imm => unreachable,
             };
@@ -297,7 +297,7 @@ pub const Instruction = struct {
             .moffs => unreachable,
             .sib => |sib| {
                 if (sib.base) |base| {
-                    if (base.class() == .seg) {
+                    if (base.class() == .segment) {
                         // TODO audit this wrt SIB
                         try encoder.modRm_SIBDisp0(operand_enc);
                         if (sib.scale_index) |si| {
@@ -308,7 +308,7 @@ pub const Instruction = struct {
                         }
                         try encoder.disp32(sib.disp);
                     } else {
-                        assert(base.class() == .gp);
+                        assert(base.class() == .general_purpose);
                         const dst = base.lowEnc();
                         const src = operand_enc;
                         if (dst == 4 or sib.scale_index != null) {
@@ -415,7 +415,7 @@ pub const LegacyPrefixes = packed struct {
     padding: u5 = 0,
 
     pub fn setSegmentOverride(self: *LegacyPrefixes, reg: Register) void {
-        assert(reg.isSegment());
+        assert(reg.class() == .segment);
         switch (reg) {
             .cs => self.prefix_2e = true,
             .ss => self.prefix_36 = true,

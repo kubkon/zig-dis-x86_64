@@ -294,7 +294,7 @@ pub const Op = enum {
             .none => return .none,
 
             .reg => |reg| {
-                if (reg.isSegment()) return .sreg;
+                if (reg.class() == .segment) return .sreg;
                 if (reg.to64() == .rax) return switch (reg) {
                     .al => .al,
                     .ax => .ax,

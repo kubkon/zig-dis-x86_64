@@ -447,7 +447,7 @@ fn parseMemoryRule(as: *Assembler, rule: anytype) ParseError!MemoryParseResult {
                     error.Overflow => {
                         if (is_neg) return err;
                         if (res.base) |base| {
-                            if (!base.isSegment()) return err;
+                            if (base.class() != .segment) return err;
                         }
                         const offset = try std.fmt.parseInt(u64, as.source(tok), 0);
                         res.offset = offset;
