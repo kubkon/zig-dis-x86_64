@@ -139,13 +139,14 @@ pub fn findByOpcode(opc: []const u8, prefixes: struct {
             } else if (prefixes.legacy.prefix_66) {
                 if (enc.prefix == .p_66h) return enc;
             } else {
-                const bit_size = switch (enc.op_en) {
-                    .i, .np => return enc,
-                    .td => enc.op2.bitSize(),
-                    else => enc.op1.bitSize(),
-                };
-                if (bit_size == 32 or bit_size == 8) return enc;
-                if (bit_size == 64 and enc.prefix == .none) return enc;
+                if (enc.prefix == .none) {
+                    const bit_size = switch (enc.op_en) {
+                        .i, .np => return enc,
+                        .td => enc.op2.bitSize(),
+                        else => enc.op1.bitSize(),
+                    };
+                    if (bit_size != 16) return enc;
+                }
             }
         }
     }
