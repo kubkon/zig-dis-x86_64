@@ -46,7 +46,7 @@ pub const Instruction = struct {
             };
         }
 
-        pub fn fmtPrint(op: Operand, writer: anytype) !void {
+        pub fn fmtPrint(op: Operand, enc_op: Encoding.Op, writer: anytype) !void {
             switch (op) {
                 .none => {},
                 .reg => |reg| try writer.writeAll(@tagName(reg)),
@@ -92,6 +92,9 @@ pub const Instruction = struct {
                     .moffs => |moffs| try writer.print("{s}:0x{x}", .{ @tagName(moffs.seg), moffs.offset }),
                 },
                 .imm => |imm| {
+                    if (enc_op == .imm64) {
+                        return writer.print("0x{x}", .{@bitCast(u64, imm)});
+                    }
                     const imm_abs = try std.math.absInt(imm);
                     if (sign(imm) < 0) {
                         try writer.writeByte('-');
@@ -127,14 +130,19 @@ pub const Instruction = struct {
 
     pub fn fmtPrint(inst: Instruction, writer: anytype) !void {
         try writer.print("{s}", .{@tagName(inst.encoding.mnemonic)});
-        const ops = [_]Operand{ inst.op1, inst.op2, inst.op3, inst.op4 };
+        const ops = [_]struct { Operand, Encoding.Op }{
+            .{ inst.op1, inst.encoding.op1 },
+            .{ inst.op2, inst.encoding.op2 },
+            .{ inst.op3, inst.encoding.op3 },
+            .{ inst.op4, inst.encoding.op4 },
+        };
         for (&ops, 0..) |op, i| {
-            if (op == .none) break;
+            if (op[0] == .none) break;
             if (i > 0) {
                 try writer.writeByte(',');
             }
             try writer.writeByte(' ');
-            try op.fmtPrint(writer);
+            try op[0].fmtPrint(op[1], writer);
         }
     }
 

@@ -68,6 +68,8 @@ test "disassemble" {
         0x99,
         0x66, 0x99,
         0x48, 0x99,
+        0xF6, 0xC3, 0x01,
+        0x48, 0xBB, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80,
         // zig fmt: on
     });
 
@@ -141,6 +143,8 @@ test "disassemble" {
         \\cwd
         \\cdq
         \\cqo
+        \\test bl, 0x1
+        \\mov rbx, 0x8000000000000000
         \\
     , buf.items);
 }

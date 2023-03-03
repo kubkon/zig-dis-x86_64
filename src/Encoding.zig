@@ -135,7 +135,25 @@ pub fn findByOpcode(opc: []const u8, prefixes: struct {
         };
         if (match) {
             if (prefixes.rex.w) {
-                if (enc.prefix == .rex_w) return enc;
+                switch (enc.prefix) {
+                    .rex_w => return enc,
+                    .none => {
+                        // TODO this is a hack to allow parsing of instructions which contain
+                        // spurious prefix bytes such as
+                        // rex.W mov dil, 0x1
+                        // Here, rex.W is not needed.
+                        const rex_w_allowed = blk: {
+                            const bit_size = switch (enc.op_en) {
+                                .i, .np => break :blk false,
+                                .td => enc.op2.bitSize(),
+                                else => enc.op1.bitSize(),
+                            };
+                            break :blk bit_size == 64 or bit_size == 8;
+                        };
+                        if (rex_w_allowed) return enc;
+                    },
+                    else => {},
+                }
             } else if (prefixes.legacy.prefix_66) {
                 if (enc.prefix == .p_66h) return enc;
             } else {

@@ -295,6 +295,8 @@ pub const table = &[_]Entry{
     .{ .movsx, .rm, .r32, .rm16, .none, .none, 2, 0x0f, 0xbf, 0x00, 0, .none  },
     .{ .movsx, .rm, .r64, .rm16, .none, .none, 2, 0x0f, 0xbf, 0x00, 0, .rex_w },
 
+    // This instruction is discouraged.
+    .{ .movsxd, .rm, .r32, .rm32, .none, .none, 1, 0x63, 0x00, 0x00, 0, .none },
     .{ .movsxd, .rm, .r64, .rm32, .none, .none, 1, 0x63, 0x00, 0x00, 0, .rex_w },
 
     .{ .movzx, .rm, .r16, .rm8,  .none, .none, 2, 0x0f, 0xb6, 0x00, 0, .p_66h },

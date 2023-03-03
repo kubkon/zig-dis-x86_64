@@ -295,8 +295,8 @@ fn parseOperandRule(as: *Assembler, rule: anytype, ops: *[4]Operand) ParseError!
             },
             .immediate => {
                 const imm_tok = try as.expect(.numeral);
-                const imm = try std.fmt.parseInt(i64, as.source(imm_tok), 0);
-                ops[i] = .{ .imm = imm };
+                const imm = try std.fmt.parseInt(u64, as.source(imm_tok), 0);
+                ops[i] = .{ .imm = @bitCast(i64, imm) };
             },
             else => @compileError("unhandled enum literal " ++ @tagName(cond)),
         }

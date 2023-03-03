@@ -72,8 +72,8 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             const sib = if (modrm.sib()) try dis.parseSibByte() else null;
 
             if (modrm.direct()) {
-                const op2: Instruction.Operand = switch (enc.op_en) {
-                    .mi => .{ .imm = try dis.parseImm(enc.op2) },
+                const op2: Instruction.Operand = switch (act_enc.op_en) {
+                    .mi => .{ .imm = try dis.parseImm(act_enc.op2) },
                     .m1 => .{ .imm = 1 },
                     .mc => .{ .reg = .cl },
                     .m => .none,
@@ -87,8 +87,8 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             }
 
             const disp = try dis.parseDisplacement(modrm, sib);
-            const op2: Instruction.Operand = switch (enc.op_en) {
-                .mi => .{ .imm = try dis.parseImm(enc.op2) },
+            const op2: Instruction.Operand = switch (act_enc.op_en) {
+                .mi => .{ .imm = try dis.parseImm(act_enc.op2) },
                 .m1 => .{ .imm = 1 },
                 .mc => .{ .reg = .cl },
                 .m => .none,
@@ -97,7 +97,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
 
             if (modrm.rip()) {
                 return Instruction{
-                    .op1 = .{ .mem = Memory.rip(Memory.PtrSize.fromBitSize(enc.op1.bitSize()), disp) },
+                    .op1 = .{ .mem = Memory.rip(Memory.PtrSize.fromBitSize(act_enc.op1.bitSize()), disp) },
                     .op2 = op2,
                     .encoding = act_enc,
                 };
@@ -109,7 +109,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             else
                 parseGpRegister(modrm.op2, prefixes.rex.b, prefixes.rex, 64);
             return Instruction{
-                .op1 = .{ .mem = Memory.sib(Memory.PtrSize.fromBitSize(enc.op1.bitSize()), .{
+                .op1 = .{ .mem = Memory.sib(Memory.PtrSize.fromBitSize(act_enc.op1.bitSize()), .{
                     .base = base,
                     .scale_index = scale_index,
                     .disp = disp,
