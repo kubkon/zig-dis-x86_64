@@ -22,7 +22,7 @@ op4: Op,
 opc_len: u2,
 opc: [3]u8,
 modrm_ext: u3,
-prefix: Prefix,
+mode: Mode,
 
 pub fn findByMnemonic(mnemonic: Mnemonic, args: struct {
     op1: Instruction.Operand,
@@ -49,7 +49,7 @@ pub fn findByMnemonic(mnemonic: Mnemonic, args: struct {
             .opc_len = entry[6],
             .opc = .{ entry[7], entry[8], entry[9] },
             .modrm_ext = entry[10],
-            .prefix = entry[11],
+            .mode = entry[11],
         };
         if (enc.mnemonic == mnemonic and
             input_op1.isSubset(enc.op1) and
@@ -125,7 +125,7 @@ pub fn findByOpcode(opc: []const u8, prefixes: struct {
             .opc_len = entry[6],
             .opc = .{ entry[7], entry[8], entry[9] },
             .modrm_ext = entry[10],
-            .prefix = entry[11],
+            .mode = entry[11],
         };
         const match = match: {
             if (modrm_ext) |ext| {
@@ -135,35 +135,31 @@ pub fn findByOpcode(opc: []const u8, prefixes: struct {
         };
         if (match) {
             if (prefixes.rex.w) {
-                switch (enc.prefix) {
-                    .rex_w => return enc,
+                switch (enc.mode) {
+                    .long => return enc,
                     .none => {
                         // TODO this is a hack to allow parsing of instructions which contain
                         // spurious prefix bytes such as
                         // rex.W mov dil, 0x1
                         // Here, rex.W is not needed.
                         const rex_w_allowed = blk: {
-                            const bit_size = switch (enc.op_en) {
-                                .i, .np => break :blk false,
-                                .td => enc.op2.bitSize(),
-                                else => enc.op1.bitSize(),
-                            };
+                            const bit_size = enc.operandBitSize();
                             break :blk bit_size == 64 or bit_size == 8;
                         };
                         if (rex_w_allowed) return enc;
                     },
-                    else => {},
                 }
             } else if (prefixes.legacy.prefix_66) {
-                if (enc.prefix == .p_66h) return enc;
+                switch (enc.operandBitSize()) {
+                    16 => return enc,
+                    else => {},
+                }
             } else {
-                if (enc.prefix == .none) {
-                    const bit_size = switch (enc.op_en) {
-                        .i, .np => return enc,
-                        .td => enc.op2.bitSize(),
-                        else => enc.op1.bitSize(),
-                    };
-                    if (bit_size != 16) return enc;
+                if (enc.mode == .none) {
+                    switch (enc.operandBitSize()) {
+                        16 => {},
+                        else => return enc,
+                    }
                 }
             }
         }
@@ -182,6 +178,21 @@ pub fn modRmExt(encoding: Encoding) u3 {
     };
 }
 
+pub fn operandBitSize(encoding: Encoding) u64 {
+    if (encoding.mode == .long) return 64;
+    const bit_size: u64 = switch (encoding.op_en) {
+        .np => switch (encoding.op1) {
+            .o16 => 16,
+            .o32 => 32,
+            .o64 => 64,
+            else => 32,
+        },
+        .td => encoding.op2.bitSize(),
+        else => encoding.op1.bitSize(),
+    };
+    return bit_size;
+}
+
 pub fn format(
     encoding: Encoding,
     comptime fmt: []const u8,
@@ -190,8 +201,8 @@ pub fn format(
 ) !void {
     _ = options;
     _ = fmt;
-    switch (encoding.prefix) {
-        .rex_w => try writer.writeAll("REX.W + "),
+    switch (encoding.mode) {
+        .long => try writer.writeAll("REX.W + "),
         else => {},
     }
 
@@ -241,10 +252,10 @@ pub fn format(
     try writer.print("{s} ", .{@tagName(encoding.mnemonic)});
 
     const ops = &[_]Op{ encoding.op1, encoding.op2, encoding.op3, encoding.op4 };
-    for (ops) |op| {
-        if (op == .none) break;
-        try writer.print("{s} ", .{@tagName(op)});
-    }
+    for (ops) |op| switch (op) {
+        .none, .o16, .o32, .o64 => break,
+        else => try writer.print("{s} ", .{@tagName(op)}),
+    };
 
     const op_en = switch (encoding.op_en) {
         .zi => .i,
@@ -294,6 +305,7 @@ pub const OpEn = enum {
 pub const Op = enum {
     // zig fmt: off
     none,
+    o16, o32, o64,
     unity,
     imm8, imm16, imm32, imm64,
     al, ax, eax, rax,
@@ -356,7 +368,7 @@ pub const Op = enum {
 
     pub fn bitSize(op: Op) u64 {
         return switch (op) {
-            .none, .moffs, .m, .sreg, .unity => unreachable,
+            .none, .o16, .o32, .o64, .moffs, .m, .sreg, .unity => unreachable,
             .imm8, .al, .cl, .r8, .m8, .rm8, .rel8 => 8,
             .imm16, .ax, .r16, .m16, .rm16, .rel16 => 16,
             .imm32, .eax, .r32, .m32, .rm32, .rel32 => 32,
@@ -412,8 +424,12 @@ pub const Op = enum {
     /// of the encoding.
     pub fn isSubset(op: Op, target: Op) bool {
         switch (op) {
-            .m => unreachable,
-            .none, .moffs, .sreg => return op == target,
+            .m, .o16, .o32, .o64 => unreachable,
+            .moffs, .sreg => return op == target,
+            .none => switch (target) {
+                .o16, .o32, .o64, .none => return true,
+                else => return false,
+            },
             else => {
                 if (op.isRegister() and target.isRegister()) switch (target) {
                     .cl, .al, .ax, .eax, .rax => return op == target,
@@ -444,8 +460,7 @@ pub const Op = enum {
     }
 };
 
-pub const Prefix = enum {
+pub const Mode = enum {
     none,
-    rex_w,
-    p_66h,
+    long,
 };

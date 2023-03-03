@@ -739,13 +739,13 @@ test "assemble" {
         \\mul qword ptr [rip - 16]
         \\div r12
         \\idiv byte ptr [rbp - 16]
-        \\cbw
         \\cwde
+        \\cbw
         \\cdqe
         \\test byte ptr [rbp], ah
         \\test byte ptr [r12], spl
-        \\cwd
         \\cdq
+        \\cwd
         \\cqo
         \\test bl, 0x1
         \\mov rbx,0x8000000000000000

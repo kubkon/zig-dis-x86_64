@@ -210,12 +210,15 @@ pub const Instruction = struct {
     }
 
     fn encodeLegacyPrefixes(inst: Instruction, encoder: anytype) !void {
-        const op_en = inst.encoding.op_en;
+        const enc = inst.encoding;
+        const op_en = enc.op_en;
 
         var legacy = LegacyPrefixes{};
-        switch (inst.encoding.prefix) {
-            .p_66h => legacy.set16BitOverride(),
-            else => {},
+        if (enc.mode == .none) {
+            const bit_size = enc.operandBitSize();
+            if (bit_size == 16) {
+                legacy.set16BitOverride();
+            }
         }
 
         const segment_override: ?Register = switch (op_en) {
@@ -254,7 +257,7 @@ pub const Instruction = struct {
         } else false;
 
         var rex = Rex{};
-        rex.w = inst.encoding.prefix == .rex_w;
+        rex.w = inst.encoding.mode == .long;
 
         switch (op_en) {
             .np, .i, .zi, .fd, .td, .d => {},
