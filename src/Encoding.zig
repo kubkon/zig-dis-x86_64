@@ -52,10 +52,10 @@ pub fn findByMnemonic(mnemonic: Mnemonic, args: struct {
             .mode = entry[11],
         };
         if (enc.mnemonic == mnemonic and
-            input_op1.isSubset(enc.op1) and
-            input_op2.isSubset(enc.op2) and
-            input_op3.isSubset(enc.op3) and
-            input_op4.isSubset(enc.op4))
+            input_op1.isSubset(enc.op1, enc.mode) and
+            input_op2.isSubset(enc.op2, enc.mode) and
+            input_op3.isSubset(enc.op3, enc.mode) and
+            input_op4.isSubset(enc.op4, enc.mode))
         {
             candidates[count] = enc;
             count += 1;
@@ -136,6 +136,7 @@ pub fn findByOpcode(opc: []const u8, prefixes: struct {
         if (match) {
             if (prefixes.rex.w) {
                 switch (enc.mode) {
+                    .sse => {},
                     .long => return enc,
                     .none => {
                         // TODO this is a hack to allow parsing of instructions which contain
@@ -169,6 +170,14 @@ pub fn findByOpcode(opc: []const u8, prefixes: struct {
 
 pub fn opcode(encoding: *const Encoding) []const u8 {
     return encoding.opc[0..encoding.opc_len];
+}
+
+pub fn mandatoryPrefix(encoding: *const Encoding) ?u8 {
+    const prefix = encoding.opc[0];
+    return switch (prefix) {
+        0xf2, 0xf3 => prefix,
+        else => null,
+    };
 }
 
 pub fn modRmExt(encoding: Encoding) u3 {
@@ -266,6 +275,7 @@ pub fn format(
 
 pub const Mnemonic = enum {
     // zig fmt: off
+    // General-purpose
     adc, add, @"and",
     call, cbw, cwde, cdqe, cwd, cdq, cqo, cmp,
     cmova, cmovae, cmovb, cmovbe, cmovc, cmove, cmovg, cmovge, cmovl, cmovle, cmovna,
@@ -288,6 +298,8 @@ pub const Mnemonic = enum {
     setnz, seto, setp, setpe, setpo, sets, setz,
     @"test",
     xor,
+    // SSE
+    movss,
     // zig fmt: on
 };
 
@@ -317,6 +329,7 @@ pub const Op = enum {
     m,
     moffs,
     sreg,
+    xmm, xmm_m32, xmm_m64,
     // zig fmt: on
 
     pub fn fromOperand(operand: Instruction.Operand) Op {
@@ -324,22 +337,30 @@ pub const Op = enum {
             .none => return .none,
 
             .reg => |reg| {
-                if (reg.class() == .segment) return .sreg;
-                if (reg.to64() == .rax) return switch (reg) {
-                    .al => .al,
-                    .ax => .ax,
-                    .eax => .eax,
-                    .rax => .rax,
-                    else => unreachable,
-                };
-                if (reg == .cl) return .cl;
-                return switch (reg.bitSize()) {
-                    8 => .r8,
-                    16 => .r16,
-                    32 => .r32,
-                    64 => .r64,
-                    else => unreachable,
-                };
+                switch (reg.class()) {
+                    .segment => return .sreg,
+                    .floating_point => return switch (reg.bitSize()) {
+                        128 => .xmm,
+                        else => unreachable,
+                    },
+                    .general_purpose => {
+                        if (reg.to64() == .rax) return switch (reg) {
+                            .al => .al,
+                            .ax => .ax,
+                            .eax => .eax,
+                            .rax => .rax,
+                            else => unreachable,
+                        };
+                        if (reg == .cl) return .cl;
+                        return switch (reg.bitSize()) {
+                            8 => .r8,
+                            16 => .r16,
+                            32 => .r32,
+                            64 => .r64,
+                            else => unreachable,
+                        };
+                    },
+                }
             },
 
             .mem => |mem| switch (mem) {
@@ -371,8 +392,9 @@ pub const Op = enum {
             .none, .o16, .o32, .o64, .moffs, .m, .sreg, .unity => unreachable,
             .imm8, .al, .cl, .r8, .m8, .rm8, .rel8 => 8,
             .imm16, .ax, .r16, .m16, .rm16, .rel16 => 16,
-            .imm32, .eax, .r32, .m32, .rm32, .rel32 => 32,
-            .imm64, .rax, .r64, .m64, .rm64 => 64,
+            .imm32, .eax, .r32, .m32, .rm32, .rel32, .xmm_m32 => 32,
+            .imm64, .rax, .r64, .m64, .rm64, .xmm_m64 => 64,
+            .xmm => 128,
         };
     }
 
@@ -383,7 +405,8 @@ pub const Op = enum {
             .al, .ax, .eax, .rax,
             .r8, .r16, .r32, .r64,
             .rm8, .rm16, .rm32, .rm64,
-            => return true,
+            .xmm, .xmm_m32, .xmm_m64,
+            =>  true,
             else => false,
         };
         // zig fmt: on
@@ -395,7 +418,7 @@ pub const Op = enum {
             .imm8, .imm16, .imm32, .imm64, 
             .rel8, .rel16, .rel32,
             .unity,
-            => return true,
+            =>  true,
             else => false,
         };
         // zig fmt: on
@@ -407,22 +430,30 @@ pub const Op = enum {
             .rm8, .rm16, .rm32, .rm64,
             .m8, .m16, .m32, .m64,
             .m,
-            => return true,
+            .xmm_m32, .xmm_m64,
+            =>  true,
             else => false,
         };
         // zig fmt: on
     }
 
-    pub fn isSegment(op: Op) bool {
+    pub fn isSegmentRegister(op: Op) bool {
         return switch (op) {
-            .moffs, .sreg => return true,
+            .moffs, .sreg => true,
+            else => false,
+        };
+    }
+
+    pub fn isFloatingPointRegister(op: Op) bool {
+        return switch (op) {
+            .xmm, .xmm_m32, .xmm_m64 => true,
             else => false,
         };
     }
 
     /// Given an operand `op` checks if `target` is a subset for the purposes
     /// of the encoding.
-    pub fn isSubset(op: Op, target: Op) bool {
+    pub fn isSubset(op: Op, target: Op, mode: Mode) bool {
         switch (op) {
             .m, .o16, .o32, .o64 => unreachable,
             .moffs, .sreg => return op == target,
@@ -431,29 +462,38 @@ pub const Op = enum {
                 else => return false,
             },
             else => {
-                if (op.isRegister() and target.isRegister()) switch (target) {
-                    .cl, .al, .ax, .eax, .rax => return op == target,
-                    else => return op.bitSize() == target.bitSize(),
-                };
-                if (op.isMemory() and target.isMemory()) switch (target) {
-                    .m => return true,
-                    else => return op.bitSize() == target.bitSize(),
-                };
-                if (op.isImmediate() and target.isImmediate()) switch (target) {
-                    .imm32, .rel32 => switch (op) {
-                        .unity, .imm8, .imm16, .imm32 => return true,
+                if (op.isRegister() and target.isRegister()) {
+                    if (mode == .sse) {
+                        return op.isFloatingPointRegister() and target.isFloatingPointRegister();
+                    }
+                    switch (target) {
+                        .cl, .al, .ax, .eax, .rax => return op == target,
+                        else => return op.bitSize() == target.bitSize(),
+                    }
+                }
+                if (op.isMemory() and target.isMemory()) {
+                    switch (target) {
+                        .m => return true,
+                        else => return op.bitSize() == target.bitSize(),
+                    }
+                }
+                if (op.isImmediate() and target.isImmediate()) {
+                    switch (target) {
+                        .imm32, .rel32 => switch (op) {
+                            .unity, .imm8, .imm16, .imm32 => return true,
+                            else => return op == target,
+                        },
+                        .imm16, .rel16 => switch (op) {
+                            .unity, .imm8, .imm16 => return true,
+                            else => return op == target,
+                        },
+                        .imm8, .rel8 => switch (op) {
+                            .unity, .imm8 => return true,
+                            else => return op == target,
+                        },
                         else => return op == target,
-                    },
-                    .imm16, .rel16 => switch (op) {
-                        .unity, .imm8, .imm16 => return true,
-                        else => return op == target,
-                    },
-                    .imm8, .rel8 => switch (op) {
-                        .unity, .imm8 => return true,
-                        else => return op == target,
-                    },
-                    else => return op == target,
-                };
+                    }
+                }
                 return false;
             },
         }
@@ -463,4 +503,5 @@ pub const Op = enum {
 pub const Mode = enum {
     none,
     long,
+    sse,
 };

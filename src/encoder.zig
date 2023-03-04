@@ -37,11 +37,11 @@ pub const Instruction = struct {
 
         /// Returns true if the operand is a segment register.
         /// Asserts the operand is either register or memory.
-        pub fn isSegment(op: Operand) bool {
+        pub fn isSegmentRegister(op: Operand) bool {
             return switch (op) {
                 .none => unreachable,
                 .reg => |reg| reg.class() == .segment,
-                .mem => |mem| mem.isSegment(),
+                .mem => |mem| mem.isSegmentRegister(),
                 .imm => unreachable,
             };
         }
@@ -63,7 +63,7 @@ pub const Instruction = struct {
                     .sib => |sib| {
                         try writer.print("{s} ptr ", .{@tagName(sib.ptr_size)});
 
-                        if (mem.isSegment()) {
+                        if (mem.isSegmentRegister()) {
                             return writer.print("{s}:0x{x}", .{ @tagName(sib.base.?), sib.disp });
                         }
 
@@ -151,6 +151,7 @@ pub const Instruction = struct {
         const encoding = inst.encoding;
 
         try inst.encodeLegacyPrefixes(encoder);
+        try inst.encodeMandatoryPrefix(encoder);
         try inst.encodeRexPrefix(encoder);
         try inst.encodeOpcode(encoder);
 
@@ -202,7 +203,8 @@ pub const Instruction = struct {
         switch (inst.encoding.op_en) {
             .o, .oi => try encoder.opcode_withReg(opcode[0], inst.op1.reg.lowEnc()),
             else => {
-                for (opcode) |byte| {
+                const index: usize = if (inst.encoding.mandatoryPrefix()) |_| 1 else 0;
+                for (opcode[index..]) |byte| {
                     try encoder.opcode_1byte(byte);
                 }
             },
@@ -225,14 +227,14 @@ pub const Instruction = struct {
             .i, .zi, .o, .oi, .d, .np => null,
             .fd => inst.op2.mem.base().?,
             .td => inst.op1.mem.base().?,
-            .rm, .rmi => if (inst.op2.isSegment()) blk: {
+            .rm, .rmi => if (inst.op2.isSegmentRegister()) blk: {
                 break :blk switch (inst.op2) {
                     .reg => |r| r,
                     .mem => |m| m.base().?,
                     else => unreachable,
                 };
             } else null,
-            .m, .mi, .m1, .mc, .mr => if (inst.op1.isSegment()) blk: {
+            .m, .mi, .m1, .mc, .mr => if (inst.op1.isSegmentRegister()) blk: {
                 break :blk switch (inst.op1) {
                     .reg => |r| r,
                     .mem => |m| m.base().?,
@@ -295,6 +297,11 @@ pub const Instruction = struct {
         if (rex.isSet() and is_rex_invalid) return error.CannotEncode;
 
         try encoder.rex(rex);
+    }
+
+    fn encodeMandatoryPrefix(inst: Instruction, encoder: anytype) !void {
+        const prefix = inst.encoding.mandatoryPrefix() orelse return;
+        try encoder.opcode_1byte(prefix);
     }
 
     fn encodeMemory(encoding: Encoding, mem: Memory, operand: Operand, encoder: anytype) !void {

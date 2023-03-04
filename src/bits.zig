@@ -95,10 +95,14 @@ pub const Register = enum(u7) {
     pub fn isExtended(reg: Register) bool {
         return switch (@enumToInt(reg)) {
             // zig fmt: off
-            @enumToInt(Register.r8)  ... @enumToInt(Register.r15)   => true,
-            @enumToInt(Register.r8d) ... @enumToInt(Register.r15d)  => true,
-            @enumToInt(Register.r8w) ... @enumToInt(Register.r15w)  => true,
-            @enumToInt(Register.r8b) ... @enumToInt(Register.r15b)  => true,
+            @enumToInt(Register.r8)  ... @enumToInt(Register.r15)    => true,
+            @enumToInt(Register.r8d) ... @enumToInt(Register.r15d)   => true,
+            @enumToInt(Register.r8w) ... @enumToInt(Register.r15w)   => true,
+            @enumToInt(Register.r8b) ... @enumToInt(Register.r15b)   => true,
+
+            @enumToInt(Register.ymm8) ... @enumToInt(Register.ymm15) => true,
+            @enumToInt(Register.xmm8) ... @enumToInt(Register.xmm15) => true,
+
             else => false,
             // zig fmt: on
         };
@@ -287,7 +291,7 @@ pub const Memory = union(enum) {
         return .{ .rip = .{ .ptr_size = ptr_size, .disp = disp } };
     }
 
-    pub fn isSegment(mem: Memory) bool {
+    pub fn isSegmentRegister(mem: Memory) bool {
         return switch (mem) {
             .moffs => true,
             .rip => false,

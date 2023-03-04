@@ -351,6 +351,10 @@ fn parseMemory(as: *Assembler) ParseError!Memory {
         .{ .open_br, .index, .star, .scale, .plus, .base, .minus, .disp, .close_br }, // [ index * scale + base - disp ]
         .{ .open_br, .disp, .plus, .index, .star, .scale, .plus, .base, .close_br }, // [ disp + index * scale + base ]
         .{ .open_br, .disp, .plus, .base, .plus, .index, .star, .scale, .close_br }, // [ disp + base + index * scale ]
+        .{ .open_br, .base, .plus, .disp, .plus, .index, .star, .scale, .close_br }, // [ base + disp + index * scale ]
+        .{ .open_br, .base, .minus, .disp, .plus, .index, .star, .scale, .close_br }, // [ base - disp + index * scale ]
+        .{ .open_br, .base, .plus, .disp, .plus, .scale, .star, .index, .close_br }, // [ base + disp + scale * index ]
+        .{ .open_br, .base, .minus, .disp, .plus, .scale, .star, .index, .close_br }, // [ base - disp + scale * index ]
         .{ .open_br, .rip, .plus, .disp, .close_br }, // [ rip + disp ]
         .{ .open_br, .rip, .minus, .disp, .close_br }, // [ rig - disp ]
         .{ .base, .colon, .disp }, // seg:disp
