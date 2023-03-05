@@ -136,7 +136,7 @@ pub fn findByOpcode(opc: []const u8, prefixes: struct {
         if (match) {
             if (prefixes.rex.w) {
                 switch (enc.mode) {
-                    .sse, .sse2 => {},
+                    .fpu, .sse, .sse2 => {},
                     .long => return enc,
                     .none => {
                         // TODO this is a hack to allow parsing of instructions which contain
@@ -282,6 +282,7 @@ pub const Mnemonic = enum {
     cmovnae, cmovnb, cmovnbe, cmovnc, cmovne, cmovng, cmovnge, cmovnl, cmovnle, cmovno,
     cmovnp, cmovns, cmovnz, cmovo, cmovp, cmovpe, cmovpo, cmovs, cmovz,
     div,
+    fisttp,
     idiv, imul, int3,
     ja, jae, jb, jbe, jc, jrcxz, je, jg, jge, jl, jle, jna, jnae, jnb, jnbe,
     jnc, jne, jng, jnge, jnl, jnle, jno, jnp, jns, jnz, jo, jp, jpe, jpo, js, jz,
@@ -510,6 +511,7 @@ pub const Op = enum {
 
 pub const Mode = enum {
     none,
+    fpu,
     long,
     sse,
     sse2,

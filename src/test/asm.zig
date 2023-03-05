@@ -759,6 +759,9 @@ test "assemble" {
         \\movq xmm8, qword ptr [rbp - 16]
         \\movq qword ptr [rbp - 16], xmm8
         \\ucomisd xmm0, qword ptr [rbp - 16]
+        \\fisttp qword ptr [rbp - 16]
+        \\fisttp word ptr [rip + 32]
+        \\fisttp dword ptr [rax]
         \\
     ;
 
@@ -812,6 +815,9 @@ test "assemble" {
         0xF3, 0x44, 0x0F, 0x7E, 0x45, 0xF0,
         0x66, 0x44, 0x0F, 0xD6, 0x45, 0xF0,
         0x66, 0x0F, 0x2E, 0x45, 0xF0,
+        0xDD, 0x4D, 0xF0,
+        0xDF, 0x0D, 0x20, 0x00, 0x00, 0x00,
+        0xDB, 0x08,
     };
     // zig fmt: on
 

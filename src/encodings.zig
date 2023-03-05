@@ -201,6 +201,10 @@ pub const table = &[_]Entry{
     .{ .div, .m, .rm32, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 6, .none  },
     .{ .div, .m, .rm64, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 6, .long  },
 
+    .{ .fisttp, .m, .m16, .none, .none, .none, 1, 0xdf, 0x00, 0x00, 1, .fpu },
+    .{ .fisttp, .m, .m32, .none, .none, .none, 1, 0xdb, 0x00, 0x00, 1, .fpu },
+    .{ .fisttp, .m, .m64, .none, .none, .none, 1, 0xdd, 0x00, 0x00, 1, .fpu },
+
     .{ .idiv, .m, .rm8,  .none, .none, .none, 1, 0xf6, 0x00, 0x00, 7, .none  },
     .{ .idiv, .m, .rm16, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 7, .none  },
     .{ .idiv, .m, .rm32, .none, .none, .none, 1, 0xf7, 0x00, 0x00, 7, .none  },
