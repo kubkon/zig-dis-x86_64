@@ -237,18 +237,32 @@ pub const Memory = union(enum) {
         index: Register,
     };
 
-    pub const PtrSize = enum(u2) {
-        byte = 0b00,
-        word = 0b01,
-        dword = 0b10,
-        qword = 0b11,
+    pub const PtrSize = enum {
+        byte,
+        word,
+        dword,
+        qword,
+        tbyte,
 
         pub fn fromBitSize(bit_size: u64) PtrSize {
-            return @intToEnum(PtrSize, math.log2_int(u4, @intCast(u4, @divExact(bit_size, 8))));
+            return switch (bit_size) {
+                8 => .byte,
+                16 => .word,
+                32 => .dword,
+                64 => .qword,
+                80 => .tbyte,
+                else => unreachable,
+            };
         }
 
         pub fn bitSize(s: PtrSize) u64 {
-            return 8 * (math.powi(u8, 2, @enumToInt(s)) catch unreachable);
+            return switch (s) {
+                .byte => 8,
+                .word => 16,
+                .dword => 32,
+                .qword => 64,
+                .tbyte => 80,
+            };
         }
     };
 

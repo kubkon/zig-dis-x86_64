@@ -490,5 +490,6 @@ fn parsePtrSize(as: *Assembler) ParseError!Memory.PtrSize {
     if (std.mem.eql(u8, slice, "dword ptr")) return .dword;
     if (std.mem.eql(u8, slice, "word ptr")) return .word;
     if (std.mem.eql(u8, slice, "byte ptr")) return .byte;
+    if (std.mem.eql(u8, slice, "tbyte ptr")) return .tbyte;
     return error.InvalidPtrSize;
 }

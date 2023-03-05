@@ -282,7 +282,7 @@ pub const Mnemonic = enum {
     cmovnae, cmovnb, cmovnbe, cmovnc, cmovne, cmovng, cmovnge, cmovnl, cmovnle, cmovno,
     cmovnp, cmovns, cmovnz, cmovo, cmovp, cmovpe, cmovpo, cmovs, cmovz,
     div,
-    fisttp,
+    fisttp, fld,
     idiv, imul, int3,
     ja, jae, jb, jbe, jc, jrcxz, je, jg, jge, jl, jle, jna, jnae, jnb, jnbe,
     jnc, jne, jng, jnge, jnl, jnle, jno, jnp, jns, jnz, jo, jp, jpe, jpo, js, jz,
@@ -333,7 +333,7 @@ pub const Op = enum {
     cl,
     r8, r16, r32, r64,
     rm8, rm16, rm32, rm64,
-    m8, m16, m32, m64,
+    m8, m16, m32, m64, m80,
     rel8, rel16, rel32,
     m,
     moffs,
@@ -381,6 +381,7 @@ pub const Op = enum {
                         16 => .m16,
                         32 => .m32,
                         64 => .m64,
+                        80 => .m80,
                         else => unreachable,
                     };
                 },
@@ -403,6 +404,7 @@ pub const Op = enum {
             .imm16, .ax, .r16, .m16, .rm16, .rel16 => 16,
             .imm32, .eax, .r32, .m32, .rm32, .rel32, .xmm_m32 => 32,
             .imm64, .rax, .r64, .m64, .rm64, .xmm_m64 => 64,
+            .m80 => 80,
             .xmm => 128,
         };
     }
@@ -437,7 +439,7 @@ pub const Op = enum {
         // zig fmt: off
         return switch (op) {
             .rm8, .rm16, .rm32, .rm64,
-            .m8, .m16, .m32, .m64,
+            .m8, .m16, .m32, .m64, .m80,
             .m,
             .xmm_m32, .xmm_m64,
             =>  true,

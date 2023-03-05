@@ -762,6 +762,8 @@ test "assemble" {
         \\fisttp qword ptr [rbp - 16]
         \\fisttp word ptr [rip + 32]
         \\fisttp dword ptr [rax]
+        \\fld tbyte ptr [rbp]
+        \\fld dword ptr [rbp]
         \\
     ;
 
@@ -818,6 +820,8 @@ test "assemble" {
         0xDD, 0x4D, 0xF0,
         0xDF, 0x0D, 0x20, 0x00, 0x00, 0x00,
         0xDB, 0x08,
+        0xDB, 0x6D, 0x00,
+        0xD9, 0x45, 0x00,
     };
     // zig fmt: on
 
