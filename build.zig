@@ -4,8 +4,7 @@ pub fn build(b: *std.Build.Builder) void {
     const target = b.standardTargetOptions(.{});
     const mode = b.standardOptimizeOption(.{});
 
-    b.addModule(.{
-        .name = "dis_x86_64",
+    _ = b.addModule("dis_x86_64", .{
         .source_file = .{ .path = "src/main.zig" },
     });
 
