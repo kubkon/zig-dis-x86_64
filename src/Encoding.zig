@@ -175,7 +175,7 @@ pub fn opcode(encoding: *const Encoding) []const u8 {
 pub fn mandatoryPrefix(encoding: *const Encoding) ?u8 {
     const prefix = encoding.opc[0];
     return switch (prefix) {
-        0xf2, 0xf3 => prefix,
+        0x66, 0xf2, 0xf3 => prefix,
         else => null,
     };
 }
@@ -299,7 +299,7 @@ pub const Mnemonic = enum {
     @"test",
     xor,
     // SSE
-    movss,
+    movq, movsd, movss,
     // zig fmt: on
 };
 

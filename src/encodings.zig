@@ -507,6 +507,12 @@ pub const table = &[_]Entry{
     .{ .xor, .rm, .r64,  .rm64,  .none, .none, 1, 0x33, 0x00, 0x00, 0, .long  },
 
     // SSE
+    .{ .movq, .rm, .xmm,     .xmm_m64, .none, .none, 3, 0xf3, 0x0f, 0x7e, 0, .sse },
+    .{ .movq, .mr, .xmm_m64, .xmm,     .none, .none, 3, 0x66, 0x0f, 0xd6, 0, .sse },
+
+    .{ .movsd, .rm, .xmm,     .xmm_m64, .none, .none, 3, 0xf2, 0x0f, 0x10, 0, .sse },
+    .{ .movsd, .mr, .xmm_m64, .xmm,     .none, .none, 3, 0xf2, 0x0f, 0x11, 0, .sse },
+
     .{ .movss, .rm, .xmm,     .xmm_m32, .none, .none, 3, 0xf3, 0x0f, 0x10, 0, .sse },
     .{ .movss, .mr, .xmm_m32, .xmm,     .none, .none, 3, 0xf3, 0x0f, 0x11, 0, .sse },
 };
