@@ -136,7 +136,7 @@ pub fn findByOpcode(opc: []const u8, prefixes: struct {
         if (match) {
             if (prefixes.rex.w) {
                 switch (enc.mode) {
-                    .sse => {},
+                    .sse, .sse2 => {},
                     .long => return enc,
                     .none => {
                         // TODO this is a hack to allow parsing of instructions which contain
@@ -299,7 +299,15 @@ pub const Mnemonic = enum {
     @"test",
     xor,
     // SSE
-    movq, movsd, movss,
+    addss,
+    cmpss,
+    movss,
+    ucomiss,
+    // SSE2
+    addsd,
+    cmpsd,
+    movq, movsd,
+    ucomisd,
     // zig fmt: on
 };
 
@@ -463,12 +471,12 @@ pub const Op = enum {
             },
             else => {
                 if (op.isRegister() and target.isRegister()) {
-                    if (mode == .sse) {
-                        return op.isFloatingPointRegister() and target.isFloatingPointRegister();
-                    }
-                    switch (target) {
-                        .cl, .al, .ax, .eax, .rax => return op == target,
-                        else => return op.bitSize() == target.bitSize(),
+                    switch (mode) {
+                        .sse, .sse2 => return op.isFloatingPointRegister() and target.isFloatingPointRegister(),
+                        else => switch (target) {
+                            .cl, .al, .ax, .eax, .rax => return op == target,
+                            else => return op.bitSize() == target.bitSize(),
+                        },
                     }
                 }
                 if (op.isMemory() and target.isMemory()) {
@@ -504,4 +512,5 @@ pub const Mode = enum {
     none,
     long,
     sse,
+    sse2,
 };

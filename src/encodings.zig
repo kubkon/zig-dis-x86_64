@@ -507,13 +507,26 @@ pub const table = &[_]Entry{
     .{ .xor, .rm, .r64,  .rm64,  .none, .none, 1, 0x33, 0x00, 0x00, 0, .long  },
 
     // SSE
-    .{ .movq, .rm, .xmm,     .xmm_m64, .none, .none, 3, 0xf3, 0x0f, 0x7e, 0, .sse },
-    .{ .movq, .mr, .xmm_m64, .xmm,     .none, .none, 3, 0x66, 0x0f, 0xd6, 0, .sse },
+    .{ .addss, .rm, .xmm, .xmm_m32, .none, .none, 3, 0xf3, 0x0f, 0x58, 0, .sse },
 
-    .{ .movsd, .rm, .xmm,     .xmm_m64, .none, .none, 3, 0xf2, 0x0f, 0x10, 0, .sse },
-    .{ .movsd, .mr, .xmm_m64, .xmm,     .none, .none, 3, 0xf2, 0x0f, 0x11, 0, .sse },
+    .{ .cmpss, .rmi, .xmm, .xmm_m32, .imm8, .none, 3, 0xf3, 0x0f, 0xc2, 0, .sse },
 
     .{ .movss, .rm, .xmm,     .xmm_m32, .none, .none, 3, 0xf3, 0x0f, 0x10, 0, .sse },
     .{ .movss, .mr, .xmm_m32, .xmm,     .none, .none, 3, 0xf3, 0x0f, 0x11, 0, .sse },
+
+    .{ .ucomiss, .rm, .xmm, .xmm_m32, .none, .none, 2, 0x0f, 0x2e, 0x00, 0, .sse },
+
+    // SSE2
+    .{ .addsd, .rm, .xmm, .xmm_m64, .none, .none, 3, 0xf2, 0x0f, 0x58, 0, .sse2 },
+
+    .{ .cmpsd, .rmi, .xmm, .xmm_m64, .imm8, .none, 3, 0xf2, 0x0f, 0xc2, 0, .sse2 },
+
+    .{ .movq, .rm, .xmm,     .xmm_m64, .none, .none, 3, 0xf3, 0x0f, 0x7e, 0, .sse2 },
+    .{ .movq, .mr, .xmm_m64, .xmm,     .none, .none, 3, 0x66, 0x0f, 0xd6, 0, .sse2 },
+
+    .{ .movsd, .rm, .xmm,     .xmm_m64, .none, .none, 3, 0xf2, 0x0f, 0x10, 0, .sse2 },
+    .{ .movsd, .mr, .xmm_m64, .xmm,     .none, .none, 3, 0xf2, 0x0f, 0x11, 0, .sse2 },
+
+    .{ .ucomisd, .rm, .xmm, .xmm_m64, .none, .none, 3, 0x66, 0x0f, 0x2e, 0, .sse2 },
 };
 // zig fmt: on
