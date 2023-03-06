@@ -6,7 +6,7 @@ const bits = @import("bits.zig");
 const encoder = @import("encoder.zig");
 
 pub const Assembler = @import("Assembler.zig");
-// pub const Disassembler = @import("Disassembler.zig");
+pub const Disassembler = @import("Disassembler.zig");
 pub const Encoding = @import("Encoding.zig");
 pub const Instruction = encoder.Instruction;
 pub const Register = bits.Register;
@@ -15,8 +15,8 @@ pub const Memory = bits.Memory;
 test {
     std.testing.refAllDecls(@This());
     std.testing.refAllDecls(@import("Assembler.zig"));
-    // std.testing.refAllDecls(@import("Disassembler.zig"));
+    std.testing.refAllDecls(@import("Disassembler.zig"));
     std.testing.refAllDecls(@import("encoder.zig"));
     _ = @import("test/asm.zig");
-    // _ = @import("test/disasm.zig");
+    _ = @import("test/disasm.zig");
 }

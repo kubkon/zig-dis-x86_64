@@ -8,6 +8,7 @@ const bits = @import("bits.zig");
 const encoder = @import("encoder.zig");
 
 const Encoding = @import("Encoding.zig");
+const Immediate = bits.Immediate;
 const Instruction = encoder.Instruction;
 const LegacyPrefixes = encoder.LegacyPrefixes;
 const Memory = bits.Memory;
@@ -74,7 +75,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             if (modrm.direct()) {
                 const op2: Instruction.Operand = switch (act_enc.op_en) {
                     .mi => .{ .imm = try dis.parseImm(act_enc.op2) },
-                    .m1 => .{ .imm = 1 },
+                    .m1 => .{ .imm = Immediate.u(1) },
                     .mc => .{ .reg = .cl },
                     .m => .none,
                     else => unreachable,
@@ -89,7 +90,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             const disp = try dis.parseDisplacement(modrm, sib);
             const op2: Instruction.Operand = switch (act_enc.op_en) {
                 .mi => .{ .imm = try dis.parseImm(act_enc.op2) },
-                .m1 => .{ .imm = 1 },
+                .m1 => .{ .imm = Immediate.u(1) },
                 .mc => .{ .reg = .cl },
                 .m => .none,
                 else => unreachable,
@@ -345,15 +346,18 @@ fn parseGpRegister(low_enc: u3, is_extended: bool, rex: Rex, bit_size: u64) Regi
     };
 }
 
-fn parseImm(dis: *Disassembler, kind: Encoding.Op) !u64 {
+fn parseImm(dis: *Disassembler, kind: Encoding.Op) !Immediate {
     var stream = std.io.fixedBufferStream(dis.code[dis.pos..]);
     var creader = std.io.countingReader(stream.reader());
     const reader = creader.reader();
     const imm = switch (kind) {
-        .imm8, .rel8 => @bitCast(u8, try reader.readInt(i8, .Little)),
-        .imm16, .rel16 => @bitCast(u16, try reader.readInt(i16, .Little)),
-        .imm32, .rel32 => @bitCast(u32, try reader.readInt(i32, .Little)),
-        .imm64 => try reader.readInt(u64, .Little),
+        .imm8s, .rel8 => Immediate.s(try reader.readInt(i8, .Little)),
+        .imm16s, .rel16 => Immediate.s(try reader.readInt(i16, .Little)),
+        .imm32s, .rel32 => Immediate.s(try reader.readInt(i32, .Little)),
+        .imm8 => Immediate.u(try reader.readInt(u8, .Little)),
+        .imm16 => Immediate.u(try reader.readInt(u16, .Little)),
+        .imm32 => Immediate.u(try reader.readInt(u32, .Little)),
+        .imm64 => Immediate.u(try reader.readInt(u64, .Little)),
         else => unreachable,
     };
     dis.pos += creader.bytes_read;

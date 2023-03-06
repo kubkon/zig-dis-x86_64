@@ -414,8 +414,8 @@ pub const Op = enum {
 
     pub fn bitSize(op: Op) u64 {
         return switch (op) {
-            .none, .o16, .o32, .o64, .moffs, .m, .sreg, .unity => unreachable,
-            .imm8, .imm8s, .al, .cl, .r8, .m8, .rm8, .rel8 => 8,
+            .none, .o16, .o32, .o64, .moffs, .m, .sreg => unreachable,
+            .unity, .imm8, .imm8s, .al, .cl, .r8, .m8, .rm8, .rel8 => 8,
             .imm16, .imm16s, .ax, .r16, .m16, .rm16, .rel16 => 16,
             .imm32, .imm32s, .eax, .r32, .m32, .rm32, .rel32, .xmm_m32 => 32,
             .imm64, .rax, .r64, .m64, .rm64, .xmm_m64 => 64,
