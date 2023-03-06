@@ -494,6 +494,8 @@ pub const table = &[_]Entry{
     .{ .@"test", .mr, .rm32, .r32,   .none, .none, 1, 0x85, 0x00, 0x00, 0, .none  },
     .{ .@"test", .mr, .rm64, .r64,   .none, .none, 1, 0x85, 0x00, 0x00, 0, .long  },
 
+    .{ .ud2, .np, .none, .none, .none, .none, 2, 0x0f, 0x0b, 0x00, 0, .none  },
+
     .{ .xor, .zi, .al,   .imm8,  .none, .none, 1, 0x34, 0x00, 0x00, 0, .none  },
     .{ .xor, .zi, .ax,   .imm16, .none, .none, 1, 0x35, 0x00, 0x00, 0, .none  },
     .{ .xor, .zi, .eax,  .imm32, .none, .none, 1, 0x35, 0x00, 0x00, 0, .none  },

@@ -298,6 +298,7 @@ pub const Mnemonic = enum {
     setnb, setnbe, setnc, setne, setng, setnge, setnl, setnle, setno, setnp, setns,
     setnz, seto, setp, setpe, setpo, sets, setz,
     @"test",
+    ud2,
     xor,
     // SSE
     addss,

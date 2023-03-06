@@ -762,6 +762,7 @@ test "assemble" {
         \\fld tbyte ptr [rbp]
         \\fld dword ptr [rbp]
         \\xor bl, 0xff
+        \\ud2
         \\
     ;
 
@@ -821,6 +822,7 @@ test "assemble" {
         0xDB, 0x6D, 0x00,
         0xD9, 0x45, 0x00,
         0x80, 0xF3, 0xFF,
+        0x0F, 0x0B,
     };
     // zig fmt: on
 
