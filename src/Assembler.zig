@@ -59,6 +59,7 @@ const Tokenizer = struct {
             new_line,
             string,
             numeral,
+            numeral_hex,
         } = .start;
 
         while (it.pos < it.input.len) : (it.pos += 1) {
@@ -132,7 +133,17 @@ const Tokenizer = struct {
                 },
 
                 .numeral => switch (ch) {
-                    'x', '0'...'9' => {}, // TODO validate there is only one '0x' pair within a numeral
+                    'x' => state = .numeral_hex,
+                    '0'...'9' => {},
+                    else => {
+                        result.id = .numeral;
+                        break;
+                    },
+                },
+
+                .numeral_hex => switch (ch) {
+                    'a'...'f' => {},
+                    '0'...'9' => {},
                     else => {
                         result.id = .numeral;
                         break;
@@ -144,7 +155,7 @@ const Tokenizer = struct {
         if (it.pos >= it.input.len) {
             switch (state) {
                 .string => result.id = .string,
-                .numeral => result.id = .numeral,
+                .numeral, .numeral_hex => result.id = .numeral,
                 else => {},
             }
         }
@@ -166,8 +177,7 @@ pub fn init(input: []const u8) Assembler {
 
 pub fn assemble(as: *Assembler, writer: anytype) !void {
     while (try as.next()) |parsed_inst| {
-        const inst = try Instruction.new(.{
-            .mnemonic = parsed_inst.mnemonic,
+        const inst = try Instruction.new(parsed_inst.mnemonic, .{
             .op1 = parsed_inst.ops[0],
             .op2 = parsed_inst.ops[1],
             .op3 = parsed_inst.ops[2],
@@ -296,7 +306,7 @@ fn parseOperandRule(as: *Assembler, rule: anytype, ops: *[4]Operand) ParseError!
             .immediate => {
                 const imm_tok = try as.expect(.numeral);
                 const imm = try std.fmt.parseInt(u64, as.source(imm_tok), 0);
-                ops[i] = .{ .imm = @bitCast(i64, imm) };
+                ops[i] = .{ .imm = imm };
             },
             else => @compileError("unhandled enum literal " ++ @tagName(cond)),
         }

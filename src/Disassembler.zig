@@ -345,15 +345,15 @@ fn parseGpRegister(low_enc: u3, is_extended: bool, rex: Rex, bit_size: u64) Regi
     };
 }
 
-fn parseImm(dis: *Disassembler, kind: Encoding.Op) !i64 {
+fn parseImm(dis: *Disassembler, kind: Encoding.Op) !u64 {
     var stream = std.io.fixedBufferStream(dis.code[dis.pos..]);
     var creader = std.io.countingReader(stream.reader());
     const reader = creader.reader();
     const imm = switch (kind) {
-        .imm8, .rel8 => try reader.readInt(i8, .Little),
-        .imm16, .rel16 => try reader.readInt(i16, .Little),
-        .imm32, .rel32 => try reader.readInt(i32, .Little),
-        .imm64 => try reader.readInt(i64, .Little),
+        .imm8, .rel8 => @bitCast(u8, try reader.readInt(i8, .Little)),
+        .imm16, .rel16 => @bitCast(u16, try reader.readInt(i16, .Little)),
+        .imm32, .rel32 => @bitCast(u32, try reader.readInt(i32, .Little)),
+        .imm64 => try reader.readInt(u64, .Little),
         else => unreachable,
     };
     dis.pos += creader.bytes_read;

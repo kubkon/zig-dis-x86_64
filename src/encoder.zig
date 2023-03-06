@@ -22,7 +22,7 @@ pub const Instruction = struct {
         none,
         reg: Register,
         mem: Memory,
-        imm: i64,
+        imm: u64,
 
         /// Returns the bitsize of the operand.
         /// Asserts the operand is either register or memory.
@@ -46,7 +46,7 @@ pub const Instruction = struct {
             };
         }
 
-        pub fn fmtPrint(op: Operand, enc_op: Encoding.Op, writer: anytype) !void {
+        pub fn fmtPrint(op: Operand, writer: anytype) !void {
             switch (op) {
                 .none => {},
                 .reg => |reg| try writer.writeAll(@tagName(reg)),
@@ -91,33 +91,32 @@ pub const Instruction = struct {
                     },
                     .moffs => |moffs| try writer.print("{s}:0x{x}", .{ @tagName(moffs.seg), moffs.offset }),
                 },
-                .imm => |imm| {
-                    if (enc_op == .imm64) {
-                        return writer.print("0x{x}", .{@bitCast(u64, imm)});
-                    }
-                    const imm_abs = try std.math.absInt(imm);
-                    if (sign(imm) < 0) {
-                        try writer.writeByte('-');
-                    }
-                    try writer.print("0x{x}", .{imm_abs});
-                },
+                .imm => |imm| return writer.print("0x{x}", .{imm}),
             }
         }
     };
 
-    pub fn new(args: struct {
-        mnemonic: Mnemonic,
+    pub fn new(mnemonic: Mnemonic, args: struct {
         op1: Operand = .none,
         op2: Operand = .none,
         op3: Operand = .none,
         op4: Operand = .none,
     }) !Instruction {
-        const encoding = Encoding.findByMnemonic(args.mnemonic, .{
+        const encoding = Encoding.findByMnemonic(mnemonic, .{
             .op1 = args.op1,
             .op2 = args.op2,
             .op3 = args.op3,
             .op4 = args.op4,
-        }) orelse return error.InvalidInstruction;
+        }) orelse {
+            std.log.debug("{s} {s} {s} {s} {s}", .{
+                @tagName(mnemonic),
+                @tagName(Encoding.Op.fromOperand(args.op1)),
+                @tagName(Encoding.Op.fromOperand(args.op2)),
+                @tagName(Encoding.Op.fromOperand(args.op3)),
+                @tagName(Encoding.Op.fromOperand(args.op4)),
+            });
+            return error.InvalidInstruction;
+        };
         std.log.debug("{}", .{encoding});
         return .{
             .op1 = args.op1,
@@ -130,19 +129,14 @@ pub const Instruction = struct {
 
     pub fn fmtPrint(inst: Instruction, writer: anytype) !void {
         try writer.print("{s}", .{@tagName(inst.encoding.mnemonic)});
-        const ops = [_]struct { Operand, Encoding.Op }{
-            .{ inst.op1, inst.encoding.op1 },
-            .{ inst.op2, inst.encoding.op2 },
-            .{ inst.op3, inst.encoding.op3 },
-            .{ inst.op4, inst.encoding.op4 },
-        };
+        const ops = [_]Operand{ inst.op1, inst.op2, inst.op3, inst.op4 };
         for (&ops, 0..) |op, i| {
-            if (op[0] == .none) break;
+            if (op == .none) break;
             if (i > 0) {
                 try writer.writeByte(',');
             }
             try writer.writeByte(' ');
-            try op[0].fmtPrint(op[1], writer);
+            try op.fmtPrint(writer);
         }
     }
 
@@ -387,12 +381,12 @@ pub const Instruction = struct {
         }
     }
 
-    fn encodeImm(imm: i64, kind: Encoding.Op, encoder: anytype) !void {
+    fn encodeImm(imm: u64, kind: Encoding.Op, encoder: anytype) !void {
         switch (kind) {
-            .imm8, .rel8 => try encoder.imm8(@truncate(i8, imm)),
-            .imm16, .rel16 => try encoder.imm16(@truncate(i16, imm)),
-            .imm32, .rel32 => try encoder.imm32(@truncate(i32, imm)),
-            .imm64 => try encoder.imm64(@bitCast(u64, imm)),
+            .imm8, .rel8 => try encoder.imm8(@intCast(u8, imm)),
+            .imm16, .rel16 => try encoder.imm16(@intCast(u16, imm)),
+            .imm32, .rel32 => try encoder.imm32(@intCast(u32, imm)),
+            .imm64 => try encoder.imm64(imm),
             else => unreachable,
         }
     }
@@ -739,13 +733,6 @@ fn Encoder(comptime T: type) type {
         // Trivial (no bit fiddling)
         // -------------------------
 
-        /// Encode an 8 bit immediate
-        ///
-        /// It is sign-extended to 64 bits by the cpu.
-        pub fn imm8(self: Self, imm: i8) !void {
-            try self.writer.writeByte(@bitCast(u8, imm));
-        }
-
         /// Encode an 8 bit displacement
         ///
         /// It is sign-extended to 64 bits by the cpu.
@@ -753,25 +740,32 @@ fn Encoder(comptime T: type) type {
             try self.writer.writeByte(@bitCast(u8, disp));
         }
 
-        /// Encode an 16 bit immediate
-        ///
-        /// It is sign-extended to 64 bits by the cpu.
-        pub fn imm16(self: Self, imm: i16) !void {
-            try self.writer.writeIntLittle(i16, imm);
-        }
-
-        /// Encode an 32 bit immediate
-        ///
-        /// It is sign-extended to 64 bits by the cpu.
-        pub fn imm32(self: Self, imm: i32) !void {
-            try self.writer.writeIntLittle(i32, imm);
-        }
-
         /// Encode an 32 bit displacement
         ///
         /// It is sign-extended to 64 bits by the cpu.
         pub fn disp32(self: Self, disp: i32) !void {
             try self.writer.writeIntLittle(i32, disp);
+        }
+
+        /// Encode an 8 bit immediate
+        ///
+        /// It is sign-extended to 64 bits by the cpu.
+        pub fn imm8(self: Self, imm: u8) !void {
+            try self.writer.writeByte(imm);
+        }
+
+        /// Encode an 16 bit immediate
+        ///
+        /// It is sign-extended to 64 bits by the cpu.
+        pub fn imm16(self: Self, imm: u16) !void {
+            try self.writer.writeIntLittle(u16, imm);
+        }
+
+        /// Encode an 32 bit immediate
+        ///
+        /// It is sign-extended to 64 bits by the cpu.
+        pub fn imm32(self: Self, imm: u32) !void {
+            try self.writer.writeIntLittle(u32, imm);
         }
 
         /// Encode an 64 bit immediate

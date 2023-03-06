@@ -83,7 +83,7 @@ test "disassemble" {
 
     try testing.expectEqualStrings(
         \\mov rax, 0x10
-        \\mov r12d, -0x10
+        \\mov r12d, 0xfffffff0
         \\mov r12, rax
         \\mov qword ptr [rip - 0x10], r12
         \\mov qword ptr [rip - 0x10], r11
@@ -99,7 +99,7 @@ test "disassemble" {
         \\lea r12, qword ptr [rip]
         \\add rax, qword ptr [rip]
         \\add rax, 0x10
-        \\add qword ptr [rbp - 0x10], -0x10
+        \\add qword ptr [rbp - 0x10], 0xf0
         \\adc byte ptr [rbp - 0x10], 0x10
         \\and qword ptr [rax + 0x10], 0x8
         \\or qword ptr [rbp + 0x10], 0xf
@@ -110,8 +110,8 @@ test "disassemble" {
         \\sbb eax, 0x0
         \\sub rax, 0xf
         \\sbb ax, 0x1000
-        \\and ax, -0x10
-        \\and rax, -0x10
+        \\and ax, 0xfff0
+        \\and rax, 0xfffffff0
         \\mov ax, gs:0x10
         \\mov ss:0x0, al
         \\mov es:0x8, eax
