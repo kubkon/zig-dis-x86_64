@@ -4,6 +4,7 @@ const math = std.math;
 
 const bits = @import("bits.zig");
 const Encoding = @import("Encoding.zig");
+const Immediate = bits.Immediate;
 const Memory = bits.Memory;
 const Moffs = bits.Moffs;
 const PtrSize = bits.PtrSize;
@@ -22,10 +23,9 @@ pub const Instruction = struct {
         none,
         reg: Register,
         mem: Memory,
-        imm: u64,
+        imm: Immediate,
 
         /// Returns the bitsize of the operand.
-        /// Asserts the operand is either register or memory.
         pub fn bitSize(op: Operand) u64 {
             return switch (op) {
                 .none => unreachable,
@@ -91,7 +91,16 @@ pub const Instruction = struct {
                     },
                     .moffs => |moffs| try writer.print("{s}:0x{x}", .{ @tagName(moffs.seg), moffs.offset }),
                 },
-                .imm => |imm| return writer.print("0x{x}", .{imm}),
+                .imm => |imm| switch (imm) {
+                    .unsigned => |x| try writer.print("0x{x}", .{x}),
+                    .signed => |x| {
+                        const abs_x = try std.math.absInt(x);
+                        if (sign(x) < 0) {
+                            try writer.writeByte('-');
+                        }
+                        try writer.print("0x{x}", .{abs_x});
+                    },
+                },
             }
         }
     };
@@ -381,12 +390,13 @@ pub const Instruction = struct {
         }
     }
 
-    fn encodeImm(imm: u64, kind: Encoding.Op, encoder: anytype) !void {
-        switch (kind) {
-            .imm8, .rel8 => try encoder.imm8(@intCast(u8, imm)),
-            .imm16, .rel16 => try encoder.imm16(@intCast(u16, imm)),
-            .imm32, .rel32 => try encoder.imm32(@intCast(u32, imm)),
-            .imm64 => try encoder.imm64(imm),
+    fn encodeImm(imm: Immediate, kind: Encoding.Op, encoder: anytype) !void {
+        const raw = imm.asUnsigned(kind.bitSize());
+        switch (kind.bitSize()) {
+            8 => try encoder.imm8(@intCast(u8, raw)),
+            16 => try encoder.imm16(@intCast(u16, raw)),
+            32 => try encoder.imm32(@intCast(u32, raw)),
+            64 => try encoder.imm64(raw),
             else => unreachable,
         }
     }

@@ -5,6 +5,7 @@ const assert = std.debug.assert;
 const bits = @import("bits.zig");
 const encoder = @import("encoder.zig");
 
+const Immediate = bits.Immediate;
 const Instruction = encoder.Instruction;
 const Memory = bits.Memory;
 const Mnemonic = Instruction.Mnemonic;
@@ -304,8 +305,12 @@ fn parseOperandRule(as: *Assembler, rule: anytype, ops: *[4]Operand) ParseError!
                 ops[i] = .{ .mem = mem };
             },
             .immediate => {
+                const is_neg = if (as.expect(.minus)) |_| true else |_| false;
                 const imm_tok = try as.expect(.numeral);
-                const imm = try std.fmt.parseInt(u64, as.source(imm_tok), 0);
+                const imm: Immediate = if (is_neg) blk: {
+                    const imm = try std.fmt.parseInt(i32, as.source(imm_tok), 0);
+                    break :blk .{ .signed = imm * -1 };
+                } else .{ .unsigned = try std.fmt.parseInt(u64, as.source(imm_tok), 0) };
                 ops[i] = .{ .imm = imm };
             },
             else => @compileError("unhandled enum literal " ++ @tagName(cond)),

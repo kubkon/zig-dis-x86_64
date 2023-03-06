@@ -244,9 +244,9 @@ pub fn format(
                 else => unreachable,
             };
             const tag = switch (op) {
-                .imm8 => "ib",
-                .imm16 => "iw",
-                .imm32 => "id",
+                .imm8, .imm8s => "ib",
+                .imm16, .imm16s => "iw",
+                .imm32, .imm32s => "id",
                 .imm64 => "io",
                 .rel8 => "cb",
                 .rel16 => "cw",
@@ -330,6 +330,7 @@ pub const Op = enum {
     o16, o32, o64,
     unity,
     imm8, imm16, imm32, imm64,
+    imm8s, imm16s, imm32s,
     al, ax, eax, rax,
     cl,
     r8, r16, r32, r64,
@@ -389,11 +390,24 @@ pub const Op = enum {
             },
 
             .imm => |imm| {
-                if (imm == 1) return .unity;
-                if (math.cast(u8, imm)) |_| return .imm8;
-                if (math.cast(u16, imm)) |_| return .imm16;
-                if (math.cast(u32, imm)) |_| return .imm32;
-                return .imm64;
+                switch (imm) {
+                    .signed => |x| {
+                        if (x == 1) return .unity;
+                        if (math.cast(i8, x)) |_| return .imm8s;
+                        if (math.cast(i16, x)) |_| return .imm16s;
+                        return .imm32s;
+                    },
+                    .unsigned => |x| {
+                        if (x == 1) return .unity;
+                        if (math.cast(i8, x)) |_| return .imm8s;
+                        if (math.cast(u8, x)) |_| return .imm8;
+                        if (math.cast(i16, x)) |_| return .imm16s;
+                        if (math.cast(u16, x)) |_| return .imm16;
+                        if (math.cast(i32, x)) |_| return .imm32s;
+                        if (math.cast(u32, x)) |_| return .imm32;
+                        return .imm64;
+                    },
+                }
             },
         }
     }
@@ -401,9 +415,9 @@ pub const Op = enum {
     pub fn bitSize(op: Op) u64 {
         return switch (op) {
             .none, .o16, .o32, .o64, .moffs, .m, .sreg, .unity => unreachable,
-            .imm8, .al, .cl, .r8, .m8, .rm8, .rel8 => 8,
-            .imm16, .ax, .r16, .m16, .rm16, .rel16 => 16,
-            .imm32, .eax, .r32, .m32, .rm32, .rel32, .xmm_m32 => 32,
+            .imm8, .imm8s, .al, .cl, .r8, .m8, .rm8, .rel8 => 8,
+            .imm16, .imm16s, .ax, .r16, .m16, .rm16, .rel16 => 16,
+            .imm32, .imm32s, .eax, .r32, .m32, .rm32, .rel32, .xmm_m32 => 32,
             .imm64, .rax, .r64, .m64, .rm64, .xmm_m64 => 64,
             .m80 => 80,
             .xmm => 128,
@@ -428,6 +442,7 @@ pub const Op = enum {
         // zig fmt: off
         return switch (op) {
             .imm8, .imm16, .imm32, .imm64, 
+            .imm8s, .imm16s, .imm32s,
             .rel8, .rel16, .rel32,
             .unity,
             =>  true,
@@ -491,16 +506,28 @@ pub const Op = enum {
                 }
                 if (op.isImmediate() and target.isImmediate()) {
                     switch (target) {
-                        .imm32, .rel32 => switch (op) {
-                            .unity, .imm8, .imm16, .imm32 => return true,
+                        .imm32s, .rel32 => switch (op) {
+                            .unity, .imm8s, .imm8, .imm16s, .imm16, .imm32s => return true,
                             else => return op == target,
                         },
-                        .imm16, .rel16 => switch (op) {
-                            .unity, .imm8, .imm16 => return true,
+                        .imm32 => switch (op) {
+                            .unity, .imm8, .imm8s, .imm16, .imm16s, .imm32, .imm32s => return true,
                             else => return op == target,
                         },
-                        .imm8, .rel8 => switch (op) {
-                            .unity, .imm8 => return true,
+                        .imm16s, .rel16 => switch (op) {
+                            .unity, .imm8s, .imm8, .imm16s => return true,
+                            else => return op == target,
+                        },
+                        .imm16 => switch (op) {
+                            .unity, .imm8, .imm8s, .imm16, .imm16s => return true,
+                            else => return op == target,
+                        },
+                        .imm8s, .rel8 => switch (op) {
+                            .unity, .imm8s => return true,
+                            else => return op == target,
+                        },
+                        .imm8 => switch (op) {
+                            .unity, .imm8, .imm8s => return true,
                             else => return op == target,
                         },
                         else => return op == target,

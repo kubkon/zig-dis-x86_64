@@ -336,3 +336,34 @@ pub const Memory = union(enum) {
         };
     }
 };
+
+pub const Immediate = union(enum) {
+    signed: i32,
+    unsigned: u64,
+
+    pub fn u(x: u64) Immediate {
+        return .{ .unsigned = x };
+    }
+
+    pub fn s(x: i32) Immediate {
+        return .{ .signed = x };
+    }
+
+    pub fn asUnsigned(imm: Immediate, bit_size: u64) u64 {
+        return switch (imm) {
+            .signed => |x| switch (bit_size) {
+                8 => @bitCast(u8, @intCast(i8, x)),
+                16 => @bitCast(u16, @intCast(i16, x)),
+                32 => @bitCast(u32, @intCast(i32, x)),
+                else => unreachable,
+            },
+            .unsigned => |x| switch (bit_size) {
+                8 => @intCast(u8, x),
+                16 => @intCast(u16, x),
+                32 => @intCast(u32, x),
+                64 => x,
+                else => unreachable,
+            },
+        };
+    }
+};
