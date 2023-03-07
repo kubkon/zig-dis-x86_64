@@ -710,15 +710,12 @@ fn cannotEncode(mnemonic: Mnemonic, args: struct {
     op3: Operand = .none,
     op4: Operand = .none,
 }) !void {
-    var buffer: [32]u8 = undefined;
-    var stream = std.io.fixedBufferStream(&buffer);
-    var inst = try Instruction.new(mnemonic, .{
+    try testing.expectError(error.CannotEncode, Instruction.new(mnemonic, .{
         .op1 = args.op1,
         .op2 = args.op2,
         .op3 = args.op3,
         .op4 = args.op4,
-    });
-    try testing.expectError(error.CannotEncode, inst.encode(stream.writer()));
+    }));
 }
 
 test "cannot encode" {

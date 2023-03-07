@@ -35,18 +35,35 @@ pub fn findByMnemonic(mnemonic: Mnemonic, args: struct {
     const input_op3 = Op.fromOperand(args.op3);
     const input_op4 = Op.fromOperand(args.op4);
 
-    const rex_required = for (&[_]Instruction.Operand{
-        args.op1,
-        args.op2,
-        args.op3,
-        args.op4,
-    }) |op| switch (op) {
+    const ops = &[_]Instruction.Operand{ args.op1, args.op2, args.op3, args.op4 };
+    const rex_required = for (ops) |op| switch (op) {
         .reg => |r| switch (r) {
             .spl, .bpl, .sil, .dil => break true,
             else => {},
         },
         else => {},
     } else false;
+    const rex_invalid = for (ops) |op| switch (op) {
+        .reg => |r| switch (r) {
+            .ah, .bh, .ch, .dh => break true,
+            else => {},
+        },
+        else => {},
+    } else false;
+    const rex_extended = for (ops) |op| switch (op) {
+        .reg => |r| if (r.isExtended()) break true,
+        .mem => |m| {
+            if (m.base()) |base| {
+                if (base.isExtended()) break true;
+            }
+            if (m.scaleIndex()) |si| {
+                if (si.index.isExtended()) break true;
+            }
+        },
+        else => {},
+    } else false;
+
+    if ((rex_required or rex_extended) and rex_invalid) return error.CannotEncode;
 
     // TODO work out what is the maximum number of variants we can actually find in one swoop.
     var candidates: [10]Encoding = undefined;
@@ -88,7 +105,6 @@ pub fn findByMnemonic(mnemonic: Mnemonic, args: struct {
     }
 
     if (count == 0) return null;
-    if (count == 1) return candidates[0];
 
     const EncodingLength = struct {
         fn estimate(encoding: Encoding, params: struct {
@@ -105,7 +121,7 @@ pub fn findByMnemonic(mnemonic: Mnemonic, args: struct {
                 .encoding = encoding,
             };
             var cwriter = std.io.countingWriter(std.io.null_writer);
-            try inst.encode(cwriter.writer());
+            inst.encode(cwriter.writer()) catch unreachable;
             return cwriter.bytes_written;
         }
     };
@@ -116,7 +132,13 @@ pub fn findByMnemonic(mnemonic: Mnemonic, args: struct {
     } = null;
     var i: usize = 0;
     while (i < count) : (i += 1) {
-        const len = try EncodingLength.estimate(candidates[i], .{
+        const candidate = candidates[i];
+        switch (candidate.mode) {
+            .long, .rex => if (rex_invalid) return error.CannotEncode,
+            else => {},
+        }
+
+        const len = try EncodingLength.estimate(candidate, .{
             .op1 = args.op1,
             .op2 = args.op2,
             .op3 = args.op3,

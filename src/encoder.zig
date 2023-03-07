@@ -288,18 +288,6 @@ pub const Instruction = struct {
             },
         }
 
-        if (rex.isSet() or rex.present) {
-            // Check if we need REX and can actually encode it
-            const is_rex_invalid = for (&[_]Operand{ inst.op1, inst.op2, inst.op3, inst.op4 }) |op| switch (op) {
-                .reg => |r| switch (r) {
-                    .ah, .bh, .ch, .dh => break true,
-                    else => {},
-                },
-                else => {},
-            } else false;
-
-            if (is_rex_invalid) return error.CannotEncode;
-        }
         try encoder.rex(rex);
     }
 
