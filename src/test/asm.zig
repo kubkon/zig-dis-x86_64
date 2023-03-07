@@ -730,6 +730,10 @@ test "cannot encode" {
         .op1 = .{ .reg = .r11b },
         .op2 = .{ .reg = .bh },
     });
+    try cannotEncode(.mov, .{
+        .op1 = .{ .reg = .sil },
+        .op2 = .{ .reg = .ah },
+    });
 }
 
 test "assemble" {
@@ -791,6 +795,7 @@ test "assemble" {
         \\ud2
         \\add rsp, -1
         \\add rsp, 0xff
+        \\mov sil, byte ptr [rax + rcx * 1]
         \\
     ;
 
@@ -853,6 +858,7 @@ test "assemble" {
         0x0F, 0x0B,
         0x48, 0x83, 0xC4, 0xFF,
         0x48, 0x81, 0xC4, 0xFF, 0x00, 0x00, 0x00,
+        0x40, 0x8A, 0x34, 0x08,
     };
     // zig fmt: on
 

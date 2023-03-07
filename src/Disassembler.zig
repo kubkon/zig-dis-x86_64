@@ -245,7 +245,6 @@ fn parsePrefixes(dis: *Disassembler) !Prefixes {
     const reader = stream.reader();
 
     var res: Prefixes = .{};
-    var has_rex = false;
 
     while (true) {
         const next_byte = try reader.readByte();
@@ -254,7 +253,7 @@ fn parsePrefixes(dis: *Disassembler) !Prefixes {
         switch (next_byte) {
             0xf0, 0xf2, 0xf3, 0x2e, 0x36, 0x26, 0x64, 0x65, 0x3e, 0x66, 0x67 => {
                 // Legacy prefix
-                if (has_rex) return error.LegacyPrefixAfterRex;
+                if (res.rex.present) return error.LegacyPrefixAfterRex;
                 switch (next_byte) {
                     0xf0 => res.legacy.prefix_f0 = true,
                     0xf2 => res.legacy.prefix_f2 = true,
@@ -277,7 +276,7 @@ fn parsePrefixes(dis: *Disassembler) !Prefixes {
                     res.rex.r = next_byte & 0b100 != 0;
                     res.rex.x = next_byte & 0b10 != 0;
                     res.rex.b = next_byte & 0b1 != 0;
-                    has_rex = true;
+                    res.rex.present = true;
                     continue;
                 }
 
@@ -338,10 +337,10 @@ fn parseGpRegister(low_enc: u3, is_extended: bool, rex: Rex, bit_size: u64) Regi
     const reg_id: u4 = @intCast(u4, @boolToInt(is_extended)) << 3 | low_enc;
     const reg = @intToEnum(Register, reg_id).toBitSize(bit_size);
     return switch (reg) {
-        .spl => if (rex.isSet()) .spl else .ah,
-        .dil => if (rex.isSet()) .dil else .bh,
-        .bpl => if (rex.isSet()) .bpl else .ch,
-        .sil => if (rex.isSet()) .sil else .dh,
+        .spl => if (rex.present or rex.isSet()) .spl else .ah,
+        .dil => if (rex.present or rex.isSet()) .dil else .bh,
+        .bpl => if (rex.present or rex.isSet()) .bpl else .ch,
+        .sil => if (rex.present or rex.isSet()) .sil else .dh,
         else => reg,
     };
 }
