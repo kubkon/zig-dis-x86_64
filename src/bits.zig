@@ -3,6 +3,9 @@ const assert = std.debug.assert;
 const math = std.math;
 const expect = std.testing.expect;
 
+pub const StringRepeat = enum(u3) { none, rep, repe, repz, repne, repnz };
+pub const StringWidth = enum(u2) { b, w, d, q };
+
 pub const Register = enum(u7) {
     // zig fmt: off
     rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi,
@@ -282,10 +285,11 @@ pub const Memory = union(enum) {
     }
 
     pub fn sib(ptr_size: PtrSize, args: struct {
-        disp: i32,
+        disp: i32 = 0,
         base: ?Register = null,
         scale_index: ?ScaleIndex = null,
     }) Memory {
+        if (args.scale_index) |si| assert(std.math.isPowerOfTwo(si.scale));
         return .{ .sib = .{
             .base = args.base,
             .disp = args.disp,

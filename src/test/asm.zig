@@ -36,15 +36,11 @@ const TestEncode = struct {
     buffer: [32]u8 = undefined,
     index: usize = 0,
 
-    fn encode(enc: *TestEncode, mnemonic: Mnemonic, args: struct {
-        op1: Operand = .none,
-        op2: Operand = .none,
-        op3: Operand = .none,
-        op4: Operand = .none,
-    }) !void {
+    fn encode(enc: *TestEncode, mnemonic: Mnemonic, args: Instruction.Init) !void {
         var stream = std.io.fixedBufferStream(&enc.buffer);
         var count_writer = std.io.countingWriter(stream.writer());
         const inst = try Instruction.new(mnemonic, .{
+            .prefix = args.prefix,
             .op1 = args.op1,
             .op2 = args.op2,
             .op3 = args.op3,
@@ -672,18 +668,8 @@ test "lower NP encoding" {
     try expectEqualHexStrings("\x0f\x05", enc.code(), "syscall");
 }
 
-fn invalidInstruction(mnemonic: Mnemonic, args: struct {
-    op1: Operand = .none,
-    op2: Operand = .none,
-    op3: Operand = .none,
-    op4: Operand = .none,
-}) !void {
-    const err = Instruction.new(mnemonic, .{
-        .op1 = args.op1,
-        .op2 = args.op2,
-        .op3 = args.op3,
-        .op4 = args.op4,
-    });
+fn invalidInstruction(mnemonic: Mnemonic, args: Instruction.Init) !void {
+    const err = Instruction.new(mnemonic, args);
     try testing.expectError(error.InvalidInstruction, err);
 }
 
@@ -704,18 +690,8 @@ test "invalid instruction" {
     try invalidInstruction(.push, .{ .op1 = .{ .imm = Immediate.u(0x1000000000000000) } });
 }
 
-fn cannotEncode(mnemonic: Mnemonic, args: struct {
-    op1: Operand = .none,
-    op2: Operand = .none,
-    op3: Operand = .none,
-    op4: Operand = .none,
-}) !void {
-    try testing.expectError(error.CannotEncode, Instruction.new(mnemonic, .{
-        .op1 = args.op1,
-        .op2 = args.op2,
-        .op3 = args.op3,
-        .op4 = args.op4,
-    }));
+fn cannotEncode(mnemonic: Mnemonic, args: Instruction.Init) !void {
+    try testing.expectError(error.CannotEncode, Instruction.new(mnemonic, args));
 }
 
 test "cannot encode" {
@@ -793,6 +769,8 @@ test "assemble" {
         \\add rsp, -1
         \\add rsp, 0xff
         \\mov sil, byte ptr [rax + rcx * 1]
+        \\cmpsd
+        \\cmpsd xmm0, xmm1, 8
         \\
     ;
 
@@ -856,6 +834,8 @@ test "assemble" {
         0x48, 0x83, 0xC4, 0xFF,
         0x48, 0x81, 0xC4, 0xFF, 0x00, 0x00, 0x00,
         0x40, 0x8A, 0x34, 0x08,
+        0xA7,
+        0xF2, 0x0F, 0xC2, 0xC1, 0x08,
     };
     // zig fmt: on
 

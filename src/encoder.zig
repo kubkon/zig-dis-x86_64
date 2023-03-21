@@ -15,9 +15,20 @@ pub const Instruction = struct {
     op2: Operand = .none,
     op3: Operand = .none,
     op4: Operand = .none,
+    prefix: Prefix = .none,
     encoding: Encoding,
 
     pub const Mnemonic = Encoding.Mnemonic;
+
+    pub const Prefix = enum(u3) {
+        none,
+        lock,
+        rep,
+        repe,
+        repz,
+        repne,
+        repnz,
+    };
 
     pub const Operand = union(enum) {
         none,
@@ -96,19 +107,18 @@ pub const Instruction = struct {
         }
     };
 
-    pub fn new(mnemonic: Mnemonic, args: struct {
+    pub const Init = struct {
+        prefix: Prefix = .none,
         op1: Operand = .none,
         op2: Operand = .none,
         op3: Operand = .none,
         op4: Operand = .none,
-    }) !Instruction {
-        const encoding = (try Encoding.findByMnemonic(mnemonic, .{
-            .op1 = args.op1,
-            .op2 = args.op2,
-            .op3 = args.op3,
-            .op4 = args.op4,
-        })) orelse {
-            std.log.debug("{s} {s} {s} {s} {s}", .{
+    };
+
+    pub fn new(mnemonic: Mnemonic, args: Init) !Instruction {
+        const encoding = (try Encoding.findByMnemonic(mnemonic, args)) orelse {
+            std.log.debug("no encoding found for: {s} {s} {s} {s} {s} {s}", .{
+                @tagName(args.prefix),
                 @tagName(mnemonic),
                 @tagName(Encoding.Op.fromOperand(args.op1)),
                 @tagName(Encoding.Op.fromOperand(args.op2)),
@@ -119,6 +129,7 @@ pub const Instruction = struct {
         };
         std.log.debug("{}", .{encoding});
         return .{
+            .prefix = args.prefix,
             .op1 = args.op1,
             .op2 = args.op2,
             .op3 = args.op3,
@@ -128,6 +139,7 @@ pub const Instruction = struct {
     }
 
     pub fn fmtPrint(inst: Instruction, writer: anytype) !void {
+        if (inst.prefix != .none) try writer.print("{s} ", .{@tagName(inst.prefix)});
         try writer.print("{s}", .{@tagName(inst.encoding.mnemonic)});
         const ops = [_]struct { Operand, Encoding.Op }{
             .{ inst.op1, inst.encoding.op1 },
@@ -199,14 +211,12 @@ pub const Instruction = struct {
 
     fn encodeOpcode(inst: Instruction, encoder: anytype) !void {
         const opcode = inst.encoding.opcode();
+        const first = @boolToInt(inst.encoding.mandatoryPrefix() != null);
+        const final = opcode.len - 1;
+        for (opcode[first..final]) |byte| try encoder.opcode_1byte(byte);
         switch (inst.encoding.op_en) {
-            .o, .oi => try encoder.opcode_withReg(opcode[0], inst.op1.reg.lowEnc()),
-            else => {
-                const index: usize = if (inst.encoding.mandatoryPrefix()) |_| 1 else 0;
-                for (opcode[index..]) |byte| {
-                    try encoder.opcode_1byte(byte);
-                }
-            },
+            .o, .oi => try encoder.opcode_withReg(opcode[final], inst.op1.reg.lowEnc()),
+            else => try encoder.opcode_1byte(opcode[final]),
         }
     }
 
@@ -215,6 +225,14 @@ pub const Instruction = struct {
         const op_en = enc.op_en;
 
         var legacy = LegacyPrefixes{};
+
+        switch (inst.prefix) {
+            .none => {},
+            .lock => legacy.prefix_f0 = true,
+            .repne, .repnz => legacy.prefix_f2 = true,
+            .rep, .repe, .repz => legacy.prefix_f3 = true,
+        }
+
         if (enc.mode == .none) {
             const bit_size = enc.operandBitSize();
             if (bit_size == 16) {
