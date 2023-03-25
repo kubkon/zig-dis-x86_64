@@ -137,7 +137,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
                 .encoding = enc,
             };
         },
-        .mr => {
+        .mr, .mri, .mrc => {
             const modrm = try dis.parseModRmByte();
             const sib = if (modrm.sib()) try dis.parseSibByte() else null;
             const dst_bit_size = enc.op1.bitSize();
@@ -152,11 +152,18 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             }
 
             const disp = try dis.parseDisplacement(modrm, sib);
+            const op3: Instruction.Operand = switch (enc.op_en) {
+                .mri => .{ .imm = try dis.parseImm(enc.op3) },
+                .mrc => .{ .reg = .cl },
+                .mr => .none,
+                else => unreachable,
+            };
 
             if (modrm.rip()) {
                 return Instruction{
                     .op1 = .{ .mem = Memory.rip(Memory.PtrSize.fromBitSize(dst_bit_size), disp) },
                     .op2 = .{ .reg = parseGpRegister(modrm.op1, prefixes.rex.r, prefixes.rex, src_bit_size) },
+                    .op3 = op3,
                     .encoding = enc,
                 };
             }
@@ -174,6 +181,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
                     .disp = disp,
                 }) },
                 .op2 = .{ .reg = reg },
+                .op3 = op3,
                 .encoding = enc,
             };
         },
@@ -185,8 +193,8 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
 
             if (modrm.direct()) {
                 const op3: Instruction.Operand = switch (enc.op_en) {
-                    .rmi => .{ .imm = try dis.parseImm(enc.op3) },
                     .rm => .none,
+                    .rmi => .{ .imm = try dis.parseImm(enc.op3) },
                     else => unreachable,
                 };
                 return Instruction{
