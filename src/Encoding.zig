@@ -263,15 +263,15 @@ pub fn format(
             try writer.print("+{s} ", .{tag});
         },
         .m, .mi, .m1, .mc => try writer.print("/{d} ", .{encoding.modRmExt()}),
-        .mr, .rm, .rmi => try writer.writeAll("/r "),
+        .mr, .rm, .rmi, .mri, .mrc => try writer.writeAll("/r "),
     }
 
     switch (encoding.op_en) {
-        .i, .d, .zi, .oi, .mi, .rmi => {
+        .i, .d, .zi, .oi, .mi, .rmi, .mri => {
             const op = switch (encoding.op_en) {
                 .i, .d => encoding.op1,
                 .zi, .oi, .mi => encoding.op2,
-                .rmi => encoding.op3,
+                .rmi, .mri => encoding.op3,
                 else => unreachable,
             };
             const tag = switch (op) {
@@ -286,7 +286,7 @@ pub fn format(
             };
             try writer.print("{s} ", .{tag});
         },
-        .np, .fd, .td, .o, .m, .m1, .mc, .mr, .rm => {},
+        .np, .fd, .td, .o, .m, .m1, .mc, .mr, .rm, .mrc => {},
     }
 
     try writer.print("{s} ", .{@tagName(encoding.mnemonic)});
@@ -335,7 +335,7 @@ pub const Mnemonic = enum {
     rcl, rcr, ret, rol, ror,
     sal, sar, sbb,
     scas, scasb, scasd, scasq, scasw,
-    shl, shr, sub, syscall,
+    shl, shld, shr, shrd, sub, syscall,
     seta, setae, setb, setbe, setc, sete, setg, setge, setl, setle, setna, setnae,
     setnb, setnbe, setnc, setne, setng, setnge, setnl, setnle, setno, setnp, setns,
     setnz, seto, setp, setpe, setpo, sets, setz,
@@ -375,7 +375,8 @@ pub const OpEn = enum {
     i, zi,
     d, m,
     fd, td,
-    m1, mc, mi, mr, rm, rmi,
+    m1, mc, mi, mr, rm,
+    rmi, mri, mrc,
     // zig fmt: on
 };
 
@@ -384,13 +385,13 @@ pub const Op = enum {
     none,
     o16, o32, o64,
     unity,
-    imm8, imm16, imm32, imm64, m128,
+    imm8, imm16, imm32, imm64,
     imm8s, imm16s, imm32s,
     al, ax, eax, rax,
     cl,
     r8, r16, r32, r64,
     rm8, rm16, rm32, rm64,
-    m8, m16, m32, m64, m80,
+    m8, m16, m32, m64, m80, m128,
     rel8, rel16, rel32,
     m,
     moffs,

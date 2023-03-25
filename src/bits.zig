@@ -239,6 +239,7 @@ pub const Memory = union(enum) {
         dword,
         qword,
         tbyte,
+        dqword,
 
         pub fn fromBitSize(bit_size: u64) PtrSize {
             return switch (bit_size) {
@@ -247,6 +248,7 @@ pub const Memory = union(enum) {
                 32 => .dword,
                 64 => .qword,
                 80 => .tbyte,
+                128 => .dqword,
                 else => unreachable,
             };
         }
@@ -258,6 +260,7 @@ pub const Memory = union(enum) {
                 .dword => 32,
                 .qword => 64,
                 .tbyte => 80,
+                .dqword => 128,
             };
         }
     };
