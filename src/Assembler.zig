@@ -178,12 +178,7 @@ pub fn init(input: []const u8) Assembler {
 
 pub fn assemble(as: *Assembler, writer: anytype) !void {
     while (try as.next()) |parsed_inst| {
-        const inst = try Instruction.new(parsed_inst.mnemonic, .{
-            .op1 = parsed_inst.ops[0],
-            .op2 = parsed_inst.ops[1],
-            .op3 = parsed_inst.ops[2],
-            .op4 = parsed_inst.ops[3],
-        });
+        const inst = try Instruction.new(.none, parsed_inst.mnemonic, &parsed_inst.ops);
         try inst.encode(writer);
     }
 }

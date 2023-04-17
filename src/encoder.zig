@@ -1,22 +1,19 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const log = std.log;
 const math = std.math;
+const testing = std.testing;
 
 const bits = @import("bits.zig");
 const Encoding = @import("Encoding.zig");
 const Immediate = bits.Immediate;
 const Memory = bits.Memory;
-const Moffs = bits.Moffs;
-const PtrSize = bits.PtrSize;
 const Register = bits.Register;
 
 pub const Instruction = struct {
-    op1: Operand = .none,
-    op2: Operand = .none,
-    op3: Operand = .none,
-    op4: Operand = .none,
     prefix: Prefix = .none,
     encoding: Encoding,
+    ops: [4]Operand = .{.none} ** 4,
 
     pub const Mnemonic = Encoding.Mnemonic;
 
@@ -91,12 +88,10 @@ pub const Instruction = struct {
                 .mem => |mem| switch (mem) {
                     .rip => |rip| {
                         try writer.print("{s} ptr [rip", .{@tagName(rip.ptr_size)});
-                        if (rip.disp != 0) {
-                            const sign_bit = if (sign(rip.disp) < 0) "-" else "+";
-                            const disp_abs = std.math.absInt(rip.disp) catch
-                                @panic("failed to take absolute value of displacement");
-                            try writer.print(" {s} 0x{x}", .{ sign_bit, disp_abs });
-                        }
+                        if (rip.disp != 0) try writer.print(" {c} 0x{x}", .{
+                            @as(u8, if (rip.disp < 0) '-' else '+'),
+                            std.math.absCast(rip.disp),
+                        });
                         try writer.writeByte(']');
                     },
                     .sib => |sib| {
@@ -108,28 +103,31 @@ pub const Instruction = struct {
 
                         try writer.writeByte('[');
 
+                        var any = false;
                         if (sib.base) |base| {
                             try writer.print("{s}", .{@tagName(base)});
+                            any = true;
                         }
                         if (sib.scale_index) |si| {
-                            if (sib.base != null) {
-                                try writer.writeAll(" + ");
-                            }
+                            if (any) try writer.writeAll(" + ");
                             try writer.print("{s} * {d}", .{ @tagName(si.index), si.scale });
+                            any = true;
                         }
-                        if (sib.disp != 0) {
-                            if (sib.base != null or sib.scale_index != null) {
-                                try writer.writeByte(' ');
-                            }
-                            try writer.writeByte(if (sign(sib.disp) < 0) '-' else '+');
-                            const disp_abs = std.math.absInt(sib.disp) catch
-                                @panic("failed to take absolute value of displacement");
-                            try writer.print(" 0x{x}", .{disp_abs});
+                        if (sib.disp != 0 or !any) {
+                            if (any)
+                                try writer.print(" {c} ", .{@as(u8, if (sib.disp < 0) '-' else '+')})
+                            else if (sib.disp < 0)
+                                try writer.writeByte('-');
+                            try writer.print("0x{x}", .{std.math.absCast(sib.disp)});
+                            any = true;
                         }
 
                         try writer.writeByte(']');
                     },
-                    .moffs => |moffs| try writer.print("{s}:0x{x}", .{ @tagName(moffs.seg), moffs.offset }),
+                    .moffs => |moffs| try writer.print("{s}:0x{x}", .{
+                        @tagName(moffs.seg),
+                        moffs.offset,
+                    }),
                 },
                 .imm => |imm| try writer.print("0x{x}", .{imm.asUnsigned(enc_op.bitSize())}),
             }
@@ -143,35 +141,27 @@ pub const Instruction = struct {
         }
     };
 
-    pub const Init = struct {
-        prefix: Prefix = .none,
-        op1: Operand = .none,
-        op2: Operand = .none,
-        op3: Operand = .none,
-        op4: Operand = .none,
-    };
-
-    pub fn new(mnemonic: Mnemonic, args: Init) !Instruction {
-        const encoding = (try Encoding.findByMnemonic(mnemonic, args)) orelse {
-            std.log.debug("no encoding found for: {s} {s} {s} {s} {s} {s}", .{
-                @tagName(args.prefix),
+    pub fn new(prefix: Prefix, mnemonic: Mnemonic, ops: []const Operand) !Instruction {
+        const encoding = (try Encoding.findByMnemonic(prefix, mnemonic, ops)) orelse {
+            log.debug("no encoding found for: {s} {s} {s} {s} {s} {s}", .{
+                @tagName(prefix),
                 @tagName(mnemonic),
-                @tagName(Encoding.Op.fromOperand(args.op1)),
-                @tagName(Encoding.Op.fromOperand(args.op2)),
-                @tagName(Encoding.Op.fromOperand(args.op3)),
-                @tagName(Encoding.Op.fromOperand(args.op4)),
+                @tagName(if (ops.len > 0) Encoding.Op.fromOperand(ops[0]) else .none),
+                @tagName(if (ops.len > 1) Encoding.Op.fromOperand(ops[1]) else .none),
+                @tagName(if (ops.len > 2) Encoding.Op.fromOperand(ops[2]) else .none),
+                @tagName(if (ops.len > 3) Encoding.Op.fromOperand(ops[3]) else .none),
             });
             return error.InvalidInstruction;
         };
-        std.log.debug("{}", .{encoding});
-        return .{
-            .prefix = args.prefix,
-            .op1 = args.op1,
-            .op2 = args.op2,
-            .op3 = args.op3,
-            .op4 = args.op4,
+        log.debug("selected encoding: {}", .{encoding});
+
+        var inst = Instruction{
+            .prefix = prefix,
             .encoding = encoding,
+            .ops = [1]Operand{.none} ** 4,
         };
+        std.mem.copy(Operand, &inst.ops, ops);
+        return inst;
     }
 
     pub fn format(
@@ -179,74 +169,66 @@ pub const Instruction = struct {
         comptime unused_format_string: []const u8,
         options: std.fmt.FormatOptions,
         writer: anytype,
-    ) !void {
+    ) @TypeOf(writer).Error!void {
         _ = unused_format_string;
         _ = options;
-
         if (inst.prefix != .none) try writer.print("{s} ", .{@tagName(inst.prefix)});
         try writer.print("{s}", .{@tagName(inst.encoding.mnemonic)});
-        const ops = [_]struct { Operand, Encoding.Op }{
-            .{ inst.op1, inst.encoding.op1 },
-            .{ inst.op2, inst.encoding.op2 },
-            .{ inst.op3, inst.encoding.op3 },
-            .{ inst.op4, inst.encoding.op4 },
-        };
-        for (&ops, 0..) |op, i| {
-            if (op[0] == .none) break;
-            if (i > 0) {
-                try writer.writeByte(',');
-            }
+        for (inst.ops, inst.encoding.data.ops, 0..) |op, enc, i| {
+            if (op == .none) break;
+            if (i > 0) try writer.writeByte(',');
             try writer.writeByte(' ');
-            try writer.print("{}", .{op[0].fmtPrint(op[1])});
+            try writer.print("{}", .{op.fmtPrint(enc)});
         }
     }
 
     pub fn encode(inst: Instruction, writer: anytype) !void {
         const encoder = Encoder(@TypeOf(writer)){ .writer = writer };
-        const encoding = inst.encoding;
+        const enc = inst.encoding;
+        const data = enc.data;
 
         try inst.encodeLegacyPrefixes(encoder);
         try inst.encodeMandatoryPrefix(encoder);
         try inst.encodeRexPrefix(encoder);
         try inst.encodeOpcode(encoder);
 
-        switch (encoding.op_en) {
+        switch (data.op_en) {
             .np, .o => {},
-            .i, .d => try encodeImm(inst.op1.imm, encoding.op1, encoder),
-            .zi, .oi => try encodeImm(inst.op2.imm, encoding.op2, encoder),
-            .fd => try encoder.imm64(inst.op2.mem.moffs.offset),
-            .td => try encoder.imm64(inst.op1.mem.moffs.offset),
+            .i, .d => try encodeImm(inst.ops[0].imm, data.ops[0], encoder),
+            .zi, .oi => try encodeImm(inst.ops[1].imm, data.ops[1], encoder),
+            .fd => try encoder.imm64(inst.ops[1].mem.moffs.offset),
+            .td => try encoder.imm64(inst.ops[0].mem.moffs.offset),
             else => {
-                const mem_op = switch (encoding.op_en) {
-                    .m, .mi, .m1, .mc, .mr, .mri, .mrc => inst.op1,
-                    .rm, .rmi => inst.op2,
+                const mem_op = switch (data.op_en) {
+                    .m, .mi, .m1, .mc, .mr, .mri, .mrc => inst.ops[0],
+                    .rm, .rmi => inst.ops[1],
                     else => unreachable,
                 };
                 switch (mem_op) {
                     .reg => |reg| {
-                        const rm = switch (encoding.op_en) {
-                            .m, .mi, .m1, .mc => encoding.modRmExt(),
-                            .mr, .mri, .mrc => inst.op2.reg.lowEnc(),
-                            .rm, .rmi => inst.op1.reg.lowEnc(),
+                        const rm = switch (data.op_en) {
+                            .m, .mi, .m1, .mc => enc.modRmExt(),
+                            .mr, .mri, .mrc => inst.ops[1].reg.lowEnc(),
+                            .rm, .rmi => inst.ops[0].reg.lowEnc(),
                             else => unreachable,
                         };
                         try encoder.modRm_direct(rm, reg.lowEnc());
                     },
                     .mem => |mem| {
-                        const op = switch (encoding.op_en) {
+                        const op = switch (data.op_en) {
                             .m, .mi, .m1, .mc => .none,
-                            .mr, .mri, .mrc => inst.op2,
-                            .rm, .rmi => inst.op1,
+                            .mr, .mri, .mrc => inst.ops[1],
+                            .rm, .rmi => inst.ops[0],
                             else => unreachable,
                         };
-                        try encodeMemory(encoding, mem, op, encoder);
+                        try encodeMemory(enc, mem, op, encoder);
                     },
                     else => unreachable,
                 }
 
-                switch (encoding.op_en) {
-                    .mi => try encodeImm(inst.op2.imm, encoding.op2, encoder),
-                    .rmi, .mri => try encodeImm(inst.op3.imm, encoding.op3, encoder),
+                switch (data.op_en) {
+                    .mi => try encodeImm(inst.ops[1].imm, data.ops[1], encoder),
+                    .rmi, .mri => try encodeImm(inst.ops[2].imm, data.ops[2], encoder),
                     else => {},
                 }
             },
@@ -258,15 +240,16 @@ pub const Instruction = struct {
         const first = @boolToInt(inst.encoding.mandatoryPrefix() != null);
         const final = opcode.len - 1;
         for (opcode[first..final]) |byte| try encoder.opcode_1byte(byte);
-        switch (inst.encoding.op_en) {
-            .o, .oi => try encoder.opcode_withReg(opcode[final], inst.op1.reg.lowEnc()),
+        switch (inst.encoding.data.op_en) {
+            .o, .oi => try encoder.opcode_withReg(opcode[final], inst.ops[0].reg.lowEnc()),
             else => try encoder.opcode_1byte(opcode[final]),
         }
     }
 
     fn encodeLegacyPrefixes(inst: Instruction, encoder: anytype) !void {
         const enc = inst.encoding;
-        const op_en = enc.op_en;
+        const data = enc.data;
+        const op_en = data.op_en;
 
         var legacy = LegacyPrefixes{};
 
@@ -277,7 +260,7 @@ pub const Instruction = struct {
             .rep, .repe, .repz => legacy.prefix_f3 = true,
         }
 
-        if (enc.mode == .none) {
+        if (data.mode == .none) {
             const bit_size = enc.operandBitSize();
             if (bit_size == 16) {
                 legacy.set16BitOverride();
@@ -286,17 +269,17 @@ pub const Instruction = struct {
 
         const segment_override: ?Register = switch (op_en) {
             .i, .zi, .o, .oi, .d, .np => null,
-            .fd => inst.op2.mem.base().?,
-            .td => inst.op1.mem.base().?,
-            .rm, .rmi => if (inst.op2.isSegmentRegister()) blk: {
-                break :blk switch (inst.op2) {
+            .fd => inst.ops[1].mem.base().?,
+            .td => inst.ops[0].mem.base().?,
+            .rm, .rmi => if (inst.ops[1].isSegmentRegister()) blk: {
+                break :blk switch (inst.ops[1]) {
                     .reg => |r| r,
                     .mem => |m| m.base().?,
                     else => unreachable,
                 };
             } else null,
-            .m, .mi, .m1, .mc, .mr, .mri, .mrc => if (inst.op1.isSegmentRegister()) blk: {
-                break :blk switch (inst.op1) {
+            .m, .mi, .m1, .mc, .mr, .mri, .mrc => if (inst.ops[0].isSegmentRegister()) blk: {
+                break :blk switch (inst.ops[0]) {
                     .reg => |r| r,
                     .mem => |m| m.base().?,
                     else => unreachable,
@@ -311,19 +294,19 @@ pub const Instruction = struct {
     }
 
     fn encodeRexPrefix(inst: Instruction, encoder: anytype) !void {
-        const op_en = inst.encoding.op_en;
+        const op_en = inst.encoding.data.op_en;
 
         var rex = Rex{};
-        rex.present = inst.encoding.mode == .rex;
-        rex.w = inst.encoding.mode == .long;
+        rex.present = inst.encoding.data.mode == .rex;
+        rex.w = inst.encoding.data.mode == .long;
 
         switch (op_en) {
             .np, .i, .zi, .fd, .td, .d => {},
-            .o, .oi => rex.b = inst.op1.reg.isExtended(),
+            .o, .oi => rex.b = inst.ops[0].reg.isExtended(),
             .m, .mi, .m1, .mc, .mr, .rm, .rmi, .mri, .mrc => {
                 const r_op = switch (op_en) {
-                    .rm, .rmi => inst.op1,
-                    .mr, .mri, .mrc => inst.op2,
+                    .rm, .rmi => inst.ops[0],
+                    .mr, .mri, .mrc => inst.ops[1],
                     else => null,
                 };
                 if (r_op) |op| {
@@ -331,8 +314,8 @@ pub const Instruction = struct {
                 }
 
                 const b_x_op = switch (op_en) {
-                    .rm, .rmi => inst.op2,
-                    .m, .mi, .m1, .mc, .mr, .mri, .mrc => inst.op1,
+                    .rm, .rmi => inst.ops[1],
+                    .m, .mi, .m1, .mc, .mr, .mri, .mrc => inst.ops[0],
                     else => unreachable,
                 };
                 switch (b_x_op) {
@@ -450,10 +433,6 @@ pub const Instruction = struct {
         }
     }
 };
-
-inline fn sign(i: anytype) @TypeOf(i) {
-    return @as(@TypeOf(i), @boolToInt(i > 0)) - @boolToInt(i < 0);
-}
 
 pub const LegacyPrefixes = packed struct {
     /// LOCK

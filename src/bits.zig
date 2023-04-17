@@ -1,7 +1,9 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const math = std.math;
 const expect = std.testing.expect;
+
+const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 
 pub const StringRepeat = enum(u3) { none, rep, repe, repz, repne, repnz };
 pub const StringWidth = enum(u2) { b, w, d, q };
@@ -29,6 +31,8 @@ pub const Register = enum(u7) {
     xmm8, xmm9, xmm10, xmm11, xmm12, xmm13, xmm14, xmm15,
 
     es, cs, ss, ds, fs, gs,
+
+    none,
     // zig fmt: on
 
     pub const Class = enum(u2) {
@@ -241,6 +245,17 @@ pub const Memory = union(enum) {
         tbyte,
         dqword,
 
+        pub fn fromSize(size: u32) PtrSize {
+            return switch (size) {
+                1...1 => .byte,
+                2...2 => .word,
+                3...4 => .dword,
+                5...8 => .qword,
+                9...16 => .dqword,
+                else => unreachable,
+            };
+        }
+
         pub fn fromBitSize(bit_size: u64) PtrSize {
             return switch (bit_size) {
                 8 => .byte,
@@ -332,7 +347,7 @@ pub const Memory = union(enum) {
         return switch (mem) {
             .rip => |r| r.ptr_size.bitSize(),
             .sib => |s| s.ptr_size.bitSize(),
-            .moffs => unreachable,
+            .moffs => 64,
         };
     }
 };
