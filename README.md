@@ -26,8 +26,7 @@ var text = std.ArrayList(u8).init(gpa);
 defer text.deinit();
 
 while (try disassembler.next()) |inst| {
-    try inst.fmtPrint(text.writer());
-    try text.append('\n');
+    try text.writer().print("{}\n", .{inst});
 }
 
 try std.testing.expectEqualStrings(

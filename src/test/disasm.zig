@@ -78,8 +78,7 @@ test "disassemble" {
     defer buf.deinit();
 
     while (try disassembler.next()) |inst| {
-        try inst.fmtPrint(buf.writer());
-        try buf.append('\n');
+        try buf.writer().print("{}\n", .{inst});
     }
 
     try testing.expectEqualStrings(

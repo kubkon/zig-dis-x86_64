@@ -57,7 +57,34 @@ pub const Instruction = struct {
             };
         }
 
-        pub fn fmtPrint(op: Operand, enc_op: Encoding.Op, writer: anytype) !void {
+        fn format(
+            op: Operand,
+            comptime unused_format_string: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            _ = op;
+            _ = unused_format_string;
+            _ = options;
+            _ = writer;
+            @compileError("do not format Operand directly; use fmtPrint() instead");
+        }
+
+        const FormatContext = struct {
+            op: Operand,
+            enc_op: Encoding.Op,
+        };
+
+        fn fmt(
+            ctx: FormatContext,
+            comptime unused_format_string: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) @TypeOf(writer).Error!void {
+            _ = unused_format_string;
+            _ = options;
+            const op = ctx.op;
+            const enc_op = ctx.enc_op;
             switch (op) {
                 .none => {},
                 .reg => |reg| try writer.writeAll(@tagName(reg)),
@@ -66,7 +93,8 @@ pub const Instruction = struct {
                         try writer.print("{s} ptr [rip", .{@tagName(rip.ptr_size)});
                         if (rip.disp != 0) {
                             const sign_bit = if (sign(rip.disp) < 0) "-" else "+";
-                            const disp_abs = try std.math.absInt(rip.disp);
+                            const disp_abs = std.math.absInt(rip.disp) catch
+                                @panic("failed to take absolute value of displacement");
                             try writer.print(" {s} 0x{x}", .{ sign_bit, disp_abs });
                         }
                         try writer.writeByte(']');
@@ -94,7 +122,8 @@ pub const Instruction = struct {
                                 try writer.writeByte(' ');
                             }
                             try writer.writeByte(if (sign(sib.disp) < 0) '-' else '+');
-                            const disp_abs = try std.math.absInt(sib.disp);
+                            const disp_abs = std.math.absInt(sib.disp) catch
+                                @panic("failed to take absolute value of displacement");
                             try writer.print(" 0x{x}", .{disp_abs});
                         }
 
@@ -104,6 +133,13 @@ pub const Instruction = struct {
                 },
                 .imm => |imm| try writer.print("0x{x}", .{imm.asUnsigned(enc_op.bitSize())}),
             }
+        }
+
+        pub fn fmtPrint(op: Operand, enc_op: Encoding.Op) std.fmt.Formatter(fmt) {
+            return .{ .data = .{
+                .op = op,
+                .enc_op = enc_op,
+            } };
         }
     };
 
@@ -138,7 +174,15 @@ pub const Instruction = struct {
         };
     }
 
-    pub fn fmtPrint(inst: Instruction, writer: anytype) !void {
+    pub fn format(
+        inst: Instruction,
+        comptime unused_format_string: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = unused_format_string;
+        _ = options;
+
         if (inst.prefix != .none) try writer.print("{s} ", .{@tagName(inst.prefix)});
         try writer.print("{s}", .{@tagName(inst.encoding.mnemonic)});
         const ops = [_]struct { Operand, Encoding.Op }{
@@ -153,7 +197,7 @@ pub const Instruction = struct {
                 try writer.writeByte(',');
             }
             try writer.writeByte(' ');
-            try op[0].fmtPrint(op[1], writer);
+            try writer.print("{}", .{op[0].fmtPrint(op[1])});
         }
     }
 
