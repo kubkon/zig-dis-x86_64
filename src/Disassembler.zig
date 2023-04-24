@@ -106,7 +106,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
                 parseGpRegister(modrm.op2, prefixes.rex.b, prefixes.rex, 64);
             return inst(act_enc, .{
                 .op1 = .{ .mem = Memory.sib(Memory.PtrSize.fromBitSize(act_enc.data.ops[0].bitSize()), .{
-                    .base = base,
+                    .base = if (base) |base_reg| .{ .reg = base_reg } else .none,
                     .scale_index = scale_index,
                     .disp = disp,
                 }) },
@@ -166,7 +166,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             const reg = parseGpRegister(modrm.op1, prefixes.rex.r, prefixes.rex, src_bit_size);
             return inst(enc, .{
                 .op1 = .{ .mem = Memory.sib(Memory.PtrSize.fromBitSize(dst_bit_size), .{
-                    .base = base,
+                    .base = if (base) |base_reg| .{ .reg = base_reg } else .none,
                     .scale_index = scale_index,
                     .disp = disp,
                 }) },
@@ -217,7 +217,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             return inst(enc, .{
                 .op1 = .{ .reg = reg },
                 .op2 = .{ .mem = Memory.sib(Memory.PtrSize.fromBitSize(dst_bit_size), .{
-                    .base = base,
+                    .base = if (base) |base_reg| .{ .reg = base_reg } else .none,
                     .scale_index = scale_index,
                     .disp = disp,
                 }) },

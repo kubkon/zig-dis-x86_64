@@ -179,7 +179,7 @@ pub fn init(input: []const u8) Assembler {
 pub fn assemble(as: *Assembler, writer: anytype) !void {
     while (try as.next()) |parsed_inst| {
         const inst = try Instruction.new(.none, parsed_inst.mnemonic, &parsed_inst.ops);
-        try inst.encode(writer);
+        try inst.encode(writer, .{});
     }
 }
 
@@ -374,23 +374,27 @@ fn parseMemory(as: *Assembler) ParseError!Memory {
     inline for (rules) |rule| {
         if (as.parseMemoryRule(rule)) |res| {
             if (res.rip) {
-                if (res.base != null or res.scale_index != null or res.offset != null)
+                if (res.base != .none or res.scale_index != null or res.offset != null)
                     return error.InvalidMemoryOperand;
                 return Memory.rip(ptr_size orelse .qword, res.disp orelse 0);
             }
-            if (res.base) |base| {
-                if (res.rip)
-                    return error.InvalidMemoryOperand;
-                if (res.offset) |offset| {
-                    if (res.scale_index != null or res.disp != null)
+            switch (res.base) {
+                .none => {},
+                .reg => |base| {
+                    if (res.rip)
                         return error.InvalidMemoryOperand;
-                    return Memory.moffs(base, offset);
-                }
-                return Memory.sib(ptr_size orelse .qword, .{
-                    .base = base,
-                    .scale_index = res.scale_index,
-                    .disp = res.disp orelse 0,
-                });
+                    if (res.offset) |offset| {
+                        if (res.scale_index != null or res.disp != null)
+                            return error.InvalidMemoryOperand;
+                        return Memory.moffs(base, offset);
+                    }
+                    return Memory.sib(ptr_size orelse .qword, .{
+                        .base = .{ .reg = base },
+                        .scale_index = res.scale_index,
+                        .disp = res.disp orelse 0,
+                    });
+                },
+                .frame => unreachable,
             }
             return error.InvalidMemoryOperand;
         } else |_| {
@@ -403,7 +407,7 @@ fn parseMemory(as: *Assembler) ParseError!Memory {
 
 const MemoryParseResult = struct {
     rip: bool = false,
-    base: ?Register = null,
+    base: Memory.Base = .none,
     scale_index: ?Memory.ScaleIndex = null,
     disp: ?i32 = null,
     offset: ?u64 = null,
@@ -421,7 +425,7 @@ fn parseMemoryRule(as: *Assembler, rule: anytype) ParseError!MemoryParseResult {
             },
             .base => {
                 const tok = try as.expect(.string);
-                res.base = registerFromString(as.source(tok)) orelse return error.InvalidMemoryOperand;
+                res.base = .{ .reg = registerFromString(as.source(tok)) orelse return error.InvalidMemoryOperand };
             },
             .rip => {
                 const tok = try as.expect(.string);
@@ -460,8 +464,10 @@ fn parseMemoryRule(as: *Assembler, rule: anytype) ParseError!MemoryParseResult {
                 } else |err| switch (err) {
                     error.Overflow => {
                         if (is_neg) return err;
-                        if (res.base) |base| {
-                            if (base.class() != .segment) return err;
+                        switch (res.base) {
+                            .none => {},
+                            .reg => |base| if (base.class() != .segment) return err,
+                            .frame => unreachable,
                         }
                         const offset = try std.fmt.parseInt(u64, as.source(tok), 0);
                         res.offset = offset;
