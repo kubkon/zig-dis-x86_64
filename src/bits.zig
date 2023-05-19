@@ -5,9 +5,6 @@ const expect = std.testing.expect;
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
-pub const StringRepeat = enum(u3) { none, rep, repe, repz, repne, repnz };
-pub const StringWidth = enum(u2) { b, w, d, q };
-
 pub const Register = enum(u7) {
     // zig fmt: off
     rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi,
@@ -30,15 +27,21 @@ pub const Register = enum(u7) {
     xmm0, xmm1, xmm2,  xmm3,  xmm4,  xmm5,  xmm6,  xmm7,
     xmm8, xmm9, xmm10, xmm11, xmm12, xmm13, xmm14, xmm15,
 
+    mm0, mm1, mm2, mm3, mm4, mm5, mm6, mm7,
+
+    st0, st1, st2, st3, st4, st5, st6, st7,
+
     es, cs, ss, ds, fs, gs,
 
     none,
     // zig fmt: on
 
-    pub const Class = enum(u2) {
+    pub const Class = enum {
         general_purpose,
-        floating_point,
         segment,
+        x87,
+        mmx,
+        sse,
     };
 
     pub fn class(reg: Register) Class {
@@ -50,8 +53,10 @@ pub const Register = enum(u7) {
             @enumToInt(Register.al)   ... @enumToInt(Register.r15b)  => .general_purpose,
             @enumToInt(Register.ah)   ... @enumToInt(Register.bh)    => .general_purpose,
 
-            @enumToInt(Register.ymm0) ... @enumToInt(Register.ymm15) => .floating_point,
-            @enumToInt(Register.xmm0) ... @enumToInt(Register.xmm15) => .floating_point,
+            @enumToInt(Register.ymm0) ... @enumToInt(Register.ymm15) => .sse,
+            @enumToInt(Register.xmm0) ... @enumToInt(Register.xmm15) => .sse,
+            @enumToInt(Register.mm0)  ... @enumToInt(Register.mm7)   => .mmx,
+            @enumToInt(Register.st0)  ... @enumToInt(Register.st7)   => .x87,
 
             @enumToInt(Register.es)   ... @enumToInt(Register.gs)    => .segment,
 
@@ -71,8 +76,10 @@ pub const Register = enum(u7) {
 
             @enumToInt(Register.ymm0) ... @enumToInt(Register.ymm15) => @enumToInt(Register.ymm0) - 16,
             @enumToInt(Register.xmm0) ... @enumToInt(Register.xmm15) => @enumToInt(Register.xmm0) - 16,
+            @enumToInt(Register.mm0)  ... @enumToInt(Register.mm7)   => @enumToInt(Register.mm0) - 32,
+            @enumToInt(Register.st0)  ... @enumToInt(Register.st7)   => @enumToInt(Register.st0) - 40,
 
-            @enumToInt(Register.es)   ... @enumToInt(Register.gs)    => @enumToInt(Register.es) - 32,
+            @enumToInt(Register.es)   ... @enumToInt(Register.gs)    => @enumToInt(Register.es) - 48,
 
             else => unreachable,
             // zig fmt: on
@@ -91,6 +98,8 @@ pub const Register = enum(u7) {
 
             @enumToInt(Register.ymm0) ... @enumToInt(Register.ymm15) => 256,
             @enumToInt(Register.xmm0) ... @enumToInt(Register.xmm15) => 128,
+            @enumToInt(Register.mm0)  ... @enumToInt(Register.mm7)   => 64,
+            @enumToInt(Register.st0)  ... @enumToInt(Register.st7)   => 80,
 
             @enumToInt(Register.es)   ... @enumToInt(Register.gs)    => 16,
 
@@ -126,6 +135,8 @@ pub const Register = enum(u7) {
 
             @enumToInt(Register.ymm0) ... @enumToInt(Register.ymm15) => @enumToInt(Register.ymm0),
             @enumToInt(Register.xmm0) ... @enumToInt(Register.xmm15) => @enumToInt(Register.xmm0),
+            @enumToInt(Register.mm0)  ... @enumToInt(Register.mm7)   => @enumToInt(Register.mm0),
+            @enumToInt(Register.st0)  ... @enumToInt(Register.st7)   => @enumToInt(Register.st0),
 
             @enumToInt(Register.es)   ... @enumToInt(Register.gs)    => @enumToInt(Register.es),
 
@@ -181,8 +192,8 @@ pub const Register = enum(u7) {
         return @intToEnum(Register, @enumToInt(reg) - reg.gpBase() + @enumToInt(Register.al));
     }
 
-    fn fpBase(reg: Register) u7 {
-        assert(reg.class() == .floating_point);
+    fn sseBase(reg: Register) u7 {
+        assert(reg.class() == .sse);
         return switch (@enumToInt(reg)) {
             @enumToInt(Register.ymm0)...@enumToInt(Register.ymm15) => @enumToInt(Register.ymm0),
             @enumToInt(Register.xmm0)...@enumToInt(Register.xmm15) => @enumToInt(Register.xmm0),
@@ -191,11 +202,11 @@ pub const Register = enum(u7) {
     }
 
     pub fn to256(reg: Register) Register {
-        return @intToEnum(Register, @enumToInt(reg) - reg.fpBase() + @enumToInt(Register.ymm0));
+        return @intToEnum(Register, @enumToInt(reg) - reg.sseBase() + @enumToInt(Register.ymm0));
     }
 
     pub fn to128(reg: Register) Register {
-        return @intToEnum(Register, @enumToInt(reg) - reg.fpBase() + @enumToInt(Register.xmm0));
+        return @intToEnum(Register, @enumToInt(reg) - reg.sseBase() + @enumToInt(Register.xmm0));
     }
 };
 
@@ -208,8 +219,10 @@ test "Register id - different classes" {
     try expect(Register.ymm0.id() == 0b10000);
     try expect(Register.ymm0.id() != Register.rax.id());
     try expect(Register.xmm0.id() == Register.ymm0.id());
+    try expect(Register.xmm0.id() != Register.mm0.id());
+    try expect(Register.mm0.id() != Register.st0.id());
 
-    try expect(Register.es.id() == 0b100000);
+    try expect(Register.es.id() == 0b110000);
 }
 
 test "Register enc - different classes" {
@@ -223,7 +236,9 @@ test "Register enc - different classes" {
 
 test "Register classes" {
     try expect(Register.r11.class() == .general_purpose);
-    try expect(Register.ymm11.class() == .floating_point);
+    try expect(Register.ymm11.class() == .sse);
+    try expect(Register.mm3.class() == .mmx);
+    try expect(Register.st3.class() == .x87);
     try expect(Register.fs.class() == .segment);
 }
 
@@ -298,7 +313,9 @@ pub const Memory = union(enum) {
         dword,
         qword,
         tbyte,
-        dqword,
+        xword,
+        yword,
+        zword,
 
         pub fn fromSize(size: u32) PtrSize {
             return switch (size) {
@@ -306,7 +323,9 @@ pub const Memory = union(enum) {
                 2...2 => .word,
                 3...4 => .dword,
                 5...8 => .qword,
-                9...16 => .dqword,
+                9...16 => .xword,
+                17...32 => .yword,
+                33...64 => .zword,
                 else => unreachable,
             };
         }
@@ -318,7 +337,9 @@ pub const Memory = union(enum) {
                 32 => .dword,
                 64 => .qword,
                 80 => .tbyte,
-                128 => .dqword,
+                128 => .xword,
+                256 => .yword,
+                512 => .zword,
                 else => unreachable,
             };
         }
@@ -330,7 +351,9 @@ pub const Memory = union(enum) {
                 .dword => 32,
                 .qword => 64,
                 .tbyte => 80,
-                .dqword => 128,
+                .xword => 128,
+                .yword => 256,
+                .zword => 512,
             };
         }
     };

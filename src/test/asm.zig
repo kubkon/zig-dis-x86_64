@@ -22,7 +22,7 @@ fn expectEqualHexStrings(expected: []const u8, given: []const u8, assembly: []co
     const idx = std.mem.indexOfDiff(u8, expected_fmt, given_fmt).?;
     var padding = try testing.allocator.alloc(u8, idx + 5);
     defer testing.allocator.free(padding);
-    std.mem.set(u8, padding, ' ');
+    @memset(padding, ' ');
     std.debug.print("\nASM: {s}\nEXP: {s}\nGIV: {s}\n{s}^ -- first differing byte\n", .{
         assembly,
         expected_fmt,
@@ -341,12 +341,6 @@ test "lower RM encoding" {
     try expectEqualHexStrings("\x48\x8C\xC8", enc.code(), "mov rax, cs");
 
     try enc.encode(.mov, &.{
-        .{ .mem = Memory.sib(.qword, .{ .base = .{ .reg = .rbp }, .disp = -16 }) },
-        .{ .reg = .fs },
-    });
-    try expectEqualHexStrings("\x48\x8C\x65\xF0", enc.code(), "mov QWORD PTR [rbp - 16], fs");
-
-    try enc.encode(.mov, &.{
         .{ .reg = .r12w },
         .{ .reg = .cs },
     });
@@ -356,7 +350,7 @@ test "lower RM encoding" {
         .{ .mem = Memory.sib(.word, .{ .base = .{ .reg = .rbp }, .disp = -16 }) },
         .{ .reg = .fs },
     });
-    try expectEqualHexStrings("\x66\x8C\x65\xF0", enc.code(), "mov WORD PTR [rbp - 16], fs");
+    try expectEqualHexStrings("\x8C\x65\xF0", enc.code(), "mov WORD PTR [rbp - 16], fs");
 
     try enc.encode(.movsx, &.{
         .{ .reg = .eax },

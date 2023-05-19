@@ -12,8 +12,6 @@ pub const Instruction = encoder.Instruction;
 pub const Register = bits.Register;
 pub const Memory = bits.Memory;
 pub const Immediate = bits.Immediate;
-pub const StringRepeat = bits.StringRepeat;
-pub const StringWidth = bits.StringWidth;
 
 test {
     std.testing.refAllDecls(@This());
