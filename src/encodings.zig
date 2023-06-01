@@ -272,6 +272,10 @@ pub const table = [_]Entry{
     .{ .div, .m, &.{ .rm32 }, &.{ 0xf7 }, 6, .none,  .none },
     .{ .div, .m, &.{ .rm64 }, &.{ 0xf7 }, 6, .long,  .none },
 
+    .{ .endbr64, .np, &.{}, &.{ 0xf3, 0x0f, 0x1e, 0xfa }, 0, .none, .none },
+
+    .{ .hlt, .np, &.{}, &.{ 0xf4 }, 0, .none, .none },
+
     .{ .idiv, .m, &.{ .rm8  }, &.{ 0xf6 }, 7, .none,  .none },
     .{ .idiv, .m, &.{ .rm8  }, &.{ 0xf6 }, 7, .rex,   .none },
     .{ .idiv, .m, &.{ .rm16 }, &.{ 0xf7 }, 7, .short, .none },

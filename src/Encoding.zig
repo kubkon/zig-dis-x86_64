@@ -234,6 +234,8 @@ pub const Mnemonic = enum {
     cmpxchg, cmpxchg8b, cmpxchg16b,
     cqo, cwd, cwde,
     div,
+    endbr64,
+    hlt,
     idiv, imul, int3,
     ja, jae, jb, jbe, jc, jrcxz, je, jg, jge, jl, jle, jna, jnae, jnb, jnbe,
     jnc, jne, jng, jnge, jnl, jnle, jno, jnp, jns, jnz, jo, jp, jpe, jpo, js, jz,
