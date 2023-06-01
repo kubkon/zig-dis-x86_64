@@ -334,6 +334,8 @@ pub const table = [_]Entry{
     .{ .lea, .rm, &.{ .r32, .m }, &.{ 0x8d }, 0, .none,  .none },
     .{ .lea, .rm, &.{ .r64, .m }, &.{ 0x8d }, 0, .long,  .none },
 
+    .{ .leave, .np, &.{}, &.{ 0xc9 }, 0, .none, .none },
+
     .{ .lfence, .np, &.{}, &.{ 0x0f, 0xae, 0xe8 }, 0, .none, .none },
 
     .{ .lods,  .np, &.{ .m8  }, &.{ 0xac }, 0, .none,  .none },
