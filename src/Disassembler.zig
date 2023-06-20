@@ -343,8 +343,8 @@ fn parseEncoding(dis: *Disassembler, prefixes: Prefixes) !?Encoding {
 }
 
 fn parseGpRegister(low_enc: u3, is_extended: bool, rex: Rex, bit_size: u64) Register {
-    const reg_id: u4 = @intCast(u4, @boolToInt(is_extended)) << 3 | low_enc;
-    const reg = @intToEnum(Register, reg_id).toBitSize(bit_size);
+    const reg_id: u4 = @intCast(u4, @intFromBool(is_extended)) << 3 | low_enc;
+    const reg = @enumFromInt(Register, reg_id).toBitSize(bit_size);
     return switch (reg) {
         .spl => if (rex.present or rex.isSet()) .spl else .ah,
         .dil => if (rex.present or rex.isSet()) .dil else .bh,
