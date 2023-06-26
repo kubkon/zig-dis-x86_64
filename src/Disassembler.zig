@@ -52,7 +52,7 @@ pub fn next(dis: *Disassembler) Error!?Instruction {
             });
         },
         .o, .oi => {
-            const reg_low_enc = @truncate(u3, dis.code[dis.pos - 1]);
+            const reg_low_enc = @as(u3, @truncate(dis.code[dis.pos - 1]));
             const op2: Instruction.Operand = if (enc.data.op_en == .oi) .{
                 .imm = try dis.parseImm(enc.data.ops[1]),
             } else .none;
@@ -279,7 +279,7 @@ fn parsePrefixes(dis: *Disassembler) !Prefixes {
                 }
             },
             else => {
-                if (rex_prefix_mask == @truncate(u4, next_byte >> 4)) {
+                if (rex_prefix_mask == @as(u4, @truncate(next_byte >> 4))) {
                     // REX prefix
                     res.rex.w = next_byte & 0b1000 != 0;
                     res.rex.r = next_byte & 0b100 != 0;
@@ -343,8 +343,8 @@ fn parseEncoding(dis: *Disassembler, prefixes: Prefixes) !?Encoding {
 }
 
 fn parseGpRegister(low_enc: u3, is_extended: bool, rex: Rex, bit_size: u64) Register {
-    const reg_id: u4 = @intCast(u4, @intFromBool(is_extended)) << 3 | low_enc;
-    const reg = @enumFromInt(Register, reg_id).toBitSize(bit_size);
+    const reg_id: u4 = @as(u4, @intCast(@intFromBool(is_extended))) << 3 | low_enc;
+    const reg = @as(Register, @enumFromInt(reg_id)).toBitSize(bit_size);
     return switch (reg) {
         .spl => if (rex.present or rex.isSet()) .spl else .ah,
         .dil => if (rex.present or rex.isSet()) .dil else .bh,
@@ -402,9 +402,9 @@ fn parseModRmByte(dis: *Disassembler) !ModRm {
     if (dis.code[dis.pos..].len == 0) return error.EndOfStream;
     const modrm_byte = dis.code[dis.pos];
     dis.pos += 1;
-    const mod: u2 = @truncate(u2, modrm_byte >> 6);
-    const op1: u3 = @truncate(u3, modrm_byte >> 3);
-    const op2: u3 = @truncate(u3, modrm_byte);
+    const mod: u2 = @as(u2, @truncate(modrm_byte >> 6));
+    const op1: u3 = @as(u3, @truncate(modrm_byte >> 3));
+    const op2: u3 = @as(u3, @truncate(modrm_byte));
     return ModRm{ .mod = mod, .op1 = op1, .op2 = op2 };
 }
 
@@ -443,9 +443,9 @@ fn parseSibByte(dis: *Disassembler) !Sib {
     if (dis.code[dis.pos..].len == 0) return error.EndOfStream;
     const sib_byte = dis.code[dis.pos];
     dis.pos += 1;
-    const scale: u2 = @truncate(u2, sib_byte >> 6);
-    const index: u3 = @truncate(u3, sib_byte >> 3);
-    const base: u3 = @truncate(u3, sib_byte);
+    const scale: u2 = @as(u2, @truncate(sib_byte >> 6));
+    const index: u3 = @as(u3, @truncate(sib_byte >> 3));
+    const base: u3 = @as(u3, @truncate(sib_byte));
     return Sib{ .scale = scale, .index = index, .base = base };
 }
 
