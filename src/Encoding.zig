@@ -769,7 +769,7 @@ fn estimateInstructionLength(prefix: Prefix, encoding: Encoding, ops: []const Op
 }
 
 const mnemonic_to_encodings_map = init: {
-    @setEvalBranchQuota(30_000);
+    @setEvalBranchQuota(100_000);
     const encodings = @import("encodings.zig");
     var entries = encodings.table;
     std.mem.sort(encodings.Entry, &entries, {}, struct {
