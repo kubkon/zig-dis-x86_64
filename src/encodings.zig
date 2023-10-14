@@ -266,6 +266,12 @@ pub const table = [_]Entry{
     .{ .cmpxchg8b,  .m, &.{ .m64  }, &.{ 0x0f, 0xc7 }, 1, .none, .none },
     .{ .cmpxchg16b, .m, &.{ .m128 }, &.{ 0x0f, 0xc7 }, 1, .long, .none },
 
+    .{ .dec, .m, &.{ .rm8,  }, &.{ 0xFE }, 1, .none,  .none },
+    .{ .dec, .m, &.{ .rm8,  }, &.{ 0xFE }, 1, .rex,   .none },
+    .{ .dec, .m, &.{ .rm16, }, &.{ 0xFF }, 1, .short, .none },
+    .{ .dec, .m, &.{ .rm32, }, &.{ 0xFF }, 1, .none,  .none },
+    .{ .dec, .m, &.{ .rm64, }, &.{ 0xFF }, 1, .long,  .none },
+
     .{ .div, .m, &.{ .rm8  }, &.{ 0xf6 }, 6, .none,  .none },
     .{ .div, .m, &.{ .rm8  }, &.{ 0xf6 }, 6, .rex,   .none },
     .{ .div, .m, &.{ .rm16 }, &.{ 0xf7 }, 6, .short, .none },
@@ -296,6 +302,12 @@ pub const table = [_]Entry{
     .{ .imul, .rmi, &.{ .r16,  .rm16, .imm16 }, &.{ 0x69       }, 0, .short, .none },
     .{ .imul, .rmi, &.{ .r32,  .rm32, .imm32 }, &.{ 0x69       }, 0, .none,  .none },
     .{ .imul, .rmi, &.{ .r64,  .rm64, .imm32 }, &.{ 0x69       }, 0, .long,  .none },
+
+    .{ .inc, .m, &.{ .rm8,  }, &.{ 0xFE }, 0, .none,  .none },
+    .{ .inc, .m, &.{ .rm8,  }, &.{ 0xFE }, 0, .rex,   .none },
+    .{ .inc, .m, &.{ .rm16, }, &.{ 0xFF }, 0, .short, .none },
+    .{ .inc, .m, &.{ .rm32, }, &.{ 0xFF }, 0, .none,  .none },
+    .{ .inc, .m, &.{ .rm64, }, &.{ 0xFF }, 0, .long,  .none },
 
     .{ .int3, .np, &.{}, &.{ 0xcc }, 0, .none, .none },
 
