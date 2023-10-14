@@ -91,7 +91,7 @@ pub fn findByOpcode(opc: []const u8, prefixes: struct {
         if (prefixes.rex.w) {
             if (!data.mode.isLong()) continue;
         } else if (prefixes.rex.present and !prefixes.rex.isSet()) {
-            if (!data.mode.isRex()) continue;
+            if (!data.mode.isRex() and (data.mode.isLong() or data.mode.isShort())) continue;
         } else if (prefixes.legacy.prefix_66) {
             if (!data.mode.isShort()) continue;
         } else {
