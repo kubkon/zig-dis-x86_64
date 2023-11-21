@@ -233,7 +233,7 @@ fn inst(encoding: Encoding, args: struct {
     op3: Instruction.Operand = .none,
     op4: Instruction.Operand = .none,
 }) Instruction {
-    var i = Instruction{ .encoding = encoding, .prefix = args.prefix, .ops = .{
+    const i = Instruction{ .encoding = encoding, .prefix = args.prefix, .ops = .{
         args.op1,
         args.op2,
         args.op3,
