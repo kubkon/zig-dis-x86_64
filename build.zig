@@ -1,11 +1,11 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build.Builder) void {
+pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const mode = b.standardOptimizeOption(.{});
 
     _ = b.addModule("dis_x86_64", .{
-        .source_file = .{ .path = "src/main.zig" },
+        .root_source_file = .{ .path = "src/main.zig" },
     });
 
     const test_lib = b.addTest(.{
