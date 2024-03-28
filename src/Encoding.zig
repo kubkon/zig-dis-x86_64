@@ -769,41 +769,40 @@ fn estimateInstructionLength(prefix: Prefix, encoding: Encoding, ops: []const Op
 }
 
 const mnemonic_to_encodings_map = init: {
-    @setEvalBranchQuota(100_000);
+    @setEvalBranchQuota(5_000);
+    const mnemonic_count = @typeInfo(Mnemonic).Enum.fields.len;
+    var mnemonic_map: [mnemonic_count][]Data = .{&.{}} ** mnemonic_count;
     const encodings = @import("encodings.zig");
-    var entries = encodings.table;
-    std.mem.sort(encodings.Entry, &entries, {}, struct {
-        fn lessThan(_: void, lhs: encodings.Entry, rhs: encodings.Entry) bool {
-            return @intFromEnum(lhs[0]) < @intFromEnum(rhs[0]);
-        }
-    }.lessThan);
-    var data_storage: [entries.len]Data = undefined;
-    var mnemonic_map: [@typeInfo(Mnemonic).Enum.fields.len][]const Data = undefined;
-    var mnemonic_int = 0;
-    var mnemonic_start = 0;
-    for (&data_storage, entries, 0..) |*data, entry, data_index| {
-        data.* = .{
+    for (encodings.table) |entry| mnemonic_map[@intFromEnum(entry[0])].len += 1;
+    var data_storage: [encodings.table.len]Data = undefined;
+    var storage_i: usize = 0;
+    for (&mnemonic_map) |*value| {
+        value.ptr = data_storage[storage_i..].ptr;
+        storage_i += value.len;
+    }
+    var mnemonic_i: [mnemonic_count]usize = .{0} ** mnemonic_count;
+    const ops_len = @typeInfo(std.meta.FieldType(Data, .ops)).Array.len;
+    const opc_len = @typeInfo(std.meta.FieldType(Data, .opc)).Array.len;
+    for (encodings.table) |entry| {
+        const i = &mnemonic_i[@intFromEnum(entry[0])];
+        mnemonic_map[@intFromEnum(entry[0])][i.*] = .{
             .op_en = entry[1],
-            .ops = undefined,
+            .ops = (entry[2] ++ .{.none} ** (ops_len - entry[2].len)).*,
             .opc_len = entry[3].len,
-            .opc = undefined,
+            .opc = (entry[3] ++ .{undefined} ** (opc_len - entry[3].len)).*,
             .modrm_ext = entry[4],
             .mode = entry[5],
             .feature = entry[6],
         };
-        // TODO: use `@memcpy` for these. When I did that, I got a false positive
-        // compile error for this copy happening at compile time.
-        std.mem.copyForwards(Op, &data.ops, entry[2]);
-        std.mem.copyForwards(u8, &data.opc, entry[3]);
-
-        while (mnemonic_int < @intFromEnum(entry[0])) : (mnemonic_int += 1) {
-            mnemonic_map[mnemonic_int] = data_storage[mnemonic_start..data_index];
-            mnemonic_start = data_index;
-        }
+        i.* += 1;
     }
-    while (mnemonic_int < mnemonic_map.len) : (mnemonic_int += 1) {
-        mnemonic_map[mnemonic_int] = data_storage[mnemonic_start..];
-        mnemonic_start = data_storage.len;
+    const final_storage = data_storage;
+    var final_map: [mnemonic_count][]const Data = .{&.{}} ** mnemonic_count;
+    storage_i = 0;
+    for (&final_map, mnemonic_map) |*value, wip_value| {
+        value.ptr = final_storage[storage_i..].ptr;
+        value.len = wip_value.len;
+        storage_i += value.len;
     }
-    break :init mnemonic_map;
+    break :init final_map;
 };
