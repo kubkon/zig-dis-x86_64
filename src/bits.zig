@@ -256,7 +256,7 @@ pub const FrameIndex = enum(u32) {
     // Other indices are used for local variable stack slots
     _,
 
-    pub const named_count = @typeInfo(FrameIndex).Enum.fields.len;
+    pub const named_count = @typeInfo(FrameIndex).@"enum".fields.len;
 
     pub fn isNamed(fi: FrameIndex) bool {
         return @intFromEnum(fi) < named_count;
@@ -281,9 +281,9 @@ pub const FrameIndex = enum(u32) {
 };
 
 pub const Memory = union(enum) {
-    sib: Sib,
-    rip: Rip,
-    moffs: Moffs,
+    m_sib: Sib,
+    m_rip: Rip,
+    m_moffs: Moffs,
 
     pub const Base = union(enum) {
         none,
@@ -377,7 +377,7 @@ pub const Memory = union(enum) {
 
     pub fn moffs(reg: Register, offset: u64) Memory {
         assert(reg.class() == .segment);
-        return .{ .moffs = .{ .seg = reg, .offset = offset } };
+        return .{ .m_moffs = .{ .seg = reg, .offset = offset } };
     }
 
     pub fn sib(ptr_size: PtrSize, args: struct {
@@ -386,7 +386,7 @@ pub const Memory = union(enum) {
         scale_index: ?ScaleIndex = null,
     }) Memory {
         if (args.scale_index) |si| assert(std.math.isPowerOfTwo(si.scale));
-        return .{ .sib = .{
+        return .{ .m_sib = .{
             .base = args.base,
             .disp = args.disp,
             .ptr_size = ptr_size,
@@ -395,14 +395,14 @@ pub const Memory = union(enum) {
     }
 
     pub fn rip(ptr_size: PtrSize, disp: i32) Memory {
-        return .{ .rip = .{ .ptr_size = ptr_size, .disp = disp } };
+        return .{ .m_rip = .{ .ptr_size = ptr_size, .disp = disp } };
     }
 
     pub fn isSegmentRegister(mem: Memory) bool {
         return switch (mem) {
-            .moffs => true,
-            .rip => false,
-            .sib => |s| switch (s.base) {
+            .m_moffs => true,
+            .m_rip => false,
+            .m_sib => |s| switch (s.base) {
                 .none, .frame => false,
                 .reg => |reg| reg.class() == .segment,
             },
@@ -411,24 +411,24 @@ pub const Memory = union(enum) {
 
     pub fn base(mem: Memory) Base {
         return switch (mem) {
-            .moffs => |m| .{ .reg = m.seg },
-            .sib => |s| s.base,
-            .rip => .none,
+            .m_moffs => |m| .{ .reg = m.seg },
+            .m_sib => |s| s.base,
+            .m_rip => .none,
         };
     }
 
     pub fn scaleIndex(mem: Memory) ?ScaleIndex {
         return switch (mem) {
-            .moffs, .rip => null,
-            .sib => |s| if (s.scale_index.scale > 0) s.scale_index else null,
+            .m_moffs, .m_rip => null,
+            .m_sib => |s| if (s.scale_index.scale > 0) s.scale_index else null,
         };
     }
 
     pub fn bitSize(mem: Memory) u64 {
         return switch (mem) {
-            .rip => |r| r.ptr_size.bitSize(),
-            .sib => |s| s.ptr_size.bitSize(),
-            .moffs => 64,
+            .m_rip => |r| r.ptr_size.bitSize(),
+            .m_sib => |s| s.ptr_size.bitSize(),
+            .m_moffs => 64,
         };
     }
 };

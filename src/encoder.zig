@@ -101,7 +101,7 @@ pub const Instruction = struct {
                 .none => {},
                 .reg => |reg| try writer.writeAll(@tagName(reg)),
                 .mem => |mem| switch (mem) {
-                    .rip => |rip| {
+                    .m_rip => |rip| {
                         try writer.print("{s} ptr [rip", .{@tagName(rip.ptr_size)});
                         if (rip.disp != 0) try writer.print(" {c} 0x{x}", .{
                             @as(u8, if (rip.disp < 0) '-' else '+'),
@@ -109,7 +109,7 @@ pub const Instruction = struct {
                         });
                         try writer.writeByte(']');
                     },
-                    .sib => |sib| {
+                    .m_sib => |sib| {
                         try writer.print("{s} ptr ", .{@tagName(sib.ptr_size)});
 
                         if (mem.isSegmentRegister()) {
@@ -146,7 +146,7 @@ pub const Instruction = struct {
 
                         try writer.writeByte(']');
                     },
-                    .moffs => |moffs| try writer.print("{s}:0x{x}", .{
+                    .m_moffs => |moffs| try writer.print("{s}:0x{x}", .{
                         @tagName(moffs.seg),
                         moffs.offset,
                     }),
@@ -221,8 +221,8 @@ pub const Instruction = struct {
             .np, .o => {},
             .i, .d => try encodeImm(inst.ops[0].imm, data.ops[0], encoder),
             .zi, .oi => try encodeImm(inst.ops[1].imm, data.ops[1], encoder),
-            .fd => try encoder.imm64(inst.ops[1].mem.moffs.offset),
-            .td => try encoder.imm64(inst.ops[0].mem.moffs.offset),
+            .fd => try encoder.imm64(inst.ops[1].mem.m_moffs.offset),
+            .td => try encoder.imm64(inst.ops[0].mem.m_moffs.offset),
             else => {
                 const mem_op = switch (data.op_en) {
                     .m, .mi, .m1, .mc, .mr, .mri, .mrc, .mvr => inst.ops[0],
@@ -428,8 +428,8 @@ pub const Instruction = struct {
         };
 
         switch (mem) {
-            .moffs => unreachable,
-            .sib => |sib| switch (sib.base) {
+            .m_moffs => unreachable,
+            .m_sib => |sib| switch (sib.base) {
                 .none => {
                     try encoder.modRm_SIBDisp0(operand_enc);
                     if (mem.scaleIndex()) |si| {
@@ -499,7 +499,7 @@ pub const Instruction = struct {
                     try encoder.disp32(undefined);
                 } else return error.CannotEncode,
             },
-            .rip => |rip| {
+            .m_rip => |rip| {
                 try encoder.modRm_RIPDisp32(operand_enc);
                 try encoder.disp32(rip.disp);
             },
