@@ -1,5 +1,5 @@
 .{
-    .name = "zig-dis-x86_64",
+    .name = .zig_dis_x86_64,
     .version = "0.0.1",
     .paths = .{
         "build.zig",
@@ -8,4 +8,5 @@
         "README.md",
         "src",
     },
+    .fingerprint = 0x64af27c9514e786e,
 }
