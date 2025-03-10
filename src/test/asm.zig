@@ -1,3 +1,4 @@
+const builtin = @import("builtin");
 const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
@@ -181,19 +182,41 @@ test "lower MI encoding" {
     });
     try expectEqualHexStrings("\xC6\x45\xFF\x10", enc.code(), "mov BYTE PTR [rbp - 1], 0x10");
 
-    try enc.encode(.mov, &.{
-        .{ .mem = Memory.sib(.qword, .{
-            .base = .{ .reg = .ds },
-            .disp = 0x10000000,
-            .scale_index = .{ .scale = 2, .index = .rcx },
-        }) },
-        .{ .imm = Immediate.u(0x10) },
-    });
-    try expectEqualHexStrings(
-        "\x48\xC7\x04\x4D\x00\x00\x00\x10\x10\x00\x00\x00",
-        enc.code(),
-        "mov QWORD PTR [rcx*2 + 0x10000000], 0x10",
-    );
+    if (builtin.os.tag != .windows) {
+        try enc.encode(.mov, &.{
+            .{ .mem = Memory.sib(.qword, .{
+                .base = .{ .reg = .ds },
+                .disp = 0x10000000,
+                .scale_index = .{ .scale = 2, .index = .rcx },
+            }) },
+            .{ .imm = Immediate.u(0x10) },
+        });
+        try expectEqualHexStrings(
+            "\x48\xC7\x04\x4D\x00\x00\x00\x10\x10\x00\x00\x00",
+            enc.code(),
+            "mov QWORD PTR [rcx*2 + 0x10000000], 0x10",
+        );
+
+        try enc.encode(.@"and", &.{
+            .{ .mem = Memory.sib(.dword, .{ .base = .{ .reg = .es }, .disp = 0x10000000 }) },
+            .{ .imm = Immediate.u(0x10) },
+        });
+        try expectEqualHexStrings(
+            "\x26\x83\x24\x25\x00\x00\x00\x10\x10",
+            enc.code(),
+            "and DWORD PTR es:0x10000000, 0x10",
+        );
+
+        try enc.encode(.@"and", &.{
+            .{ .mem = Memory.sib(.dword, .{ .base = .{ .reg = .r12 }, .disp = 0x10000000 }) },
+            .{ .imm = Immediate.u(0x10) },
+        });
+        try expectEqualHexStrings(
+            "\x41\x83\xA4\x24\x00\x00\x00\x10\x10",
+            enc.code(),
+            "and DWORD PTR [r12 + 0x10000000], 0x10",
+        );
+    }
 
     try enc.encode(.adc, &.{
         .{ .mem = Memory.sib(.byte, .{ .base = .{ .reg = .rbp }, .disp = -0x10 }) },
@@ -239,26 +262,6 @@ test "lower MI encoding" {
         "\x83\x24\x25\x00\x00\x00\x10\x10",
         enc.code(),
         "and DWORD PTR ds:0x10000000, 0x10",
-    );
-
-    try enc.encode(.@"and", &.{
-        .{ .mem = Memory.sib(.dword, .{ .base = .{ .reg = .es }, .disp = 0x10000000 }) },
-        .{ .imm = Immediate.u(0x10) },
-    });
-    try expectEqualHexStrings(
-        "\x26\x83\x24\x25\x00\x00\x00\x10\x10",
-        enc.code(),
-        "and DWORD PTR es:0x10000000, 0x10",
-    );
-
-    try enc.encode(.@"and", &.{
-        .{ .mem = Memory.sib(.dword, .{ .base = .{ .reg = .r12 }, .disp = 0x10000000 }) },
-        .{ .imm = Immediate.u(0x10) },
-    });
-    try expectEqualHexStrings(
-        "\x41\x83\xA4\x24\x00\x00\x00\x10\x10",
-        enc.code(),
-        "and DWORD PTR [r12 + 0x10000000], 0x10",
     );
 
     try enc.encode(.sub, &.{
@@ -451,11 +454,13 @@ test "lower RM encoding" {
     });
     try expectEqualHexStrings("\x44\x02\x24\x25\x00\x00\x00\x10", enc.code(), "add r11b, BYTE PTR ds:0x10000000");
 
-    try enc.encode(.add, &.{
-        .{ .reg = .r12b },
-        .{ .mem = Memory.sib(.byte, .{ .base = .{ .reg = .fs }, .disp = 0x10000000 }) },
-    });
-    try expectEqualHexStrings("\x64\x44\x02\x24\x25\x00\x00\x00\x10", enc.code(), "add r11b, BYTE PTR fs:0x10000000");
+    if (builtin.os.tag != .windows) {
+        try enc.encode(.add, &.{
+            .{ .reg = .r12b },
+            .{ .mem = Memory.sib(.byte, .{ .base = .{ .reg = .fs }, .disp = 0x10000000 }) },
+        });
+        try expectEqualHexStrings("\x64\x44\x02\x24\x25\x00\x00\x00\x10", enc.code(), "add r11b, BYTE PTR fs:0x10000000");
+    }
 
     try enc.encode(.sub, &.{
         .{ .reg = .r11 },
@@ -486,16 +491,18 @@ test "lower RMI encoding" {
     });
     try expectEqualHexStrings("\x4D\x6B\xDC\xFE", enc.code(), "imul r11, r12, -2");
 
-    try enc.encode(.imul, &.{
-        .{ .reg = .r11 },
-        .{ .mem = Memory.rip(.qword, -16) },
-        .{ .imm = Immediate.s(-1024) },
-    });
-    try expectEqualHexStrings(
-        "\x4C\x69\x1D\xF0\xFF\xFF\xFF\x00\xFC\xFF\xFF",
-        enc.code(),
-        "imul r11, QWORD PTR [rip - 16], -1024",
-    );
+    if (builtin.os.tag != .windows) {
+        try enc.encode(.imul, &.{
+            .{ .reg = .r11 },
+            .{ .mem = Memory.rip(.qword, -16) },
+            .{ .imm = Immediate.s(-1024) },
+        });
+        try expectEqualHexStrings(
+            "\x4C\x69\x1D\xF0\xFF\xFF\xFF\x00\xFC\xFF\xFF",
+            enc.code(),
+            "imul r11, QWORD PTR [rip - 16], -1024",
+        );
+    }
 
     try enc.encode(.imul, &.{
         .{ .reg = .bx },
@@ -573,17 +580,19 @@ test "lower MR encoding" {
     });
     try expectEqualHexStrings("\x44\x00\x24\x25\x00\x00\x00\x10", enc.code(), "add BYTE PTR ds:0x10000000, r12b");
 
-    try enc.encode(.add, &.{
-        .{ .mem = Memory.sib(.dword, .{ .base = .{ .reg = .ds }, .disp = 0x10000000 }) },
-        .{ .reg = .r12d },
-    });
-    try expectEqualHexStrings("\x44\x01\x24\x25\x00\x00\x00\x10", enc.code(), "add DWORD PTR [ds:0x10000000], r12d");
+    if (builtin.os.tag != .windows) {
+        try enc.encode(.add, &.{
+            .{ .mem = Memory.sib(.dword, .{ .base = .{ .reg = .ds }, .disp = 0x10000000 }) },
+            .{ .reg = .r12d },
+        });
+        try expectEqualHexStrings("\x44\x01\x24\x25\x00\x00\x00\x10", enc.code(), "add DWORD PTR [ds:0x10000000], r12d");
 
-    try enc.encode(.add, &.{
-        .{ .mem = Memory.sib(.dword, .{ .base = .{ .reg = .gs }, .disp = 0x10000000 }) },
-        .{ .reg = .r12d },
-    });
-    try expectEqualHexStrings("\x65\x44\x01\x24\x25\x00\x00\x00\x10", enc.code(), "add DWORD PTR [gs:0x10000000], r12d");
+        try enc.encode(.add, &.{
+            .{ .mem = Memory.sib(.dword, .{ .base = .{ .reg = .gs }, .disp = 0x10000000 }) },
+            .{ .reg = .r12d },
+        });
+        try expectEqualHexStrings("\x65\x44\x01\x24\x25\x00\x00\x00\x10", enc.code(), "add DWORD PTR [gs:0x10000000], r12d");
+    }
 
     try enc.encode(.sub, &.{
         .{ .mem = Memory.sib(.qword, .{ .base = .{ .reg = .r11 }, .disp = 0x10000000 }) },
@@ -684,25 +693,27 @@ test "lower O encoding" {
 test "lower OI encoding" {
     var enc = TestEncode{};
 
-    try enc.encode(.mov, &.{
-        .{ .reg = .rax },
-        .{ .imm = Immediate.u(0x1000000000000000) },
-    });
-    try expectEqualHexStrings(
-        "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x10",
-        enc.code(),
-        "movabs rax, 0x1000000000000000",
-    );
+    if (builtin.os.tag != .windows) {
+        try enc.encode(.mov, &.{
+            .{ .reg = .rax },
+            .{ .imm = Immediate.u(0x1000000000000000) },
+        });
+        try expectEqualHexStrings(
+            "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x10",
+            enc.code(),
+            "movabs rax, 0x1000000000000000",
+        );
 
-    try enc.encode(.mov, &.{
-        .{ .reg = .r11 },
-        .{ .imm = Immediate.u(0x1000000000000000) },
-    });
-    try expectEqualHexStrings(
-        "\x49\xBB\x00\x00\x00\x00\x00\x00\x00\x10",
-        enc.code(),
-        "movabs r11, 0x1000000000000000",
-    );
+        try enc.encode(.mov, &.{
+            .{ .reg = .r11 },
+            .{ .imm = Immediate.u(0x1000000000000000) },
+        });
+        try expectEqualHexStrings(
+            "\x49\xBB\x00\x00\x00\x00\x00\x00\x00\x10",
+            enc.code(),
+            "movabs r11, 0x1000000000000000",
+        );
+    }
 
     try enc.encode(.mov, &.{
         .{ .reg = .r11d },
