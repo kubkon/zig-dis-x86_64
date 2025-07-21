@@ -9,6 +9,7 @@ const Encoding = @import("Encoding.zig");
 const Immediate = bits.Immediate;
 const Memory = bits.Memory;
 const Register = bits.Register;
+const Writer = std.Io.Writer;
 
 pub const Instruction = struct {
     prefix: Prefix = .none,
@@ -69,93 +70,73 @@ pub const Instruction = struct {
             };
         }
 
-        fn format(
-            op: Operand,
-            comptime unused_format_string: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
-        ) !void {
-            _ = op;
-            _ = unused_format_string;
-            _ = options;
-            _ = writer;
-            @compileError("do not format Operand directly; use fmtPrint() instead");
-        }
-
-        const FormatContext = struct {
+        const Format = struct {
             op: Operand,
             enc_op: Encoding.Op,
+
+            fn default(f: Format, w: *Writer) Writer.Error!void {
+                const op = f.op;
+                const enc_op = f.enc_op;
+                switch (op) {
+                    .none => {},
+                    .reg => |reg| try w.writeAll(@tagName(reg)),
+                    .mem => |mem| switch (mem) {
+                        .m_rip => |rip| {
+                            try w.print("{t} ptr [rip", .{rip.ptr_size});
+                            if (rip.disp != 0) try w.print(" {c} 0x{x}", .{
+                                @as(u8, if (rip.disp < 0) '-' else '+'),
+                                @abs(rip.disp),
+                            });
+                            try w.writeByte(']');
+                        },
+                        .m_sib => |sib| {
+                            try w.print("{t} ptr ", .{sib.ptr_size});
+
+                            if (mem.isSegmentRegister()) {
+                                return w.print("{t}:0x{x}", .{ sib.base.reg, sib.disp });
+                            }
+
+                            try w.writeByte('[');
+
+                            var any = false;
+                            switch (sib.base) {
+                                .none => {},
+                                .reg => |reg| {
+                                    try w.print("{t}", .{reg});
+                                    any = true;
+                                },
+                                .frame => |frame| {
+                                    try w.print("{f}", .{frame});
+                                    any = true;
+                                },
+                            }
+                            if (mem.scaleIndex()) |si| {
+                                if (any) try w.writeAll(" + ");
+                                try w.print("{t} * {d}", .{ si.index, si.scale });
+                                any = true;
+                            }
+                            if (sib.disp != 0 or !any) {
+                                if (any)
+                                    try w.print(" {c} ", .{@as(u8, if (sib.disp < 0) '-' else '+')})
+                                else if (sib.disp < 0)
+                                    try w.writeByte('-');
+                                try w.print("0x{x}", .{@abs(sib.disp)});
+                                any = true;
+                            }
+
+                            try w.writeByte(']');
+                        },
+                        .m_moffs => |moffs| try w.print("{t}:0x{x}", .{
+                            moffs.seg,
+                            moffs.offset,
+                        }),
+                    },
+                    .imm => |imm| try w.print("0x{x}", .{imm.asUnsigned(enc_op.immBitSize())}),
+                }
+            }
         };
 
-        fn fmt(
-            ctx: FormatContext,
-            comptime unused_format_string: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
-        ) @TypeOf(writer).Error!void {
-            _ = unused_format_string;
-            _ = options;
-            const op = ctx.op;
-            const enc_op = ctx.enc_op;
-            switch (op) {
-                .none => {},
-                .reg => |reg| try writer.writeAll(@tagName(reg)),
-                .mem => |mem| switch (mem) {
-                    .m_rip => |rip| {
-                        try writer.print("{s} ptr [rip", .{@tagName(rip.ptr_size)});
-                        if (rip.disp != 0) try writer.print(" {c} 0x{x}", .{
-                            @as(u8, if (rip.disp < 0) '-' else '+'),
-                            @abs(rip.disp),
-                        });
-                        try writer.writeByte(']');
-                    },
-                    .m_sib => |sib| {
-                        try writer.print("{s} ptr ", .{@tagName(sib.ptr_size)});
-
-                        if (mem.isSegmentRegister()) {
-                            return writer.print("{s}:0x{x}", .{ @tagName(sib.base.reg), sib.disp });
-                        }
-
-                        try writer.writeByte('[');
-
-                        var any = false;
-                        switch (sib.base) {
-                            .none => {},
-                            .reg => |reg| {
-                                try writer.print("{s}", .{@tagName(reg)});
-                                any = true;
-                            },
-                            .frame => |frame| {
-                                try writer.print("{}", .{frame});
-                                any = true;
-                            },
-                        }
-                        if (mem.scaleIndex()) |si| {
-                            if (any) try writer.writeAll(" + ");
-                            try writer.print("{s} * {d}", .{ @tagName(si.index), si.scale });
-                            any = true;
-                        }
-                        if (sib.disp != 0 or !any) {
-                            if (any)
-                                try writer.print(" {c} ", .{@as(u8, if (sib.disp < 0) '-' else '+')})
-                            else if (sib.disp < 0)
-                                try writer.writeByte('-');
-                            try writer.print("0x{x}", .{@abs(sib.disp)});
-                            any = true;
-                        }
-
-                        try writer.writeByte(']');
-                    },
-                    .m_moffs => |moffs| try writer.print("{s}:0x{x}", .{
-                        @tagName(moffs.seg),
-                        moffs.offset,
-                    }),
-                },
-                .imm => |imm| try writer.print("0x{x}", .{imm.asUnsigned(enc_op.immBitSize())}),
-            }
-        }
-
-        pub fn fmtPrint(op: Operand, enc_op: Encoding.Op) std.fmt.Formatter(fmt) {
+        pub fn fmt(op: Operand, enc_op: Encoding.Op) std.fmt.Formatter(Format, Format.default) {
             return .{ .data = .{ .op = op, .enc_op = enc_op } };
         }
     };
@@ -172,7 +153,7 @@ pub const Instruction = struct {
             });
             return error.InvalidInstruction;
         };
-        log.debug("selected encoding: {}", .{encoding});
+        log.debug("selected encoding: {f}", .{encoding});
 
         var inst = Instruction{
             .prefix = prefix,
@@ -183,21 +164,14 @@ pub const Instruction = struct {
         return inst;
     }
 
-    pub fn format(
-        inst: Instruction,
-        comptime unused_format_string: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) @TypeOf(writer).Error!void {
-        _ = unused_format_string;
-        _ = options;
-        if (inst.prefix != .none) try writer.print("{s} ", .{@tagName(inst.prefix)});
-        try writer.print("{s}", .{@tagName(inst.encoding.mnemonic)});
+    pub fn format(inst: Instruction, writer: *Writer) Writer.Error!void {
+        if (inst.prefix != .none) try writer.print("{t} ", .{inst.prefix});
+        try writer.print("{t}", .{inst.encoding.mnemonic});
         for (inst.ops, inst.encoding.data.ops, 0..) |op, enc, i| {
             if (op == .none) break;
             if (i > 0) try writer.writeByte(',');
             try writer.writeByte(' ');
-            try writer.print("{}", .{op.fmtPrint(enc)});
+            try writer.print("{f}", .{op.fmt(enc)});
         }
     }
 

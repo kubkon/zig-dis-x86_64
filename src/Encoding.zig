@@ -121,15 +121,7 @@ pub fn modRmExt(encoding: Encoding) u3 {
     };
 }
 
-pub fn format(
-    encoding: Encoding,
-    comptime fmt: []const u8,
-    options: std.fmt.FormatOptions,
-    writer: anytype,
-) !void {
-    _ = options;
-    _ = fmt;
-
+pub fn format(encoding: Encoding, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     var opc = encoding.opcode();
     if (encoding.data.mode.isVex()) {
         try writer.writeAll("VEX.");
@@ -150,7 +142,7 @@ pub fn format(
             },
         }
 
-        try writer.print(".{}", .{std.fmt.fmtSliceHexUpper(opc[0 .. opc.len - 1])});
+        try writer.print(".{X}", .{opc[0 .. opc.len - 1]});
         opc = opc[opc.len - 1 ..];
 
         try writer.writeAll(".W");
@@ -781,8 +773,8 @@ const mnemonic_to_encodings_map = init: {
         storage_i += value.len;
     }
     var mnemonic_i: [mnemonic_count]usize = .{0} ** mnemonic_count;
-    const ops_len = @typeInfo(std.meta.FieldType(Data, .ops)).array.len;
-    const opc_len = @typeInfo(std.meta.FieldType(Data, .opc)).array.len;
+    const ops_len = @typeInfo(@FieldType(Data, "ops")).array.len;
+    const opc_len = @typeInfo(@FieldType(Data, "opc")).array.len;
     for (encodings.table) |entry| {
         const i = &mnemonic_i[@intFromEnum(entry[0])];
         mnemonic_map[@intFromEnum(entry[0])][i.*] = .{
